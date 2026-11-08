@@ -126,8 +126,11 @@ img{max-width:100%}
 body.kapali header.top,body.kapali .wrap>main{display:none}
 #kapi{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:max(40px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px));box-sizing:border-box}
 .kapi-kart{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:14px}
-.kapi-logo{display:flex;gap:12px;align-items:center}
-.kapi-logo img{border-radius:10px}
+.kapi-logo{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+.kapi-logo img{border-radius:10px;width:100%;height:auto;display:block}
+.logo-baslik{margin:0;line-height:0}
+.logo-baslik img{height:40px;width:auto;border-radius:8px;display:block}
+.gizli{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi .val{font-size:1.1rem}.top-row{padding-block:10px}}
 </style>
 
@@ -137,7 +140,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
   <div class="wrap">
     <div class="top-row">
       <div class="brand">
-        <h1>Ön Muhasebe</h1>
+        <h1 class="logo-baslik"><img src="logo-yatay.png" alt="Arvenato" width="190" height="40"><span class="gizli">Ön Muhasebe</span></h1>
         <button class="firma" id="firmaBtn" type="button">Firma adını girin</button>
       </div>
       <button class="ghost small" id="yedekBtn" type="button" title="Tüm kayıtları JSON dosyası olarak indir">Yedek al</button>
@@ -2274,7 +2277,7 @@ document.getElementById("main").addEventListener("click",async e=>{
 const KOLEKSIYONLAR={cariler:"cariler",hareketler:"hareketler",personeller:"personeller",personelEk:"ekler",izinler:"izinler",bankalar:"bankalar",virmanlar:"virmanlar",urunler:"urunler",stokHareketleri:"stokHareketleri",teklifler:"teklifler",faturalar:"faturalar",ajanda:"ajanda"};
 const CFG=window.UYGULAMA_AYAR||{};let sb=null,oturum=null,firmaId=null,firmaRol="",kanal=null,kurulumOlayi=null;
 const kapi=document.getElementById("kapi");
-function kapiGoster(html){document.body.classList.add("kapali");kapi.innerHTML=`<div class="kapi-kart"><div class="kapi-logo"><img src="icon-192.png" alt="" width="44" height="44"><div><b>Arvenato Ön Muhasebe</b><div class="muted" style="font-size:.82rem">Gelir · gider · cari · stok · fatura</div></div></div>${html}</div>`;kapi.hidden=false;const f=kapi.querySelector("input");f&&f.focus()}
+function kapiGoster(html){document.body.classList.add("kapali");kapi.innerHTML=`<div class="kapi-kart"><div class="kapi-logo"><img src="logo.jpg" alt="Arvenato" width="600" height="325"><div class="muted" style="font-size:.85rem;text-align:center">Ön muhasebe · gelir · gider · cari · stok · fatura</div></div>${html}</div>`;kapi.hidden=false;const f=kapi.querySelector("input");f&&f.focus()}
 function kapiKapat(){kapi.hidden=true;kapi.innerHTML="";document.body.classList.remove("kapali")}
 function sbMesaj(e){const m=(e&&(e.message||e.error_description))||"";
   if(/Invalid login credentials/i.test(m))return "E-posta veya şifre hatalı.";

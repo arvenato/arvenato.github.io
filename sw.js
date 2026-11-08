@@ -1,7 +1,7 @@
 // Uygulama dosyalarını önbelleğe alır. Sayfa her açılışta internetten en güncel sürümü alır;
 // internet yoksa son kaydedilen sürüm açılır. Veriler (Supabase) önbelleğe alınmaz.
-const SURUM = "v1";
-const KABUK = ["./", "./index.html", "./config.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+const SURUM = "v2";
+const KABUK = ["./", "./index.html", "./config.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./logo-yatay.png", "./logo.jpg"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(SURUM).then(c => c.addAll(KABUK)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== SURUM).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener("fetch", e => {
