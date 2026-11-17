@@ -39,7 +39,7 @@
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.5}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
-.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:none;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
 .top-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:12px}
 .brand{display:flex;flex-direction:column;min-width:0;flex:1}
@@ -117,7 +117,7 @@ input,select,textarea{font:inherit;font-size:.92rem;padding:8px 10px;border:1px 
 .aj-etk.h{background:var(--warn-soft);color:var(--warn)}
 .aj-etk.bitti{opacity:.5;text-decoration:line-through}
 /* Satış (kasa) ekranı */
-.kasa-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.kasa-grid{display:grid;grid-template-columns:minmax(0,1fr) clamp(340px,26vw,420px);gap:16px;align-items:start}
 @media (max-width:900px){.kasa-grid{grid-template-columns:minmax(0,1fr)}}
 .pos-sol{display:flex;flex-direction:column;gap:12px;min-width:0}
 .pos-scan{position:relative;display:flex;gap:8px}
