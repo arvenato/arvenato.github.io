@@ -116,6 +116,15 @@ input,select,textarea{font:inherit;font-size:.92rem;padding:8px 10px;border:1px 
 .aj-etk.t{background:var(--accent-soft);color:var(--in)}
 .aj-etk.h{background:var(--warn-soft);color:var(--warn)}
 .aj-etk.bitti{opacity:.5;text-decoration:line-through}
+.td-ad{color:#dc2626}
+.td-bas td{background:var(--accent-soft);border-top:2px solid #dc2626}
+.td-tbl{table-layout:fixed;min-width:560px}
+.td-sites{display:flex;gap:8px;flex-wrap:wrap}
+.td-sites a{text-decoration:none}
+.chip.ok{background:var(--accent-soft);color:var(--in)}
+.chip.yok{background:color-mix(in srgb,var(--out) 14%,transparent);color:var(--out)}
+.td-tbl .c-l{width:110px}.td-tbl .c-n{width:150px}.td-tbl .c-s{width:26%}.td-tbl .c-a{width:96px}
+@media (max-width:620px){.hide-m{display:none}.td-tbl{min-width:600px}.td-tbl .c-l{width:80px}.td-tbl .c-n{width:112px}.td-tbl .c-s{width:110px}.td-tbl .c-a{width:84px}}
 @media (prefers-reduced-motion:no-preference){.modal{animation:pop .14s ease-out}@keyframes pop{from{transform:translateY(6px);opacity:.6}}}
 
 html,body{margin:0}
@@ -160,6 +169,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <a href="#rapor">Aylık rapor</a>
       <a href="#faturalar">Faturalar</a>
       <a href="#ajanda">Ajanda</a>
+      <a href="#tedarik">Tedarikçiler</a>
     </nav>
   </div>
 </header>
@@ -184,7 +194,7 @@ const GIDER_KAT=["Kargo","Pazaryeri komisyonu","Reklam","Kira","Personel","Elekt
 const KDV_ORAN=[20,10,1,0];
 const ODEME={acik:"Açık hesap",kasa:"Kasa (nakit)",banka:"Banka / POS",mahsup:"Maaştan mahsup"};
 
-const state={cariler:[],hareketler:[],personeller:[],ekler:[],izinler:[],bankalar:[],virmanlar:[],urunler:[],stokHareketleri:[],teklifler:[],faturalar:[],ajanda:[],firma:"",mode:"loading",readonly:false,stale:false,error:""};
+const state={cariler:[],hareketler:[],personeller:[],ekler:[],izinler:[],bankalar:[],virmanlar:[],urunler:[],stokHareketleri:[],teklifler:[],faturalar:[],ajanda:[],tedarikciler:[],tfiyatlar:[],firma:"",mode:"loading",readonly:false,stale:false,error:""};
 let api=null; // {setDoc(col,id,obj), del(col,id), newId(col), setFirma(name)}
 let downloads=null;
 
@@ -251,9 +261,9 @@ function donemOzet(filter){
 }
 
 /* ---------- Görünümler ---------- */
-const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda"];
+const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik"];
 let view="ozet";
-const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",raporYil:new Date().getFullYear(),raporAy:ym(today())};
+const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
 
 function setView(){
   const h=(location.hash||"").replace("#","");
@@ -293,6 +303,7 @@ function render(){
   else if(view==="teklifler")html+=vTeklifler();
   else if(view==="faturalar")html+=vFaturalar();
   else if(view==="ajanda")html+=vAjanda();
+  else if(view==="tedarik")html+=vTedarik();
   else html+=vRapor();
   m.innerHTML=html;
   const f=m.querySelectorAll("[data-filter]");
@@ -2023,6 +2034,256 @@ function vRapor(){
   </section>`;
 }
 
+/* ---------- Tedarikçiler ---------- */
+// Tedarikçi B2B sitelerinden canlı fiyat / stok ("arvenato-tedarik" Supabase fonksiyonu), tedarikçi sepetine ekleme,
+// kayıtlı tedarikçi fiyatları ve Excel fiyat listesi. Sipariş verilmez; sepet tedarikçinin sitesinde onaylanır.
+const TD_FONK="arvenato-tedarik";
+const TD_HAZIR=[{ad:"Kırtasiyem",site:"www.kirtasiyem.com.tr",aramaUrl:"https://www.kirtasiyem.com.tr/Ara?q={ara}",anahtar:"kirtasiyem"},{ad:"Yılmazlar Kırtasiye",site:"b2b.yilmazlarkirtasiye.com.tr",aramaUrl:"https://b2b.yilmazlarkirtasiye.com.tr/arama?q={ara}",anahtar:"yilmazlar"},{ad:"Budak Kağıt",site:"b2b.budak.com.tr",aramaUrl:"https://b2b.budak.com.tr/Arama/Arama?q={ara}",anahtar:"budak"}];
+const tdLow=s=>String(s??"").toLocaleLowerCase("tr");
+const tAnahtar=s=>tdLow(s).replace(/[^a-z0-9çğıöşü]/g,"");
+function kisaHash(s){let h=5381;for(const c of String(s))h=((h<<5)+h+c.charCodeAt(0))>>>0;return h.toString(36)}
+const tedarikciListe=()=>[...state.tedarikciler].sort((a,b)=>String(a.ad).localeCompare(String(b.ad),"tr"));
+const tedarikciById=id=>state.tedarikciler.find(t=>t.id===id);
+function barkodHaritasi(){const m=new Map();for(const u of state.urunler){const b=String(u.barkod??"").trim();if(b)m.set(b,u)}return m}
+const urunByBarkod=b=>{b=String(b??"").trim();return b?state.urunler.find(u=>String(u.barkod??"").trim()===b)||null:null};
+function tdUrunBul(raw){if(!raw)return null;const b=urunByBarkod(raw);if(b)return b;const q=tdLow(raw);if(q.length<3)return null;return state.urunler.find(u=>tdLow(u.ad)===q)||null}
+function siteAdresi(t){const s=String(t.site||"").trim();if(!s)return "";return /^https?:\/\//i.test(s)?s:"https://"+s}
+function aramaAdresi(t,m){return t.aramaUrl&&t.aramaUrl.includes("{ara}")?t.aramaUrl.split("{ara}").join(encodeURIComponent(m)):null}
+function tdSiteTedarikci(anahtar){return tedarikciListe().find(t=>String(t.aramaUrl||t.site||"").toLowerCase().includes(anahtar))||null}
+const tdCanli={son:null,yukleniyor:"",hata:"",no:0,onb:new Map()};
+let tdSonTedarikci="";try{tdSonTedarikci=localStorage.getItem("td-son")||""}catch(e){}
+function tdSonKaydet(id){tdSonTedarikci=id;try{localStorage.setItem("td-son",id)}catch(e){}}
+function tdYenile(){if(view!=="tedarik")return;const a=document.activeElement;if(a&&a.id==="fTdAra")rerenderKeepFocus("fTdAra");else render()}
+const tdKucuk=s=>`<div class="muted" style="font-size:.78rem;font-family:var(--font-num)">${esc(s)}</div>`;
+
+function vTedarik(){
+  const raw=ui.tdAra.trim(),q=tdLow(raw),ts=tedarikciListe(),p=tdUrunBul(raw),ro=state.readonly;
+  const urunBilgi=p?`<div><span class="chip ok">📦 ${esc(p.ad)}</span> <span class="muted" style="font-size:.85rem">Satış ${money(p.satisFiyat)} · Bizim alış ${Number(p.alisFiyat)?money(p.alisFiyat):"—"} · Stok ${fmtMiktar(stokMiktar(p))} ${esc(p.birim||"")}</span></div>`
+    :raw?`<div class="muted" style="font-size:.85rem">Bu metinle eşleşen kayıtlı ürün yok; yine de tedarikçilerde arayabilirsiniz.</div>`:"";
+  const metinler=raw?[raw]:[];if(p&&p.barkod&&String(p.barkod)===raw)metinler.push(p.ad);
+  const siteler=!ts.length?`<div class="muted" style="font-size:.85rem">Henüz tedarikçi firma eklenmedi.${ro?"":` <button class="small" data-act="tdHazir" type="button">Kırtasiyem, Yılmazlar ve Budak'ı ekle</button>`}</div>`
+    :ts.map(t=>{const site=siteAdresi(t);
+      if(!metinler.length)return site?`<a class="btn small" href="${esc(site)}" target="_blank" rel="noopener">↗ ${esc(t.ad)}</a>`:"";
+      const l=metinler.map((m,i)=>{const u=aramaAdresi(t,m);return u?`<a class="btn small ${i===0?"primary":""}" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(t.ad)} sitesinde “${esc(m)}” ara">🔎 ${esc(t.ad)}${i?" (adıyla)":""}</a>`:""}).join("");
+      return l||(site?`<a class="btn small" href="${esc(site)}" target="_blank" rel="noopener">↗ ${esc(t.ad)}</a>`:"")}).join("");
+  // Kayıtlı fiyatlar (aynı ürün için en ucuz tedarikçi işaretlenir)
+  const bMap=barkodHaritasi();
+  const tum=state.tfiyatlar.filter(f=>tedarikciById(f.tedarikciId));
+  const list=raw?tum.filter(f=>(p&&(f.urunId===p.id||(p.barkod&&String(f.barkod)===String(p.barkod))))||String(f.barkod||"").includes(raw)||tdLow(f.urunAd).includes(q)):tum.slice();
+  const grup=f=>f.barkod?"b"+f.barkod:"a"+tAnahtar(f.urunAd);
+  const enUcuz=new Map(),say=new Map();for(const f of list){const g=grup(f);if(!enUcuz.has(g)||+f.fiyat<enUcuz.get(g))enUcuz.set(g,+f.fiyat);say.set(g,(say.get(g)||0)+1)}
+  list.sort((a,b)=>grup(a).localeCompare(grup(b))||(+a.fiyat-+b.fiyat));
+  const fSay=new Map();for(const f of tum)fSay.set(f.tedarikciId,(fSay.get(f.tedarikciId)||0)+1);
+  const fiyatSatir=f=>{const t=tedarikciById(f.tedarikciId),u=(f.urunId&&state.urunler.find(x=>x.id===f.urunId))||bMap.get(String(f.barkod||"").trim());
+    const ucuz=say.get(grup(f))>1&&+f.fiyat===enUcuz.get(grup(f));const al=u?Number(u.alisFiyat)||0:0;const fark=al?r2(+f.fiyat-al):0;
+    return `<tr><td><b class="td-ad">${esc(t.ad)}</b></td><td>${esc(f.urunAd||(u&&u.ad)||"")}${f.barkod?tdKucuk(f.barkod):""}</td>
+      <td class="num"><b>${money(f.fiyat)}</b>${ucuz?` <span class="chip ok">en ucuz</span>`:""}</td>
+      <td class="num hide-m">${al?money(al)+(fark?`<div style="font-size:.78rem" class="${fark<0?"pos":"neg"}">${fark<0?"▼ "+money(-fark)+" ucuz":"▲ "+money(fark)+" pahalı"}</div>`:""):"—"}</td>
+      <td class="date hide-m">${f.tarih?trDate(String(f.tarih).slice(0,10)):""}</td>
+      <td>${ro?"":`<div class="rowact"><button class="small ghost" data-act="tdFiyatDuz" data-id="${esc(f.id)}" type="button">Düzenle</button></div>`}</td></tr>`};
+  return `<section class="section-head"><h2>Tedarikçiler</h2></section>
+  <section class="panel">
+    <div class="filters">
+      <input id="fTdAra" type="search" data-filter="tdAra" value="${esc(ui.tdAra)}" placeholder="Ürün adı veya barkod yazın — tedarikçilerde arayın…" aria-label="Tedarikçilerde ara" autocomplete="off" style="flex:1;min-width:200px;font-size:1rem;padding:10px 12px">
+      <button class="primary" data-act="tdGetir" type="button" title="Tedarikçilerin sitelerinden güncel fiyat ve stoğu getirir (Enter)" ${tdCanli.yukleniyor?"disabled":""}>📡 Fiyat ve stok getir</button>
+    </div>
+    ${urunBilgi}
+    <div class="td-sites">${siteler}</div>
+  </section>
+  ${tdCanliHtml()}
+  <section class="panel">
+    <div class="section-head"><h2>Kayıtlı tedarikçi fiyatları</h2>${ro?"":`<div class="filters"><button class="small" data-act="tdExcel" type="button">Fiyat listesi yükle</button><button class="small" data-act="tdFiyatYeni" type="button">+ Fiyat kaydet</button></div>`}</div>
+    <div class="muted" style="font-size:.85rem">${raw?list.length+" kayıtlı fiyat bulundu":"Toplam "+tum.length.toLocaleString("tr-TR")+" kayıtlı fiyat"+(tum.length>300?" · ilk 300 gösteriliyor, yukarıdan arayın":"")}</div>
+    ${list.length?`<div class="tscroll"><table><thead><tr><th>Tedarikçi</th><th>Ürün</th><th class="num">Tedarikçi fiyatı</th><th class="num hide-m">Bizim alış</th><th class="hide-m">Tarih</th><th></th></tr></thead><tbody>${list.slice(0,300).map(fiyatSatir).join("")}</tbody></table></div>`
+      :`<div class="empty">${raw?"Bu ürün için kayıtlı tedarikçi fiyatı yok. Canlı sonuçlardaki 💾 düğmesiyle ya da <b>+ Fiyat kaydet</b> ile ekleyebilirsiniz.":"Henüz kayıtlı fiyat yok."}</div>`}
+  </section>
+  <section class="panel">
+    <div class="section-head"><h2>Tedarikçi firmalar</h2>${ro?"":`<button class="small primary" data-act="tdYeni" type="button">+ Tedarikçi ekle</button>`}</div>
+    ${ts.length?`<div class="tscroll"><table><thead><tr><th>Firma</th><th class="hide-m">Web sitesi</th><th class="hide-m">Telefon</th><th class="num">Kayıtlı fiyat</th><th></th></tr></thead><tbody>${ts.map(t=>`<tr><td><b class="td-ad">${esc(t.ad)}</b>${t.not?`<div class="muted" style="font-size:.8rem">${esc(t.not)}</div>`:""}${t.aramaUrl?"":`<div style="font-size:.78rem;color:var(--warn)">arama adresi yok — yalnızca site açılır</div>`}</td>
+      <td class="hide-m">${siteAdresi(t)?`<a href="${esc(siteAdresi(t))}" target="_blank" rel="noopener">${esc(t.site)}</a>`:"—"}</td>
+      <td class="hide-m">${t.tel?`<a href="tel:${esc(t.tel)}">${esc(t.tel)}</a>`:"—"}</td>
+      <td class="num">${fSay.get(t.id)||0}</td>
+      <td>${ro?"":`<div class="rowact"><button class="small ghost" data-act="tdDuz" data-id="${esc(t.id)}" type="button">Düzenle</button></div>`}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty">Henüz tedarikçi yok.</div>`}
+  </section>`;
+}
+// Canlı sonuç tablosu: Liste / Net fiyat / Stok sütunları tüm tedarikçilerde alt alta hizalı
+function tdCanliHtml(){
+  if(!tdCanli.yukleniyor&&!tdCanli.hata&&!tdCanli.son)return "";
+  const bas=t=>`<section class="panel"><div class="section-head"><h2>📡 Tedarikçilerde şu an</h2><span class="muted" style="font-size:.85rem">${t||""}</span></div>`;
+  if(tdCanli.yukleniyor)return bas()+`<div class="muted">⏳ “${esc(tdCanli.yukleniyor)}” tedarikçilerde aranıyor… (birkaç saniye sürebilir)</div></section>`;
+  if(tdCanli.hata)return bas()+`<div class="err">${esc(tdCanli.hata)}</div></section>`;
+  const d=tdCanli.son,ro=state.readonly;
+  // "En ucuz" yalnızca aynı ürün karşılaştırılırken: en az iki sitede tek sonuç çıktıysa (genelde barkod araması)
+  const tekler=d.sonuclar.filter(s=>s.urunler.length===1).map(s=>s.urunler[0].net??s.urunler[0].liste).filter(x=>x>0);
+  const enDusuk=tekler.length>1?Math.min(...tekler):null;
+  const p=tdUrunBul(d.q),al=p?Number(p.alisFiyat)||0:0;
+  const ayniUrun=(s,u)=>al&&((u.barkod&&p.barkod&&String(u.barkod)===String(p.barkod))||(s.urunler.length===1&&!u.barkod));
+  const govde=d.sonuclar.map(s=>{
+    const durum=s.durum==="ok"?`<span class="muted" style="font-size:.85rem">${s.urunler.length?s.urunler.length+" ürün":"bulunamadı"}</span>`
+      :s.durum==="ayar-yok"?`<span style="color:var(--warn);font-size:.85rem">bayi bilgisi girilmemiş</span>`
+      :`<span class="neg" style="font-size:.85rem" title="${esc(s.mesaj||"")}">hata: ${esc((s.mesaj||"").slice(0,80))}</span>`;
+    const satirlar=s.urunler.map((u,i)=>{const net=u.net??u.liste,ucuz=enDusuk!=null&&s.urunler.length===1&&net===enDusuk;const fark=net&&ayniUrun(s,u)?r2(net-al):0;const yok=u.tukendi||/^0$|yok/i.test(String(u.stok||""));
+      return `<tr${u.tukendi?' style="opacity:.55"':""}><td>${esc(u.ad)}${tdKucuk([u.kod,u.barkod].filter(Boolean).join(" · "))}</td>
+        <td class="num muted">${u.liste!=null?money(u.liste):"—"}</td>
+        <td class="num"><b>${net!=null?money(net):"—"}</b>${ucuz?` <span class="chip ok">en ucuz</span>`:""}${fark?`<div style="font-size:.78rem" class="${fark<0?"pos":"neg"}">${fark<0?"▼ "+money(-fark):"▲ "+money(fark)} bizim alışa göre</div>`:""}</td>
+        <td><span class="chip ${yok?"yok":"ok"}" style="white-space:normal">${esc(u.stok||"—")}</span></td>
+        <td style="text-align:right;white-space:nowrap">${!ro&&u.id?`<button class="small primary" data-act="tdSepet" data-id="${esc(s.anahtar)}|${i}" type="button" ${u.tukendi?'disabled title="Stokta yok"':'title="Tedarikçinin sepetine ekle"'}>🛒</button> `:""}${ro?"":`<button class="small" data-act="tdKaydet" data-id="${esc(s.anahtar)}|${i}" type="button" title="Bu fiyatı kayıtlı tedarikçi fiyatlarına ekle">💾</button>`}</td></tr>`}).join("");
+    return `<tr class="td-bas"><td colspan="5"><div class="filters"><b class="td-ad" style="font-size:1.05rem">${esc(s.ad)}</b>${durum}<span style="flex:1"></span><a class="btn small" href="${esc(s.url)}" target="_blank" rel="noopener">↗ Sitede aç</a></div></td></tr>${satirlar}`}).join("");
+  const zaman="“"+esc(d.q)+"” · "+new Date(d.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
+  return bas(zaman)+`<div class="tscroll"><table class="td-tbl"><colgroup><col><col class="c-l"><col class="c-n"><col class="c-s"><col class="c-a"></colgroup>
+    <thead><tr><th>Ürün</th><th class="num">Liste</th><th class="num">Net fiyat</th><th>Stok</th><th></th></tr></thead><tbody>${govde}</tbody></table></div></section>`;
+}
+async function tdFonk(govde){
+  const {data,error}=await sb.functions.invoke(TD_FONK,{body:Object.assign({firmaId},govde)});
+  if(error){let m=error.message||String(error);try{const j=await error.context.json();if(j&&j.hata)m=j.hata}catch(_){}const x=new Error(m);x.durum=error.context&&error.context.status;throw x}
+  if(data&&data.hata)throw new Error(data.hata);
+  return data;
+}
+async function tdCanliGetir(zorla){
+  const q=ui.tdAra.trim();
+  if(q.length<2){if(zorla)toast("Ürün adı veya barkod yazın");return}
+  if(!sb||!oturum||!firmaId){if(zorla)toast("Bunun için internet ve giriş gerekli");return}
+  const onb=tdCanli.onb.get(q);
+  if(onb&&!zorla&&Date.now()-onb.z<120000){tdCanli.son=onb.v;tdCanli.hata="";tdCanli.yukleniyor="";return tdYenile()}
+  const no=++tdCanli.no;tdCanli.yukleniyor=q;tdCanli.hata="";tdYenile();
+  try{const data=await tdFonk({q});if(no!==tdCanli.no)return;tdCanli.son=data;tdCanli.onb.set(q,{z:Date.now(),v:data})}
+  catch(e){if(no!==tdCanli.no)return;const yok=e.durum===404||/not found|Failed to send|FunctionsFetchError/i.test(e.message||"");
+    tdCanli.hata=yok?"Tedarikçi bağlantısı henüz kurulmamış (Supabase'de “"+TD_FONK+"” fonksiyonu bulunamadı).":"Tedarikçi fiyatları alınamadı: "+(e.message||e)}
+  finally{if(no===tdCanli.no){tdCanli.yukleniyor="";tdYenile()}}
+}
+// Tedarikçinin sitesindeki sepete ekleme (sipariş verilmez)
+function tdSepetPenceresi(s,u){
+  openModal(`<div class="section-head"><h2>🛒 ${esc(s.ad)} sepetine ekle</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div><b>${esc(u.ad)}</b><div class="muted" style="font-size:.85rem">${esc([u.kod,u.barkod].filter(Boolean).join(" · "))} · Net ${u.net!=null?money(u.net):"—"} · Stok ${esc(u.stok||"—")}</div></div>
+    <div class="grid2"><div class="field"><label for="tsBirim">Birim</label><select id="tsBirim" disabled><option>Yükleniyor…</option></select></div>
+      <div class="field"><label for="tsMiktar">Miktar</label><input id="tsMiktar" type="number" min="${Number(u.adim)||1}" step="${Number(u.adim)||1}" value="${Number(u.miktar)||Number(u.adim)||1}" inputmode="numeric"></div></div>
+    <div class="muted" id="tsBilgi" style="font-size:.85rem">Ürün yalnızca sepete eklenir, sipariş verilmez. Siparişi ${esc(s.ad)} sitesinde sepeti kontrol edip siz onaylarsınız.</div>
+    <div class="err" id="tsErr" role="alert"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="ekle" id="tsEkle" disabled>🛒 Sepete ekle</button></div>`,
+  root=>{const $=x=>root.querySelector(x);
+    tdFonk({islem:"birim",site:s.anahtar,id:u.id}).then(r=>{if(!root.isConnected)return;const b=r.birimler||[];
+      $("#tsBirim").innerHTML=b.map(x=>`<option value="${esc(x.deger)}" ${x.secili?"selected":""}>${esc(x.ad)}</option>`).join("")||`<option value="">—</option>`;
+      $("#tsBirim").disabled=b.length<2;$("#tsEkle").disabled=!b.length;
+      if(r.stok!=null)$("#tsBilgi").insertAdjacentHTML("afterbegin",`Tedarikçi stoğu: <b>${esc(fmtMiktar(r.stok))}</b>. `);
+      if(!b.length)$("#tsBilgi").textContent="Bu ürün için satış birimi bulunamadı; tedarikçinin sitesinden ekleyin.";
+      setTimeout(()=>{const m=$("#tsMiktar");if(m){m.focus();m.select()}},30)})
+    .catch(err=>{if(root.isConnected)$("#tsErr").textContent="Birimler alınamadı: "+err.message});
+    const ekle=async()=>{const er=$("#tsErr"),bt=$("#tsEkle");if(bt.disabled)return;er.textContent="";
+      const miktar=Math.floor(Number($("#tsMiktar").value)),sel=$("#tsBirim"),opt=sel.options[sel.selectedIndex];
+      if(!(miktar>0)){er.textContent="Miktarı yazın.";return}
+      if(u.adim>1&&miktar%u.adim){er.textContent=`Bu ürün ${u.adim}'li katlarla satılıyor.`;return}
+      bt.disabled=true;bt.textContent="Ekleniyor…";
+      try{const r=await tdFonk({islem:"ekle",site:s.anahtar,id:u.id,birim:sel.value,birimAd:opt?opt.textContent:"",miktar});closeModal();toast(`${s.ad}: ${r.mesaj||"Sepete eklendi"} — ${miktar} ${opt?opt.textContent:""}`)}
+      catch(err){bt.disabled=false;bt.textContent="🛒 Sepete ekle";er.textContent="Sepete eklenemedi: "+err.message}};
+    root.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m==="ekle")ekle()});
+    $("#tsMiktar").addEventListener("keydown",e=>{if(e.key==="Enter")ekle()})});
+}
+// Canlı sonuçtaki fiyatı "Kayıtlı tedarikçi fiyatları"na ekler (tedarikçi firma yoksa oluşturur)
+async function tdCanliKaydet(key){
+  const d=tdCanli.son;if(!d)return;const [a,i]=key.split("|"),s=d.sonuclar.find(x=>x.anahtar===a),u=s&&s.urunler[+i];if(!u)return;
+  try{let t=tdSiteTedarikci(a);
+    if(!t){const h=TD_HAZIR.find(x=>x.anahtar===a);const id=api.newId();const doc={ad:s.ad,site:h?h.site:new URL(s.url).host,aramaUrl:h?h.aramaUrl:s.url.replace(/q=[^&]*/,"q={ara}"),tel:"",not:"",olusturma:Date.now()};await api.setDoc("tedarikciler",id,doc);t={id,...doc}}
+    const p=tdUrunBul(d.q)||urunByBarkod(u.barkod);
+    const anah=(p&&p.barkod)||u.barkod||tAnahtar(u.ad),fiyat=r2(u.net??u.liste);
+    await api.setDoc("tfiyatlar","tf"+kisaHash(t.id+"|"+anah),{tedarikciId:t.id,urunAd:p?p.ad:u.ad,tedarikciUrunAd:u.ad,barkod:p?(p.barkod||""):(u.barkod||""),urunId:p?p.id:null,kod:u.kod||"",fiyat,liste:u.liste??null,stok:u.stok||"",tarih:new Date().toISOString()});
+    toast(`${t.ad}: ${money(fiyat)} kaydedildi`)}catch(err){toast(errMsg(err))}
+}
+async function tdHazirEkle(){
+  try{let n=0;for(const h of TD_HAZIR){if(tdSiteTedarikci(h.anahtar))continue;const {anahtar,...doc}=h;await api.setDoc("tedarikciler",api.newId(),{...doc,tel:"",not:"",olusturma:Date.now()});n++}
+    toast(n?n+" tedarikçi eklendi":"Tedarikçiler zaten ekli")}catch(err){toast(errMsg(err))}
+}
+// Toplu kayıt / silme (Excel fiyat listesi ve tedarikçi silme için; 500'erli parçalar)
+async function tdTopluYaz(satirlar,ilerleme){let n=0;
+  for(let i=0;i<satirlar.length;i+=500){const parca=satirlar.slice(i,i+500);
+    const {error}=await sb.from("kayitlar").upsert(parca.map(([id,veri])=>({firma_id:firmaId,koleksiyon:"tfiyatlar",id,veri,guncelleme:new Date().toISOString()})));
+    if(error)throw error;parca.forEach(([id,veri])=>yerelUygula("tfiyatlar",id,veri));n+=parca.length;ilerleme&&ilerleme(n)}
+  return n}
+async function tdTopluSil(ids){
+  for(let i=0;i<ids.length;i+=200){const parca=ids.slice(i,i+200);
+    const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","tfiyatlar").in("id",parca);
+    if(error)throw error;parca.forEach(id=>yerelUygula("tfiyatlar",id,null))}}
+function tedarikciForm(t){
+  const x=t||{};
+  openModal(`<div class="section-head"><h2>${t?"Tedarikçiyi düzenle":"Yeni tedarikçi"}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="field"><label for="tfAd">Firma adı</label><input id="tfAd" value="${esc(x.ad||"")}"></div>
+    <div class="field"><label for="tfSite">Web sitesi</label><input id="tfSite" value="${esc(x.site||"")}" placeholder="ornek.com"></div>
+    <div class="field"><label for="tfArama">Ürün arama adresi</label><input id="tfArama" value="${esc(x.aramaUrl||"")}" placeholder="https://ornek.com/arama?q={ara}">
+      <div class="muted" style="font-size:.8rem">Nasıl bulunur: Tedarikçinin sitesinde arama kutusuna <b>TEST</b> yazıp arayın, adres çubuğundaki adresi kopyalayıp buraya yapıştırın. Program TEST yerine aradığınız ürünü koyar.</div></div>
+    <div class="grid2"><div class="field"><label for="tfTel">Telefon</label><input id="tfTel" value="${esc(x.tel||"")}" inputmode="tel"></div>
+      <div class="field"><label for="tfNot">Not</label><input id="tfNot" value="${esc(x.not||"")}" placeholder="Temsilci, vade, iskonto…"></div></div>
+    <div class="err" id="tfErr" role="alert"></div>
+    <div class="modal-foot">${t?`<button type="button" class="danger" data-m="sil">Sil</button><span style="flex:1"></span>`:""}<button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">Kaydet</button></div>`,
+  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m,er=root.querySelector("#tfErr"),g=id=>root.querySelector("#"+id).value.trim();
+    if(a==="close")return closeModal();
+    if(a==="sil"){const n=state.tfiyatlar.filter(f=>f.tedarikciId===t.id).length;b.outerHTML=`<span class="err" style="align-self:center">${n?n.toLocaleString("tr-TR")+" kayıtlı fiyatıyla birlikte silinsin mi?":"Silinsin mi?"}</span><button type="button" class="danger" data-m="silOnay">Evet, sil</button>`;return}
+    if(a==="silOnay"){b.disabled=true;try{await tdTopluSil(state.tfiyatlar.filter(f=>f.tedarikciId===t.id).map(f=>f.id));await api.del("tedarikciler",t.id);closeModal();toast("Tedarikçi silindi")}catch(err){er.textContent=errMsg(sbHata(err));b.disabled=false}return}
+    if(a!=="kaydet")return;
+    const ad=g("tfAd");if(!ad){er.textContent="Firma adını yazın.";return}
+    let arama=g("tfArama");
+    if(arama&&!arama.includes("{ara}")){if(/test/i.test(arama))arama=arama.replace(/test/i,"{ara}");
+      else if(b.dataset.ok!=="1"){er.textContent="Arama adresinde TEST bulunamadı; bu durumda düğme yalnızca siteyi açar. Yine de kaydetmek için tekrar Kaydet'e basın.";b.dataset.ok="1";return}}
+    if(arama&&!/^https?:\/\//i.test(arama))arama="https://"+arama;
+    let site=g("tfSite");if(!site&&arama){try{site=new URL(arama.replace("{ara}","x")).host}catch(_){}}
+    const {id:_eskiId,...eski}=x;
+    b.disabled=true;try{await api.setDoc("tedarikciler",t?t.id:api.newId(),{...eski,ad,site,aramaUrl:arama,tel:g("tfTel"),not:g("tfNot"),olusturma:x.olusturma||Date.now()});closeModal();toast(ad+" kaydedildi")}catch(err){er.textContent=errMsg(err);b.disabled=false}}));
+}
+function tFiyatForm(f){
+  const ts=tedarikciListe();if(!ts.length){toast("Önce bir tedarikçi ekleyin");return tedarikciForm(null)}
+  const x=f||{},raw=ui.tdAra.trim(),p=f?null:tdUrunBul(raw);
+  const urunAd=x.urunAd||(p?p.ad:(raw&&!/^\d{6,}$/.test(raw)?raw:""));
+  const barkod=x.barkod||(p?p.barkod||"":(/^\d{6,}$/.test(raw)?raw:""));
+  openModal(`<div class="section-head"><h2>${f?"Tedarikçi fiyatını düzenle":"Tedarikçi fiyatı kaydet"}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="field"><label for="tpTed">Tedarikçi</label><select id="tpTed">${ts.map(t=>`<option value="${esc(t.id)}" ${t.id===(x.tedarikciId||tdSonTedarikci)?"selected":""}>${esc(t.ad)}</option>`).join("")}</select></div>
+    <div class="field"><label for="tpAd">Ürün adı</label><input id="tpAd" value="${esc(urunAd)}"></div>
+    <div class="grid2"><div class="field"><label for="tpBarkod">Barkod</label><input id="tpBarkod" value="${esc(barkod)}" inputmode="numeric" style="font-family:var(--font-num)"></div>
+      <div class="field"><label for="tpFiyat">Tedarikçi fiyatı (₺)</label><input id="tpFiyat" value="${x.fiyat!=null?esc(String(x.fiyat).replace(".",",")):""}" inputmode="decimal"></div></div>
+    <div class="err" id="tpErr" role="alert"></div>
+    <div class="modal-foot">${f?`<button type="button" class="danger" data-m="sil">Sil</button><span style="flex:1"></span>`:""}<button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">Kaydet</button></div>`,
+  root=>{const g=id=>root.querySelector("#"+id).value.trim(),er=root.querySelector("#tpErr");
+    setTimeout(()=>{const i=root.querySelector("#tpFiyat");if(i)i.focus()},30);
+    const kaydet=async()=>{const b=root.querySelector('[data-m="kaydet"]');if(b.disabled)return;er.textContent="";
+      const fiyat=sayiOku(g("tpFiyat")),ad=g("tpAd"),bk=g("tpBarkod"),tid=root.querySelector("#tpTed").value;
+      if(isNaN(fiyat)||fiyat<0){er.textContent="Fiyatı yazın.";return}
+      if(!ad&&!bk){er.textContent="Ürün adı ya da barkod gerekli.";return}
+      const u=(bk&&urunByBarkod(bk))||p;const id=f?f.id:"tf"+kisaHash(tid+"|"+(bk||tAnahtar(ad)));
+      const {id:_eskiId,...eski}=x;
+      b.disabled=true;try{await api.setDoc("tfiyatlar",id,{...eski,tedarikciId:tid,urunAd:ad||(u&&u.ad)||"",barkod:bk,urunId:u?u.id:(x.urunId||null),fiyat:r2(fiyat),tarih:new Date().toISOString()});tdSonKaydet(tid);closeModal();toast("Fiyat kaydedildi")}catch(err){er.textContent=errMsg(err);b.disabled=false}};
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;
+      if(a==="close")return closeModal();
+      if(a==="sil"){b.outerHTML=`<span class="err" style="align-self:center">Silinsin mi?</span><button type="button" class="danger" data-m="silOnay">Evet, sil</button>`;return}
+      if(a==="silOnay"){b.disabled=true;try{await api.del("tfiyatlar",f.id);closeModal();toast("Fiyat silindi")}catch(err){er.textContent=errMsg(err);b.disabled=false}return}
+      if(a==="kaydet")kaydet()});
+    root.querySelector("#tpFiyat").addEventListener("keydown",e=>{if(e.key==="Enter")kaydet()})});
+}
+// Excel / CSV fiyat listesi: sütun sırası Barkod, Ürün Adı, Fiyat (başlık satırı olabilir)
+function tdExcelModal(){
+  const ts=tedarikciListe();if(!ts.length){toast("Önce bir tedarikçi ekleyin");return tedarikciForm(null)}
+  let satirlar=null;
+  openModal(`<div class="section-head"><h2>Tedarikçi fiyat listesi yükle</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="field"><label for="txTed">Hangi tedarikçinin listesi?</label><select id="txTed">${ts.map(t=>`<option value="${esc(t.id)}" ${t.id===tdSonTedarikci?"selected":""}>${esc(t.ad)}</option>`).join("")}</select></div>
+    <div class="field"><label for="txDosya">Fiyat listesi dosyası (.xlsx / .csv)</label><input id="txDosya" type="file" accept=".xlsx,.csv,.txt"></div>
+    <div class="muted" style="font-size:.85rem">Excel'de sütun sırası: <b>Barkod</b> · <b>Ürün Adı</b> · <b>Fiyat</b>. İlk satır başlık olabilir. Aynı ürünün eski fiyatı güncellenir.</div>
+    <div class="err" id="txErr" role="alert"></div><div class="muted" id="txDurum" role="status" style="font-size:.85rem"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="yukle" id="txBtn" hidden>Yükle</button></div>`,
+  root=>{const q=s=>root.querySelector(s);
+    root.addEventListener("change",async e=>{if(e.target.id!=="txDosya")return;const file=e.target.files[0],er=q("#txErr");er.textContent="";satirlar=null;q("#txBtn").hidden=true;if(!file)return;q("#txDurum").textContent="Dosya okunuyor…";
+      try{const buf=await file.arrayBuffer();const isZip=new Uint8Array(buf.slice(0,2)).join()==="80,75";
+        if(/\.xls$/i.test(file.name)&&!isZip)throw new Error("xls");
+        const rows=isZip?await xlsxOku(buf):csvOku(buf);
+        satirlar=rows.map(r=>{const [bk="",ad="",fy=""]=Array.from(r,v=>String(v??"").trim());return {bk,ad,fiyat:sayiOku(fy)}}).filter(x=>!isNaN(x.fiyat)&&x.fiyat>=0&&(x.bk||x.ad));
+        if(!satirlar.length)throw new Error("bos");
+        const atl=rows.length-satirlar.length;
+        q("#txDurum").textContent=`${satirlar.length.toLocaleString("tr-TR")} fiyat bulundu${atl?` (${atl.toLocaleString("tr-TR")} satır atlanacak)`:""}. Yüklemek için “Yükle”ye basın.`;q("#txBtn").hidden=false}
+      catch(err){satirlar=null;q("#txDurum").textContent="";er.textContent=err.message==="xls"?"Eski .xls biçimi okunamıyor. Dosyayı Excel'de açıp .xlsx olarak kaydedin.":err.message==="load"?"Excel okuma aracı yüklenemedi. İnternet bağlantınızı kontrol edin.":err.message==="bos"?"Dosyada geçerli fiyat satırı bulunamadı. Sütun sırası: Barkod, Ürün Adı, Fiyat.":"Dosya okunamadı. .xlsx veya .csv biçiminde bir fiyat listesi seçin."}});
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="yukle"||!satirlar)return;
+      const tid=q("#txTed").value,t=tedarikciById(tid),bMap=barkodHaritasi(),z=new Date().toISOString();tdSonKaydet(tid);
+      const kayit=new Map();for(const x of satirlar){const u=x.bk?bMap.get(x.bk):null;kayit.set("tf"+kisaHash(tid+"|"+(x.bk||tAnahtar(x.ad))),{tedarikciId:tid,urunAd:x.ad||(u&&u.ad)||"",barkod:x.bk,urunId:u?u.id:null,fiyat:r2(x.fiyat),tarih:z})}
+      const liste=[...kayit],du=q("#txDurum"),er=q("#txErr");root.querySelectorAll("button,input,select").forEach(x=>x.disabled=true);let n=0;
+      try{n=await tdTopluYaz(liste,k=>{n=k;du.textContent=`Yükleniyor… ${k.toLocaleString("tr-TR")} / ${liste.length.toLocaleString("tr-TR")}`});closeModal();render();toast(`${t?t.ad:"Tedarikçi"}: ${n.toLocaleString("tr-TR")} fiyat yüklendi`)}
+      catch(err){er.textContent=`Yükleme yarıda kaldı (${n.toLocaleString("tr-TR")} kayıt yüklendi): ${sbMesaj(err)}`;root.querySelectorAll("button").forEach(x=>x.disabled=false)}});
+  });
+}
+
 /* ---------- Modallar ---------- */
 const modalRoot=document.getElementById("modalRoot");
 function closeModal(){modalRoot.innerHTML="";document.removeEventListener("keydown",escClose)}
@@ -2263,6 +2524,15 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="ibanKopya"){const b=state.bankalar.find(x=>x.id===id);if(b){try{await navigator.clipboard.writeText(b.iban);toast("IBAN kopyalandı")}catch(e){toast("Kopyalanamadı, IBAN'ı seçip kopyalayın")}}}
   else if(a==="virmanSil"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Onayla";return}b.disabled=true;try{await api.del("virmanlar",id);toast("Virman silindi")}catch(err){toast(errMsg(err))}}
   else if(a==="pGecmis"){const p=state.personeller.find(x=>x.id===id);if(p)personelGecmis(p)}
+  else if(a==="tdGetir")tdCanliGetir(true);
+  else if(a==="tdHazir"){b.disabled=true;tdHazirEkle()}
+  else if(a==="tdYeni")tedarikciForm(null);
+  else if(a==="tdDuz"){const t=tedarikciById(id);if(t)tedarikciForm(t)}
+  else if(a==="tdFiyatYeni")tFiyatForm(null);
+  else if(a==="tdFiyatDuz"){const f=state.tfiyatlar.find(x=>x.id===id);if(f)tFiyatForm(f)}
+  else if(a==="tdExcel")tdExcelModal();
+  else if(a==="tdSepet"){const [k,i]=String(id).split("|"),s=tdCanli.son&&tdCanli.son.sonuclar.find(x=>x.anahtar===k),u=s&&s.urunler[+i];if(u)tdSepetPenceresi(s,u)}
+  else if(a==="tdKaydet"){b.disabled=true;await tdCanliKaydet(id);b.disabled=false}
   else if(a==="temizle"){ui.tur="";ui.ay="";ui.ara="";render()}
   else if(a==="csv")csvIndir();
   else if(a==="ornekSil"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Emin misiniz? Tekrar tıklayın";return}
@@ -2273,9 +2543,11 @@ document.getElementById("main").addEventListener("click",async e=>{
       toast("Örnek kayıtlar silindi")}catch(err){toast(errMsg(err))}}
 });
 
+document.getElementById("main").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="fTdAra"){e.preventDefault();ui.tdAra=e.target.value;tdCanliGetir(false)}});
+
 /* ---------- Veri katmanı ---------- */
 /* ---------- Uygulama: Supabase bağlantısı, giriş, firma, eşitleme ---------- */
-const KOLEKSIYONLAR={cariler:"cariler",hareketler:"hareketler",personeller:"personeller",personelEk:"ekler",izinler:"izinler",bankalar:"bankalar",virmanlar:"virmanlar",urunler:"urunler",stokHareketleri:"stokHareketleri",teklifler:"teklifler",faturalar:"faturalar",ajanda:"ajanda"};
+const KOLEKSIYONLAR={cariler:"cariler",hareketler:"hareketler",personeller:"personeller",personelEk:"ekler",izinler:"izinler",bankalar:"bankalar",virmanlar:"virmanlar",urunler:"urunler",stokHareketleri:"stokHareketleri",teklifler:"teklifler",faturalar:"faturalar",ajanda:"ajanda",tedarikciler:"tedarikciler",tfiyatlar:"tfiyatlar"};
 const CFG=window.UYGULAMA_AYAR||{};let sb=null,oturum=null,firmaId=null,firmaRol="",kanal=null,kurulumOlayi=null;
 const kapi=document.getElementById("kapi");
 function kapiGoster(html){document.body.classList.add("kapali");kapi.innerHTML=`<div class="kapi-kart"><div class="kapi-logo"><img src="logo.jpg" alt="Arvenato" width="600" height="325"><div class="muted" style="font-size:.85rem;text-align:center">Ön muhasebe · gelir · gider · cari · stok · fatura</div></div>${html}</div>`;kapi.hidden=false;const f=kapi.querySelector("input");f&&f.focus()}
@@ -2441,7 +2713,7 @@ function yedekYukleModal(){
   root=>{root.addEventListener("change",async e=>{if(e.target.id!=="yYDosya")return;const er=root.querySelector("#yYErr");er.textContent="";veri=null;root.querySelector("#yYBtn").hidden=true;
       try{const j=JSON.parse(await e.target.files[0].text());if(!j||!j.koleksiyonlar)throw new Error();veri=j;
         const say=Object.entries(KOLEKSIYONLAR).map(([c])=>[c,(j.koleksiyonlar[c]||[]).length]).filter(x=>x[1]);const top=say.reduce((s,x)=>s+x[1],0);
-        const ad={cariler:"Cariler",hareketler:"Hareketler",personeller:"Personeller",personelEk:"Mesai / prim / ürün",izinler:"İzinler",bankalar:"Bankalar",virmanlar:"Virmanlar",urunler:"Ürünler",stokHareketleri:"Stok hareketleri",teklifler:"Teklifler",faturalar:"Faturalar",ajanda:"Ajanda"};
+        const ad={cariler:"Cariler",hareketler:"Hareketler",personeller:"Personeller",personelEk:"Mesai / prim / ürün",izinler:"İzinler",bankalar:"Bankalar",virmanlar:"Virmanlar",urunler:"Ürünler",stokHareketleri:"Stok hareketleri",teklifler:"Teklifler",faturalar:"Faturalar",ajanda:"Ajanda",tedarikciler:"Tedarikçiler",tfiyatlar:"Tedarikçi fiyatları"};
         root.querySelector("#yYOzet").innerHTML=`<div class="panel" style="padding:12px;gap:6px"><b>${esc(j.firma||"")}</b><div class="muted" style="font-size:.82rem">Yedek tarihi: ${j.tarih?trDate(j.tarih.slice(0,10)):"—"} · toplam ${top.toLocaleString("tr-TR")} kayıt</div><div style="display:flex;flex-wrap:wrap;gap:6px">${say.map(([c,n])=>`<span class="chip">${ad[c]||c}: ${n.toLocaleString("tr-TR")}</span>`).join("")}</div></div>`;
         root.querySelector("#yYBtn").hidden=!top}catch(err){er.textContent="Bu dosya geçerli bir yedek değil."}});
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="yukle"||!veri)return;
