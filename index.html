@@ -2423,7 +2423,7 @@ async function kameraDurdur(){const d=kamera;kamera=null;if(!d)return;clearTimeo
 // Tedarikçi B2B sitelerinden canlı fiyat / stok ("arvenato-tedarik" Supabase fonksiyonu), tedarikçi sepetine ekleme,
 // kayıtlı tedarikçi fiyatları ve Excel fiyat listesi. Sipariş verilmez; sepet tedarikçinin sitesinde onaylanır.
 const TD_FONK="arvenato-tedarik";
-const TD_HAZIR=[{ad:"Kırtasiyem",site:"www.kirtasiyem.com.tr",aramaUrl:"https://www.kirtasiyem.com.tr/Ara?q={ara}",anahtar:"kirtasiyem"},{ad:"Yılmazlar Kırtasiye",site:"b2b.yilmazlarkirtasiye.com.tr",aramaUrl:"https://b2b.yilmazlarkirtasiye.com.tr/arama?q={ara}",anahtar:"yilmazlar"},{ad:"Budak Kağıt",site:"b2b.budak.com.tr",aramaUrl:"https://b2b.budak.com.tr/Arama/Arama?q={ara}",anahtar:"budak"}];
+const TD_HAZIR=[{ad:"Kırtasiyem",site:"www.kirtasiyem.com.tr",aramaUrl:"https://www.kirtasiyem.com.tr/Ara?q={ara}",anahtar:"kirtasiyem"},{ad:"Yılmazlar Kırtasiye",site:"b2b.yilmazlarkirtasiye.com.tr",aramaUrl:"https://b2b.yilmazlarkirtasiye.com.tr/arama?q={ara}",anahtar:"yilmazlar"},{ad:"Budak Kağıt",site:"b2b.budak.com.tr",aramaUrl:"https://b2b.budak.com.tr/Arama/Arama?q={ara}",anahtar:"budak"},{ad:"Akkaymak",site:"www.akkaymak.com",aramaUrl:"https://www.akkaymak.com/Ara/?q={ara}",anahtar:"akkaymak"}];
 const tdLow=s=>String(s??"").toLocaleLowerCase("tr");
 const tAnahtar=s=>tdLow(s).replace(/[^a-z0-9çğıöşü]/g,"");
 function kisaHash(s){let h=5381;for(const c of String(s))h=((h<<5)+h+c.charCodeAt(0))>>>0;return h.toString(36)}
