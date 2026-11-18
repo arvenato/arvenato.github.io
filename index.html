@@ -204,6 +204,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
     </div>
     <nav class="tabs" id="tabs">
       <a href="#satis">Satış</a>
+      <a href="#tedarik">Tedarikçiler</a>
       <a href="#gelirler">Gelirler</a>
       <a href="#giderler">Giderler</a>
       <a href="#cariler">Cariler</a>
@@ -216,7 +217,6 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <a href="#rapor">Aylık rapor</a>
       <a href="#faturalar">Faturalar</a>
       <a href="#ajanda">Ajanda</a>
-      <a href="#tedarik">Tedarikçiler</a>
     </nav>
   </div>
 </header>
@@ -2160,7 +2160,7 @@ function posYenile(){
   ksEl("posSekmeler").innerHTML=ks.sepetler.map((x,i)=>{const adet=x.cart.reduce((a,l)=>a+(Number(l.qty)||0),0),top=ksTop(x).total;
     return `<button type="button" class="pos-sekme ${i===ks.aktif?"aktif":""} ${adet&&i!==ks.aktif?"dolu":""}" data-sepet="${i}" title="Alt+${i+1}">Müşteri ${i+1}<small>${adet?adet+" ürün · "+money(top):"boş"}</small></button>`}).join("");
   body.innerHTML=s.cart.length?s.cart.map(l=>{const u=l.serbest?null:ksU(l.pid),ad=l.serbest?l.ad:u.ad,st=u?stokMiktar(u):Infinity,p=esc(l.pid),degisti=!l.serbest&&l.fiyat!=null;
-    return `<tr class="${l.pid===ks.sonPid?"pos-son":""}"><td><b>${esc(ad)}</b><div class="muted" style="font-size:.76rem;font-family:var(--font-num)">${l.serbest?"muhtelif":esc(u.barkod||"")} · KDV %${l.serbest?l.kdv:ksKdv(u)}${u&&st<l.qty?` <span class="chip yok">stok ${fmtMiktar(st)}</span>`:""}</div></td>
+    return `<tr class="${l.pid===ks.sonPid?"pos-son":""}"><td><b data-pad="${p}" title="Adı düzeltmek için çift tıklayın" style="cursor:text">${esc(ad)}</b><div class="muted" style="font-size:.76rem;font-family:var(--font-num)">${l.serbest?"muhtelif":esc(u.barkod||"")} · KDV %${l.serbest?l.kdv:ksKdv(u)}${u&&st<l.qty?` <span class="chip yok">stok ${fmtMiktar(st)}</span>`:""}</div></td>
       <td class="num"><input data-pf="${p}" value="${num2(ksFiyat(l))}" inputmode="decimal" class="pos-fiyat ${degisti?"degisti":""}" title="Bu satış için fiyatı değiştirin" aria-label="Fiyat">${degisti?`<div class="muted" style="font-size:.7rem">liste: ${num2(u.satisFiyat)}</div>`:""}</td>
       <td class="num"><input data-pi="${p}" value="${ksIsk(l)?String(ksIsk(l)).replace(".",","):""}" placeholder="%" inputmode="decimal" class="pos-isk ${ksIsk(l)?"degisti":""}" title="Bu ürüne yüzde indirim" aria-label="İndirim yüzdesi">${ksIsk(l)?`<div class="muted" style="font-size:.7rem">${num2(ksNetFiyat(l))}</div>`:""}</td>
       <td style="text-align:center;white-space:nowrap"><button type="button" class="small" data-pa="dec" data-pid="${p}" aria-label="Azalt">−</button><input data-pq="${p}" value="${l.qty}" inputmode="numeric" class="pos-adet" aria-label="Adet"><button type="button" class="small" data-pa="inc" data-pid="${p}" aria-label="Artır">+</button></td>
@@ -2322,6 +2322,21 @@ function posBagla(){
     if(el.dataset.pf){const l=ksS().cart.find(x=>x.pid===el.dataset.pf);if(!l)return;const f=sayiOku(el.value);
       if(isNaN(f)||f<0||(l.serbest&&f<=0)){toast("Geçerli bir fiyat girin");posYenile();return}
       if(l.serbest)l.fiyat=r2(f);else{const u=ksU(l.pid);if(u&&r2(f)===r2(u.satisFiyat))delete l.fiyat;else l.fiyat=r2(f)}posYenile();posOdak()}});
+  // Ürün adına çift tıklayınca ad orada düzeltilir (Enter/kutudan çıkınca kaydeder, Esc vazgeçer).
+  // Kayıtlı ürünün adı kalıcı değişir; muhtelif satırda yalnız bu satışta değişir.
+  cart.addEventListener("dblclick",e=>{const b=e.target.closest("[data-pad]");if(!b)return;
+    const l=ksS().cart.find(x=>x.pid===b.dataset.pad);if(!l)return;const u=l.serbest?null:ksU(l.pid);if(!l.serbest&&!u)return;
+    if(!l.serbest&&state.readonly){toast("Ürün adını değiştirme yetkiniz yok");return}
+    const eski=l.serbest?l.ad:u.ad,inp=document.createElement("input");
+    inp.value=eski;inp.autocomplete="off";inp.style.cssText="font:inherit;font-weight:700;font-size:1.05em;padding:4px 8px;min-width:min(320px,100%);border:2px solid var(--accent,#2563eb)";
+    b.replaceWith(inp);setTimeout(()=>{inp.focus();inp.select()},0);let bitti=false;
+    const bitir=async kaydet=>{if(bitti)return;bitti=true;const yeni=inp.value.trim().replace(/\s+/g," ");
+      if(kaydet&&yeni&&yeni!==eski){
+        if(l.serbest){l.ad=yeni;ksKaydet()}
+        else{const {id:_i,...rest}=u;try{await api.setDoc("urunler",u.id,{...rest,ad:yeni});toast("Ürün adı değişti: "+yeni)}catch(err){toast(errMsg(err))}}}
+      posYenile();posOdak()};
+    inp.addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();bitir(true)}else if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();bitir(false)}});
+    inp.addEventListener("blur",()=>bitir(true))});
   cart.addEventListener("keydown",e=>{if((e.target.dataset.pq||e.target.dataset.pf||e.target.dataset.pi)&&e.key==="Enter")e.target.blur()});
   cart.addEventListener("focusin",e=>{if(e.target.dataset.pf||e.target.dataset.pq||e.target.dataset.pi)setTimeout(()=>e.target.select(),0)});
   ksEl("posIndirim").addEventListener("input",e=>{const s=ksS();s.indirim=e.target.value;s.indirimYuzde="";ksEl("posIndirimYuzde").value="";posToplamlar();ksKaydet()});
