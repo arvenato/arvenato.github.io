@@ -3010,10 +3010,84 @@ function pzSiparisPanel(){
     ${deg?"":`<div style="font-size:.85rem"><b>Şu an işlenecek değişiklik yok.</b> ${P.liste.length?"Listedeki deneme siparişleri programda güncel.":"Seçilen dönemde, başlangıç zamanından sonra deneme ürünü içeren sipariş bulunmadı."}${P.once?` Başlangıçtan önceki ${P.once} deneme siparişi işlenmez (stoğa zaten yansımıştı).`:""}</div>`}
     <div class="muted" style="font-size:.82rem">Yalnızca deneme ürünlerinin satırları işlenir. Sipariş gelince stok düşer; <b>teslim edilince</b> “${esc(P.cari?P.cari.ad:"Trendyol")}” carisine açık hesap satış yazılır${P.cari?"":" (cari yoksa oluşturulur)"}; Trendyol hakedişi oluşturunca kestiği komisyon aynı cariden gider olarak düşülür (cari bakiyesi = Trendyol'un ödeyeceği tutar). İptal / iade olursa stok, satış ve komisyon geri alınır. Aynı sipariş tekrar işlense de kayıt çoğalmaz.</div>
     <div class="filters" style="font-size:.85rem;align-items:center"><label for="pzBas">Bu zamandan sonraki siparişler:</label><input id="pzBas" type="datetime-local" value="${yerel}" style="max-width:220px"><span class="muted" style="font-size:.8rem">${b.kayitli?"kayıtlı":"öneri: deneme ürünlerine son stok gönderimi · ilk işlemde kaydedilir"}</span></div>
-    ${P.liste.length?`<div class="tscroll"><table><thead><tr><th>Sipariş</th><th>Durum</th><th>Deneme ürünleri</th><th>Programda</th><th>Yapılacak</th></tr></thead><tbody>
+    ${P.liste.length?`<div class="tscroll"><table><thead><tr><th>Sipariş</th><th>Durum</th><th>Deneme ürünleri</th><th>Programda</th><th>Yapılacak</th><th>e-Fatura</th></tr></thead><tbody>
       ${P.liste.map(p=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(p.s.siparisNo)}</b><div class="muted" style="font-size:.75rem">${pzTarih(p.s.siparisTarihi)}</div></td><td>${esc(PZ_DURUM[p.s.durum]||p.s.durum)}</td>
-        <td style="font-size:.85rem">${p.es.concat(p.eslesmeyen).map(o=>`${esc(o.x.adet)} × ${esc((o.u&&o.u.ad)||o.x.ad)}`).join("<br>")}</td><td style="font-size:.85rem">${esc(p.durumMetin)}</td><td style="font-size:.82rem">${ne(p)}</td></tr>`).join("")}
+        <td style="font-size:.85rem">${p.es.concat(p.eslesmeyen).map(o=>`${esc(o.x.adet)} × ${esc((o.u&&o.u.ad)||o.x.ad)}`).join("<br>")}</td><td style="font-size:.85rem">${esc(p.durumMetin)}</td><td style="font-size:.82rem">${ne(p)}</td>
+        <td style="font-size:.82rem">${p.s.durum==="Delivered"?(k=>`<button class="small ghost" data-act="pzFatura" data-id="${esc(p.s.paketId)}" type="button">🧾 ${k?(k.ortam==="canli"?"Kesildi":"Test ✓"):"Taslak"}</button>`)(pzFatKayit(p.s.paketId)):`<span class="muted">teslimde</span>`}</td></tr>`).join("")}
     </tbody></table></div>`:""}</div>`}
+/* ---------- Teslim edilen siparişin e-Faturası (Trendyol e-Faturam, köprü üzerinden) ----------
+   Taslak siparişten hazırlanır (tutarlar kuruş, fiyatlar KDV dahil; satırlar müşterinin ödediği toplama orantılanır).
+   DENEME AŞAMASI: gönderim yalnızca köprü TEST ortamındayken açıktır; canlı ortamda gerçek fatura kesilmez.
+   Sonuç ayar/tyfat-<paketId> kaydında tutulur (satış kaydından ayrı; böylece sipariş işleme onu silmez). */
+const pzKurus=v=>Math.round((Number(v)||0)*100);
+function pzFaturaVeri(s){
+  const sat=(s.satirlar||[]).filter(x=>Number(x.adet)>0).map(x=>{const u=pzKimlikUrun(x);let kd=Number(x.kdvOran);if(!kd)kd=Number(u&&u.kdvOran)||20;return {ad:String((u&&u.ad)||x.ad||"Ürün").trim(),adet:Number(x.adet),kdv:kd,dahil:pzKurus((Number(x.birimFiyat)||0)*Number(x.adet))}});
+  const ham=sat.reduce((a,b)=>a+b.dahil,0),hedef=pzKurus(s.toplam);
+  if(hedef>0&&ham>0&&hedef!==ham){let kalan=hedef;sat.forEach((x,i)=>{x.dahil=i===sat.length-1?kalan:Math.round(x.dahil*hedef/ham);kalan-=x.dahil})}
+  const vkn=String(s.vergiNo||"").replace(/\D/g,"")||String(s.tckn||"").replace(/\D/g,"")||"11111111111";
+  return {satirlar:sat.filter(x=>x.dahil>0),alici:{ad:String(s.firma||s.faturaAd||s.musteri||"").trim(),vkn,il:s.il||"",ilce:s.ilce||"",adres:s.adres||"",vergiDairesi:s.vergiDairesi||"",eposta:s.eposta||""},
+    tip:/^\d{10}$/.test(vkn)?"EFATURA":"EARSIV",no:s.siparisNo}}
+function pzFaturaGovde(f){
+  const muaf={taxExemptionReasonCode:351,taxExemptionReason:"KDV - İstisna Olmayan Diğer"};const vergiler=new Map();let matrahTop=0,kdvTop=0;
+  const invoiceLines=f.satirlar.map(x=>{const matrah=Math.round(x.dahil/(1+x.kdv/100)),kdv=x.dahil-matrah;matrahTop+=matrah;kdvTop+=kdv;
+    const v=vergiler.get(x.kdv)||{taxableAmount:0,taxAmount:0};v.taxableAmount+=matrah;v.taxAmount+=kdv;vergiler.set(x.kdv,v);
+    const alt=Object.assign({taxableAmount:matrah,taxAmount:kdv,taxType:"KDV",percent:x.kdv,name:"KDV"},x.kdv===0?muaf:{});
+    return {unitCode:"C62",quantity:x.adet,itemName:x.ad.slice(0,250),unitPriceAmount:Math.round(matrah/x.adet*10000)/10000,totalAmount:matrah,taxableAmount:matrah,taxAmount:kdv,taxPercent:x.kdv,taxName:"KDV",totalDiscountAmount:0,totalTax:{totalTaxAmount:kdv,subTotalTaxes:[alt]}}});
+  const a=f.alici;const sahis=a.vkn.length===11,parca=a.ad.split(/\s+/).filter(Boolean);
+  const alici={taxId:a.vkn,countryCode:"TR",city:String(a.il).trim(),address:String(a.adres).trim().slice(0,255),name:sahis&&parca.length>1?parca.slice(0,-1).join(" "):a.ad.slice(0,127)};
+  if(sahis&&parca.length>1)alici.surname=parca[parca.length-1];if(String(a.ilce).trim())alici.district=String(a.ilce).trim();
+  if(String(a.vergiDairesi).trim().length>=2)alici.taxOffice=String(a.vergiDairesi).trim();
+  const ep=String(a.eposta).trim().toLowerCase();if(/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(ep))alici.email=ep;
+  const sim=new Date(),iki=n=>String(n).padStart(2,"0");const issuedAt=`${today()}T${iki(sim.getHours())}:${iki(sim.getMinutes())}:${iki(sim.getSeconds())}`;
+  return {autoInvoiceId:true,companyId:0,userId:0,source:"PORTAL",localReferenceId:("TY-"+f.no).slice(0,127),recipientInfo:alici,currencyInfo:{currency:"TRY"},
+    invoiceInfo:{invoiceType:f.tip==="EFATURA"?"TEMELFATURA":"EARSIVFATURA",invoiceTypeCode:"SATIS"},invoiceLines,issuedAt,
+    totalTax:{totalTaxAmount:kdvTop,subTotalTaxes:[...vergiler.entries()].sort((x,y)=>x[0]-y[0]).map(([o,v])=>Object.assign({taxableAmount:v.taxableAmount,taxAmount:v.taxAmount,taxType:"KDV",percent:o,name:"KDV"},o===0?muaf:{}))},
+    invoiceTotal:{lineExtensionAmount:matrahTop,taxExclusiveAmount:matrahTop,taxInclusiveAmount:matrahTop+kdvTop,payableAmount:matrahTop+kdvTop,allowanceTotalAmount:0},
+    notes:[("Trendyol sipariş no: "+f.no).slice(0,250)]}}
+function pzFaturaHatasi(y){if(!y)return "Bilinmeyen hata";if(typeof y==="string")return y.slice(0,300);
+  if(/prefix-not-found/.test(y.type||""))return "e-Faturam hesabında varsayılan fatura seri ön eki tanımlı değil (portalda e-Arşiv / e-Fatura seri ayarları).";
+  if(Array.isArray(y.errors)&&y.errors.length)return y.errors.map(e=>(String(e.field||"").split(".").pop()||"")+": "+(e.defaultMessage||e.message||e.code||"")).join(" · ");
+  return [y.title,y.detail,y.message].filter(Boolean).join(" — ")||JSON.stringify(y).slice(0,300)}
+const pzFatKayit=paketId=>((state.ayarEk||{})["tyfat-"+paketId])||null;
+async function pzFaturaModal(paketId){
+  const s=(pz.siparisler||[]).find(x=>x.paketId===paketId);if(!s){toast("Sipariş listede yok; önce siparişleri getirin");return}
+  const f=pzFaturaVeri(s);const kay=pzFatKayit(paketId);let govde=null,hata="";try{govde=pzFaturaGovde(f)}catch(e){hata=e.message||String(e)}
+  const tl=k=>money(k/100);const tum=govde?govde.invoiceTotal.payableAmount:0;
+  const eksik=[!f.alici.il&&"il",!f.alici.ilce&&"ilçe",!f.alici.adres&&"adres",!f.alici.ad&&"ad / ünvan"].filter(Boolean);
+  openModal(`<div class="section-head"><h2>🧾 e-Fatura taslağı · sipariş ${esc(s.siparisNo)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    ${kay?`<div class="notice" style="font-size:.85rem">${kay.ortam==="canli"?"<b>Bu sipariş için fatura kesildi:</b>":"<b>Test ortamında denendi:</b>"} ${esc(kay.invoiceId||"")} · ${esc(kay.tip==="EFATURA"?"e-Fatura":"e-Arşiv")} · ${new Date(kay.zaman).toLocaleString("tr-TR")}</div>`:""}
+    <div class="panel" style="padding:12px;gap:4px;font-size:.88rem">
+      <div><b>${esc(f.tip==="EFATURA"?"e-Fatura":"e-Arşiv")}</b> <span class="muted">(gönderimde mükellef sorgusuyla kesinleşir)</span></div>
+      <div><b>Alıcı:</b> ${esc(f.alici.ad||"—")} · ${esc(f.alici.vkn)}${f.alici.vergiDairesi?" · "+esc(f.alici.vergiDairesi):""}</div>
+      <div class="muted">${esc([f.alici.adres,f.alici.ilce,f.alici.il].filter(Boolean).join(" · "))}</div>
+      ${eksik.length?`<div class="neg">Eksik bilgi: ${eksik.join(", ")}</div>`:""}</div>
+    ${govde?`<div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Adet</th><th class="num">KDV</th><th class="num">Matrah</th><th class="num">KDV tutarı</th><th class="num">Toplam</th></tr></thead><tbody>
+      ${govde.invoiceLines.map(l=>`<tr><td>${esc(l.itemName)}</td><td class="num">${l.quantity}</td><td class="num">%${l.taxPercent}</td><td class="num">${tl(l.totalAmount)}</td><td class="num">${tl(l.taxAmount)}</td><td class="num"><b>${tl(l.totalAmount+l.taxAmount)}</b></td></tr>`).join("")}
+      <tr><td colspan="3"><b>Genel toplam</b></td><td class="num">${tl(govde.invoiceTotal.taxExclusiveAmount)}</td><td class="num">${tl(govde.totalTax.totalTaxAmount)}</td><td class="num"><b>${tl(tum)}</b></td></tr></tbody></table></div>`:`<div class="err">${esc(hata)}</div>`}
+    <div class="muted" style="font-size:.82rem">Toplam, müşterinin ödediği tutara (${money(s.toplam)}) eşitlenir. <b>Deneme aşamasında</b> gönderim yalnızca e-Fatura köprüsü <b>test ortamındayken</b> açılır; gerçek fatura kesilmez. Bu mağazanın faturalarını şu an başka bir program kesiyorsa canlıya geçmeden önce o programdaki fatura kesimi kapatılmalı (aynı siparişe iki fatura kesilmesin).</div>
+    <div id="pfKopru" class="muted" style="font-size:.85rem">Köprü kontrol ediliyor…</div><div class="err" id="pfErr"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" class="primary" data-m="gonder" disabled>Test ortamına gönder</button></div>`,
+  async root=>{root.style.maxWidth="860px";const kb=root.querySelector("#pfKopru"),gb=root.querySelector("[data-m=gonder]"),er=root.querySelector("#pfErr");let durum=null;
+    const p=efatProfil();
+    if(!p)kb.innerHTML=`Bu firmanın e-Faturam hesabı seçilmemiş (<b>Hesabım › Pazaryeri ve e-Fatura ayarları</b>).`;
+    else{try{durum=await efkIstek("/durum",{},3000)}catch(e){}
+      if(!durum)kb.textContent="e-Fatura köprüsüne bu cihazdan ulaşılamadı (köprü dükkan bilgisayarında çalışır).";
+      else if(durum.profil!==p||!durum.kurulu)kb.innerHTML=`Köprüde bu firmanın hesabı kurulu değil (<b>${p==="seyfi"?"KURULUM-SEYFI.cmd":"KURULUM-ARVENATO.cmd"}</b>).`;
+      else if(durum.ortam==="canli")kb.innerHTML=`Köprü <b>CANLI</b> ortamda kurulu. Deneme aşamasında canlıya gönderim kapalı; test için köprü kurulumunda <b>test ortamı</b> seçilmeli.`;
+      else{kb.innerHTML=`Köprü <b>test ortamında</b> (${esc(durum.eposta||"")}). Gönderilen fatura gerçek değildir.`;gb.disabled=!govde||!!eksik.length;if(eksik.length)kb.innerHTML+=` <span class="neg">Eksik bilgiler tamamlanmadan gönderilemez.</span>`}}
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="gonder"||!durum||durum.ortam==="canli")return;
+      er.textContent="";b.disabled=true;
+      try{let tip=f.tip;b.textContent="Mükellef sorgulanıyor…";
+        if(f.alici.vkn!=="11111111111"){let mk=null;try{mk=await efkIstek("/mukellef",{vkn:f.alici.vkn},15000)}catch(_){}
+          if(Array.isArray(mk))tip=mk.some(x=>!x.deletedAt&&(x.aliasType||"INVOICE")==="INVOICE")?"EFATURA":"EARSIV"}else tip="EARSIV";
+        const g=pzFaturaGovde(Object.assign({},f,{tip}));b.textContent="Gönderiliyor…";
+        const r=await efkIstek("/kes",{tip,ref:"TY-"+s.siparisNo,govde:JSON.stringify(g)},90000);const y=r.yanit||{};
+        if(r.ortam==="canli")throw new Error("Köprü canlı ortamda yanıt verdi; kayıt yapılmadı. Lütfen köprü ayarını kontrol edin.");
+        if(!(r.kod>=200&&r.kod<300)||!y.invoiceId)throw new Error("Trendyol faturayı kabul etmedi ("+r.kod+"): "+pzFaturaHatasi(y));
+        await api.setDoc("ayar","tyfat-"+paketId,{siparisNo:s.siparisNo,tip,invoiceId:y.invoiceId,uuid:y.invoiceUuid||"",ortam:r.ortam||"test",zaman:Date.now(),toplam:g.invoiceTotal.payableAmount/100});
+        closeModal();toast("Test ortamında fatura oluştu ✓ "+y.invoiceId);render()}
+      catch(err){er.textContent=err.message||String(err);b.textContent="Test ortamına gönder";b.disabled=false}})});
+}
 const pzTur=w=>w.col==="stokHareketleri"?"stok":String(w.id).startsWith("tyk-")?"kom":"satis";
 const pzSay=(l,t)=>l.filter(w=>pzTur(w)===t).length;
 // Hakediş kayıtlarını (başlangıçtan bugüne, en fazla 90 gün) okuyup önbelleğe alır; okunamazsa komisyon kayıtlarına dokunulmaz
@@ -3683,6 +3757,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzIsle")pzSiparisIsle();
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
+  else if(a==="pzFatura")pzFaturaModal(id);
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
   else if(a==="fTemizle"){ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
   else if(a==="fSekme"){ui.fTur=id==="satis"?"satis":"alis";fatSecim.clear();render()}
