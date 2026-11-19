@@ -2850,7 +2850,7 @@ function tdCanliHtml(){
    "arvenato-pazaryeri" Supabase fonksiyonu Trendyol'dan yalnızca okur (sipariş, iade, hakediş).
    Bu aşamada hiçbir şey muhasebeye işlenmez ve pazaryerine hiçbir değişiklik gönderilmez. */
 const PZ_FONK="arvenato-pazaryeri";
-const pz={sekme:"siparis",yuk:"",hata:"",siparisler:null,hakedis:null,bag:null,zaman:0};
+const pz={sekme:"siparis",yuk:"",hata:"",siparisler:null,hakedis:null,bag:null,zaman:0,deneme:null};
 const PZ_DURUM={Awaiting:"Ödeme bekleniyor",Created:"Yeni",Picking:"Hazırlanıyor",Invoiced:"Faturalandı",Shipped:"Kargoda",AtCollectionPoint:"Teslimat noktasında",Delivered:"Teslim edildi",UnDelivered:"Teslim edilemedi",Cancelled:"İptal",Returned:"İade",UnSupplied:"Tedarik edilemedi"};
 const PZ_ISLEM={Sale:"Satış",Return:"İade",Discount:"İndirim",DiscountCancel:"İndirim iptali",Coupon:"Kupon",CouponCancel:"Kupon iptali",ProvisionPositive:"Provizyon +",ProvisionNegative:"Provizyon −",ManualRefund:"Manuel iade",ManualRefundCancel:"Manuel iade iptali",TyDiscount:"Trendyol indirimi",TyDiscountCancel:"Trendyol indirimi iptali",TyCoupon:"Trendyol kuponu",TyCouponCancel:"Trendyol kuponu iptali",SellerRevenuePositive:"Satıcı geliri +",SellerRevenueNegative:"Satıcı geliri −",CommissionPositive:"Komisyon +",CommissionNegative:"Komisyon −",DeliveryFee:"Kargo bedeli",DeliveryFeeCancel:"Kargo bedeli iptali",Stoppage:"Stopaj",CashAdvance:"Erken ödeme",WireTransfer:"Ödeme (havale)",IncomingTransfer:"Gelen havale",ReturnInvoice:"İade faturası",CommissionAgreementInvoice:"Komisyon faturası",PaymentOrder:"Ödeme emri",DeductionInvoices:"Kesinti faturası",FinancialItem:"Diğer finansal kalem"};
 const pzTarih=t=>t?new Date(Number(t)).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
@@ -2860,7 +2860,62 @@ async function pzCagir(govde){
   if(data&&data.hata)throw new Error(data.hata);
   return data;
 }
+/* Deneme ürünleri: yalnızca izinli listedeki ürünlerin Trendyol stok/fiyatını göster ve onaylı gönder */
+function pzDenemeKodlar(){return (((state.ayarEk||{}).pazaryeriTest||{}).kodlar||[])}
+function pzArvUrun(t){const kods=[t.kod,t.barkod,t.stokKodu].filter(Boolean).map(String);return state.urunler.find(u=>kods.includes(String(u.barkod||""))||kods.includes(String(u.kod||"")))||null}
+async function pzDenemeGetir(){
+  const kodlar=pzDenemeKodlar();pz.deneme=pz.deneme||{};
+  if(!kodlar.length){pz.deneme={liste:[]};render();return}
+  pz.hata="";pz.yuk="Deneme ürünleri Trendyol'dan okunuyor…";render();
+  try{const r=await pzCagir({islem:"urunBul",kodlar});pz.deneme={liste:r.urunler||[],zaman:Date.now(),sonuc:(pz.deneme&&pz.deneme.sonuc)||{}}}
+  catch(e){pz.hata=e.message||String(e)}
+  pz.yuk="";render()}
+function pzDenemeHtml(){
+  const kodlar=pzDenemeKodlar();const d=pz.deneme;
+  const bilgi=`<div class="notice" style="font-size:.85rem"><b>Yalnızca bu listedeki ürünlere</b> stok ve fiyat gönderilebilir. Listeyi <b>Hesabım › Pazaryeri ve e-Fatura ayarları</b>'ndan değiştirebilirsiniz. Gönderim öncesi her seferinde onay istenir; Trendyol aynı isteği 15 dakika içinde tekrar kabul etmez.</div>`;
+  if(!kodlar.length)return bilgi+`<div class="empty">Deneme ürünü listesi boş.</div>`;
+  if(!d||!d.liste)return bilgi+`<div class="empty">${kodlar.length} deneme ürünü tanımlı. Görmek için <b>📡 Trendyol'dan getir</b>'e basın.</div>`;
+  return bilgi+`<div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Trendyol stok</th><th class="num">Trendyol fiyat</th><th class="num">Arvenato stok</th><th>Gönderilecek</th><th></th></tr></thead><tbody>
+    ${d.liste.map((t,i)=>{if(t.bulunamadi)return `<tr><td colspan="6"><b>${esc(t.kod)}</b> — <span class="neg">Trendyol'da bulunamadı</span></td></tr>`;
+      const u=pzArvUrun(t);const am=u?stokMiktar(u):null;const s=(d.sonuc||{})[t.barkod];
+      return `<tr><td><b>${esc(t.ad)}</b><div class="muted" style="font-size:.78rem;font-family:var(--font-num)">${esc(t.barkod)}${t.stokKodu&&t.stokKodu!==t.barkod?" · "+esc(t.stokKodu):""}</div>${t.satista?"":`<span class="chip alis">satışa kapalı</span>`}</td>
+        <td class="num"><b>${fmtMiktar(t.stok)}</b></td><td class="num">${money(t.satis)}${t.liste&&t.liste!==t.satis?`<div class="muted" style="font-size:.75rem;text-decoration:line-through">${money(t.liste)}</div>`:""}</td>
+        <td class="num">${u?fmtMiktar(am):`<span class="muted">eşleşmedi</span>`}</td>
+        <td><div style="display:grid;grid-template-columns:repeat(3,minmax(70px,1fr));gap:4px;font-size:.75rem">
+          <label>Stok<input id="dn_s_${i}" type="number" min="0" max="20000" step="1" value="${u?Math.max(0,Math.round(am)):t.stok}" style="width:100%"></label>
+          <label>Satış ₺<input id="dn_f_${i}" type="number" min="0" step="0.01" value="${t.satis}" style="width:100%"></label>
+          <label>Liste ₺<input id="dn_l_${i}" type="number" min="0" step="0.01" value="${t.liste||t.satis}" style="width:100%"></label></div></td>
+        <td><button class="small primary" data-act="pzDnGonder" data-id="${i}" type="button">Trendyol'a gönder</button>${s?`<div style="font-size:.75rem;margin-top:4px" class="${s.hata?"neg":"pos"}">${esc(s.metin)}</div>`:""}</td></tr>`}).join("")}
+  </tbody></table></div><div class="muted" style="font-size:.8rem">“Arvenato stok” bu firmadaki ürün kaydının stoğudur (barkod veya stok koduyla eşleşir). Gönderilecek stok varsayılan olarak Arvenato stoğudur; değiştirebilirsiniz.</div>`}
+async function pzDenemeGonder(i){
+  const t=pz.deneme&&pz.deneme.liste[i];if(!t)return;
+  const g=id=>document.getElementById(id);const stok=Number(g("dn_s_"+i).value),satis=Number(g("dn_f_"+i).value),liste=Number(g("dn_l_"+i).value||satis);
+  if(!Number.isInteger(stok)||stok<0||stok>20000){toast("Stok 0 ile 20.000 arasında tam sayı olmalı");return}
+  if(!(satis>0)||!(liste>0)||liste<satis){toast("Fiyatları kontrol edin (liste fiyatı satış fiyatından küçük olamaz)");return}
+  const degisim=t.satis>0&&Math.abs(satis-t.satis)/t.satis>0.5;
+  openModal(`<div class="section-head"><h2>Trendyol'a gönderilsin mi?</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="panel" style="padding:12px;gap:6px"><b>${esc(t.ad)}</b><div class="muted" style="font-size:.8rem;font-family:var(--font-num)">${esc(t.barkod)}</div>
+      <table><tbody><tr><td>Stok</td><td class="num">${fmtMiktar(t.stok)} → <b>${fmtMiktar(stok)}</b></td></tr><tr><td>Satış fiyatı</td><td class="num">${money(t.satis)} → <b>${money(satis)}</b></td></tr><tr><td>Liste fiyatı</td><td class="num">${money(t.liste)} → <b>${money(liste)}</b></td></tr></tbody></table></div>
+    ${degisim?`<div class="notice"><b>Dikkat:</b> fiyat %50'den fazla değişiyor.</div><label style="display:flex;gap:8px;align-items:center"><input id="dnBuyuk" type="checkbox"> Evet, bu fiyat değişimini onaylıyorum</label>`:""}
+    <div class="muted" style="font-size:.82rem">Bu değişiklik <b>Seyfi'nin canlı Trendyol mağazasına</b> gönderilir. Yengeç bu ürünün stok/fiyatını güncelliyorsa birkaç dakika içinde üstüne yazabilir.</div>
+    <div class="err" id="dnErr"></div><div class="muted" id="dnDurum"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="gonder">Evet, gönder</button></div>`,
+  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="gonder")return;
+    const er=root.querySelector("#dnErr"),du=root.querySelector("#dnDurum");er.textContent="";
+    if(degisim&&!root.querySelector("#dnBuyuk").checked){er.textContent="Büyük fiyat değişimini onaylamak için kutuyu işaretleyin.";return}
+    b.disabled=true;du.textContent="Gönderiliyor…";
+    try{const r=await pzCagir({islem:"stokFiyat",kalemler:[{barkod:t.barkod,stok,satis,liste}],buyukDegisim:degisim});
+      if(!r.batchId)throw new Error("Trendyol işlem numarası dönmedi");
+      let son=null;for(let k=0;k<12;k++){du.textContent="Trendyol işliyor… ("+(k+1)+")";await new Promise(x=>setTimeout(x,4000));
+        son=await pzCagir({islem:"batch",batchId:r.batchId});if(/COMPLETED|FAILED/i.test(son.durum||""))break}
+      const kal=(son&&son.kalemler||[])[0]||{};const basarili=son&&/COMPLETED/i.test(son.durum||"")&&!son.hatali&&!/FAIL/i.test(kal.durum||"");
+      const metin=basarili?"✓ Trendyol işledi ("+new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+")":son?("✕ "+(((kal.hatalar||[]).join(", "))||son.durum||"işlenemedi")):"⏳ İşlem sürüyor; birkaç dakika sonra Trendyol'dan getir'e basın";
+      pz.deneme.sonuc=pz.deneme.sonuc||{};pz.deneme.sonuc[t.barkod]={metin,hata:!basarili&&!!son};
+      closeModal();toast(metin);await pzDenemeGetir()}
+    catch(err){b.disabled=false;du.textContent="";er.textContent=(err.message||String(err))}}));
+}
 async function pzGetir(){
+  if(pz.sekme==="deneme")return pzDenemeGetir();
   if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
   const bugun=ui.pzGun==="bugun";const gun=bugun?1:Math.min(90,Math.max(1,Number(ui.pzGun)||14));const simdi=Date.now(),GUN=86400000;
   const ilk=bugun?new Date().setHours(0,0,0,0):simdi-gun*GUN;
@@ -2953,6 +3008,12 @@ async function pazaryeriAyarModal(){
         ${t?"":`<details style="font-size:.85rem"><summary style="cursor:pointer">Bilgiler daha önce Supabase'e (Secrets) girildiyse</summary><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px"><div class="muted">Supabase › Edge Functions › Secrets'taki <b>TRENDYOL_*</b> bilgileri tek bir mağazaya aittir. Yalnızca o mağazanın firması açıkken bağlayın.</div><button class="small" data-m="secret" type="button">Secrets'taki bilgileri “${esc(state.firma)}” firmasına bağla</button></div></details>`}
       </div>
       <div class="panel" style="padding:12px;gap:8px">
+        <b>Deneme ürünleri (stok / fiyat gönderimi açık)</b>
+        <div class="muted" style="font-size:.82rem">Trendyol'a stok ve fiyat <b>yalnızca bu listedeki ürünler için</b> gönderilebilir (kontrol sunucuda yapılır). Her satıra bir barkod ya da stok kodu yazın. Bu ürünleri başka bir programda (ör. Yengeç) stok/fiyat güncellemesinden çıkarmayı unutmayın; yoksa iki program birbirinin üstüne yazar.</div>
+        <textarea id="paTest" rows="5" style="font-family:var(--font-num)" placeholder="SYFLİZ4SET1">${esc(((state.ayarEk||{}).pazaryeriTest||{}).kodlar?.join("\n")||"")}</textarea>
+        <div class="filters"><button class="small primary" data-m="testKaydet" type="button">Listeyi kaydet</button><span class="muted" style="font-size:.82rem">${(((state.ayarEk||{}).pazaryeriTest||{}).kodlar||[]).length} ürün</span></div>
+      </div>
+      <div class="panel" style="padding:12px;gap:8px">
         <b>e-Fatura köprüsü (Trendyol e-Faturam)</b>
         <div class="muted" style="font-size:.82rem">Dükkan bilgisayarındaki köprüde bu firmanın hangi e-Faturam hesabının kullanılacağını seçin. Gelen/giden faturalar ve kalem bilgileri bu hesaptan alınır.</div>
         <div class="field" style="max-width:420px"><label for="paProfil">Bu firmanın e-Faturam hesabı</label><select id="paProfil"><option value="yok" ${!p?"selected":""}>Kullanılmıyor</option>${Object.entries(EFAT_PROFILLER).map(([k,v])=>`<option value="${k}" ${p===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
@@ -2977,6 +3038,9 @@ async function pazaryeriAyarModal(){
         await durumYukle();ciz(root);kopruBak();du().textContent="Kaydedildi. Bağlantı deneniyor…";
         try{const d=await pzCagir({islem:"durum"});du().textContent="Bağlantı tamam ✓ "+(d.pazaryerleri[0].son14GunSiparis!=null?"· son 14 günde "+d.pazaryerleri[0].son14GunSiparis+" sipariş":"")}catch(err){du().textContent="";er().textContent="Bilgiler kaydedildi ama Trendyol'a bağlanılamadı: "+(err.message||err)}
         return}
+      if(m==="testKaydet"){const kodlar=[...new Set(root.querySelector("#paTest").value.split(/[\r\n,;]+/).map(x=>x.trim()).filter(Boolean))];
+        if(kodlar.length>20){er().textContent="Deneme listesine en fazla 20 ürün eklenebilir.";return}
+        try{await api.setDoc("ayar","pazaryeriTest",{kodlar,guncelleme:Date.now()});pz.deneme=null;du().textContent=kodlar.length+" deneme ürünü kaydedildi.";ciz(root);kopruBak()}catch(err){er().textContent=errMsg(err)}return}
       if(m==="dene"){b.disabled=true;try{const d=await pzCagir({islem:"durum"});du().textContent="Bağlantı tamam ✓ · son 14 günde "+d.pazaryerleri[0].son14GunSiparis+" sipariş"}catch(err){er().textContent=err.message||String(err)}b.disabled=false;return}
       if(m==="sil"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Kaldırmayı onayla";return}
         const {error}=await sb.rpc("pazaryeri_hesap_sil",{p_firma:firmaId,p_pazaryeri:"trendyol"});if(error){er().textContent=sbMesaj(error);return}
@@ -2990,11 +3054,12 @@ function vPazaryeri(){
   const ust=`<section class="section-head"><h2>Pazaryeri · Trendyol</h2><div class="filters">
       <select id="fPzGun" data-filter="pzGun" aria-label="Dönem"><option value="bugun" ${ui.pzGun==="bugun"?"selected":""}>Bugün</option>${[7,14,30,60,90].map(g=>`<option value="${g}" ${Number(ui.pzGun||14)===g?"selected":""}>Son ${g} gün</option>`).join("")}</select>
       <button class="primary small" data-act="pzGetir" type="button" ${pz.yuk?"disabled":""}>📡 Trendyol'dan getir</button></div></section>`;
-  const sekmeler=`<div class="filters"><button class="small ${pz.sekme==="siparis"?"primary":""}" data-act="pzSekme" data-id="siparis" type="button">Siparişler</button><button class="small ${pz.sekme==="hakedis"?"primary":""}" data-act="pzSekme" data-id="hakedis" type="button">Hakediş / komisyon</button>
+  const sekmeler=`<div class="filters"><button class="small ${pz.sekme==="siparis"?"primary":""}" data-act="pzSekme" data-id="siparis" type="button">Siparişler</button><button class="small ${pz.sekme==="hakedis"?"primary":""}" data-act="pzSekme" data-id="hakedis" type="button">Hakediş / komisyon</button><button class="small ${pz.sekme==="deneme"?"primary":""}" data-act="pzSekme" data-id="deneme" type="button">🧪 Deneme ürünleri · stok/fiyat</button>
     ${pz.bag?`<span class="muted" style="font-size:.85rem">Satıcı ${esc(pz.bag.pazaryerleri[0].saticiId)} · bağlantı tamam${pz.zaman?" · "+new Date(pz.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}</span>`:""}</div>`;
   let govde="";
   if(pz.yuk)govde=`<div class="muted">⏳ ${esc(pz.yuk)}</div>`;
   else if(pz.hata)govde=`<div class="err">${esc(pz.hata)}</div>`;
+  else if(pz.sekme==="deneme")govde=pzDenemeHtml();
   else if(pz.sekme==="siparis"){
     const l0=pz.siparisler;
     if(!l0)govde=`<div class="empty">Siparişleri görmek için <b>📡 Trendyol'dan getir</b>'e basın.</div>`;
@@ -3404,7 +3469,8 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uTumExcel")urunTumExcel();
   else if(a==="uKolSira"){const c=URUN_KOL.find(x=>x.k===id);if(c){ui.sSira=ui.sSira===c.artan?c.azalan:c.artan;ui.sSayfa=1;try{localStorage.setItem("urun-sira",ui.sSira)}catch(err){}render()}}
   else if(a==="uKolTemizle"){ui.sKol={};render()}
-  else if(a==="pzSekme"){pz.sekme=id;pz.hata="";render();if(pz.bag&&(id==="siparis"?!pz.siparisler:!pz.hakedis))pzGetir()}
+  else if(a==="pzSekme"){pz.sekme=id;pz.hata="";render();if(id==="deneme"?!(pz.deneme&&pz.deneme.liste):(pz.bag&&(id==="siparis"?!pz.siparisler:!pz.hakedis)))pzGetir()}
+  else if(a==="pzDnGonder")pzDenemeGonder(Number(id));
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
   else if(a==="fTemizle"){ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
   else if(a==="fSekme"){ui.fTur=id==="satis"?"satis":"alis";fatSecim.clear();render()}
@@ -3528,7 +3594,7 @@ function firmaOlusturEkrani(ek){kapiGoster(`<h2>${ek?"Yeni firma ekle":"Firmanı
     if(yeniId)try{localStorage.setItem("secili-firma",yeniId)}catch(err){}
     await firmaSec()})}
 async function firmaAc(d){const degisti=firmaId&&firmaId!==d.firma_id;firmaId=d.firma_id;firmaRol=d.rol;try{localStorage.setItem("secili-firma",firmaId)}catch(e){}kapiKapat();
-  if(degisti){urunSecim.clear();fatSecim.clear();pz.siparisler=null;pz.hakedis=null;pz.bag=null;pz.hata="";pzAyar=null}document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
+  if(degisti){urunSecim.clear();fatSecim.clear();pz.siparisler=null;pz.hakedis=null;pz.bag=null;pz.hata="";pz.deneme=null;pzAyar=null}document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
 async function cikisYap(){try{if(kanal)sb.removeChannel(kanal);kanal=null;await sb.auth.signOut()}catch(e){}oturum=null;firmaId=null;for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";girisEkrani()}
 function idUret(){const a="abcdefghijklmnopqrstuvwxyz0123456789";let s="";for(const x of crypto.getRandomValues(new Uint8Array(20)))s+=a[x%36];return s}
 let _rt=null;function renderSonra(){clearTimeout(_rt);_rt=setTimeout(render,120)}
