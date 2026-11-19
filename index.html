@@ -2738,22 +2738,54 @@ async function pzGetir(){
   }catch(e){pz.hata=e.message||String(e)}
   pz.yuk="";render();
 }
-// Trendyol'daki onaylı ürünleri okur (yalnızca okuma) ve Yengeç ile aynı "önce göster, sonra aktar" ekranını açar
+// Trendyol'dan ürün çekme (yalnızca okuma). Önce seçim: barkodla tek/birkaç ürün ya da toplu (satıştakiler, stoğu olanlar).
+// Sonra Yengeç ile aynı "önce göster, sonra aktar" ekranı açılır.
 let tyUrunCekiliyor=false;
-async function trendyolUrunCek(){
+function trendyolUrunCek(){
   if(tyUrunCekiliyor)return;if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}
   if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
-  tyUrunCekiliyor=true;openModal(`<div class="section-head"><h2>Trendyol'dan ürün çek</h2></div><div class="muted" id="tyuDurum">Trendyol'a bağlanılıyor…</div>`,()=>{});
-  const durum=t=>{const d=document.getElementById("tyuDurum");if(d)d.textContent=t};
-  try{const tum=[];let tok="";
-    for(let s=0;s<500;s++){const r=await pzCagir({islem:"urunler",sayfa:s,sonrakiToken:tok});tum.push(...(r.urunler||[]));durum(`Trendyol ürünleri okunuyor… ${tum.length.toLocaleString("tr-TR")}${r.toplam?" / "+Number(r.toplam).toLocaleString("tr-TR")+" içerik":""}`);
-      if(s+1>=(r.toplamSayfa||1)&&!(r.sonrakiToken&&s>=99))break;tok=s>=99?(r.sonrakiToken||""):"";if(s>=99&&!tok)break}
-    closeModal();
-    if(!tum.length){toast("Trendyol'da onaylı ürün bulunamadı");return}
-    yengecAktarModal(tum.map(u=>[u.tyId,u.ad,u.stokKodu,u.barkod,u.stok,u.fiyat,u.kdv,u.marka,u.kategori]),"trendyol")}
-  catch(e){const d=document.getElementById("tyuDurum");if(d)d.outerHTML=`<div class="err">${esc(e.message||String(e))}</div><div class="modal-foot"><button type="button" data-m="close">Kapat</button></div>`;
-    const kb=document.querySelector('#modalRoot [data-m=close]');if(kb)kb.addEventListener("click",()=>closeModal())}
-  finally{tyUrunCekiliyor=false}}
+  openModal(`<div class="section-head"><h2>Trendyol'dan ürün çek</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="filters"><button class="small primary" data-m="mod" data-v="barkod" type="button">Barkodla ürün çek</button><button class="small" data-m="mod" data-v="toplu" type="button">Toplu çek</button></div>
+    <div id="tyuBarkod" style="display:flex;flex-direction:column;gap:8px">
+      <div class="field"><label for="tyuBk">Barkod (birden fazlaysa her satıra bir barkod)</label><textarea id="tyuBk" rows="3" placeholder="8690826000011" style="font-family:var(--font-num)"></textarea></div>
+      <div class="muted" style="font-size:.82rem">Barkod okuyucuyla okutabilirsiniz; her okutmada alt satıra geçer.</div></div>
+    <div id="tyuToplu" hidden style="display:flex;flex-direction:column;gap:6px;font-size:.9rem">
+      <label style="display:flex;gap:8px;align-items:center"><input id="tyuSatis" type="checkbox" checked> Yalnızca satışta olan ürünler (arşivdeki, kilitli ve satışa kapalı ürünler alınmaz)</label>
+      <label style="display:flex;gap:8px;align-items:center"><input id="tyuStok" type="checkbox"> Yalnızca stoğu olan ürünler</label>
+      <div class="muted" style="font-size:.82rem">Trendyol'daki tüm onaylı ürünler okunur, seçtiğiniz şartlara uyanlar aktarım ekranına gelir.</div></div>
+    <div class="muted" id="tyuDurum" role="status" style="font-size:.85rem"></div><div class="err" id="tyuErr" role="alert"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="getir">Trendyol'dan getir</button></div>`,
+  root=>{let mod="barkod";
+    const modAyarla=m=>{mod=m;root.querySelector("#tyuBarkod").hidden=m!=="barkod";root.querySelector("#tyuToplu").hidden=m!=="toplu";root.querySelector("#tyuBarkod").style.display=m==="barkod"?"flex":"none";root.querySelector("#tyuToplu").style.display=m==="toplu"?"flex":"none";
+      root.querySelectorAll("[data-m=mod]").forEach(b=>b.classList.toggle("primary",b.dataset.v===m));if(m==="barkod")root.querySelector("#tyuBk").focus()};
+    modAyarla("barkod");
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;
+      if(a==="close"){if(!tyUrunCekiliyor)closeModal();return}
+      if(a==="mod"){modAyarla(b.dataset.v);return}
+      if(a!=="getir"||tyUrunCekiliyor)return;
+      const er=root.querySelector("#tyuErr"),du=root.querySelector("#tyuDurum");er.textContent="";
+      const barkodlar=[...new Set(root.querySelector("#tyuBk").value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean))];
+      if(mod==="barkod"&&!barkodlar.length){er.textContent="En az bir barkod yazın veya okutun.";return}
+      if(mod==="barkod"&&barkodlar.length>200){er.textContent="Barkodla en fazla 200 ürün çekilebilir; daha fazlası için Toplu çek'i kullanın.";return}
+      tyUrunCekiliyor=true;root.querySelectorAll("button,input,textarea").forEach(x=>x.disabled=true);
+      try{const tum=[];const bulunamayan=[];
+        if(mod==="barkod"){for(let i=0;i<barkodlar.length;i++){du.textContent=`Trendyol'da aranıyor… ${i+1} / ${barkodlar.length}`;
+            const r=await pzCagir({islem:"urunler",sayfa:0,barkod:barkodlar[i]});const l=(r.urunler||[]).filter(u=>!u.barkod||u.barkod===barkodlar[i]);
+            if(l.length)tum.push(...l);else bulunamayan.push(barkodlar[i])}}
+        else{let tok="";
+          for(let s=0;s<500;s++){const r=await pzCagir({islem:"urunler",sayfa:s,sonrakiToken:tok});tum.push(...(r.urunler||[]));du.textContent=`Trendyol ürünleri okunuyor… ${tum.length.toLocaleString("tr-TR")}${r.toplam?" / "+Number(r.toplam).toLocaleString("tr-TR")+" içerik":""}`;
+            if(s+1>=(r.toplamSayfa||1)&&!(r.sonrakiToken&&s>=99))break;tok=s>=99?(r.sonrakiToken||""):"";if(s>=99&&!tok)break}}
+        let liste=tum;
+        if(mod==="toplu"){if(root.querySelector("#tyuSatis").checked)liste=liste.filter(u=>u.satista!==false);if(root.querySelector("#tyuStok").checked)liste=liste.filter(u=>Number(u.stok)>0)}
+        tyUrunCekiliyor=false;
+        if(!liste.length){root.querySelectorAll("button,input,textarea").forEach(x=>x.disabled=false);du.textContent="";
+          er.textContent=mod==="barkod"?"Bu barkodla Trendyol'da onaylı ürün bulunamadı: "+bulunamayan.join(", "):(tum.length?"Seçtiğiniz şartlara uyan ürün yok ("+tum.length.toLocaleString("tr-TR")+" ürün okundu).":"Trendyol'da onaylı ürün bulunamadı.");return}
+        closeModal();
+        if(bulunamayan.length)toast("Trendyol'da bulunamayan barkod: "+bulunamayan.join(", "));
+        yengecAktarModal(liste.map(u=>[u.tyId,u.ad,u.stokKodu,u.barkod,u.stok,u.fiyat,u.kdv,u.marka,u.kategori]),"trendyol")}
+      catch(err){tyUrunCekiliyor=false;du.textContent="";er.textContent=err.message||String(err);root.querySelectorAll("button,input,textarea").forEach(x=>x.disabled=false)}});
+  });
+}
 function vPazaryeri(){
   const deneme=`<div class="notice"><b>Deneme modu (yalnızca okuma):</b> Trendyol'dan siparişler ve hakedişler okunur; pazaryerinde hiçbir şey değiştirilmez ve bu kayıtlar muhasebeye işlenmez. Arvenato'nun kendi mağazası bağlanınca siparişler satış olarak işlenecek.</div>`;
   const ust=`<section class="section-head"><h2>Pazaryeri · Trendyol</h2><div class="filters">
