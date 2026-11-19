@@ -2886,17 +2886,18 @@ function pzDenemeHtml(){
           <label>Satış ₺<input id="dn_f_${i}" type="number" min="0" step="0.01" value="${t.satis}" style="width:100%"></label>
           <label>Liste ₺<input id="dn_l_${i}" type="number" min="0" step="0.01" value="${t.liste||t.satis}" style="width:100%"></label></div></td>
         <td><button class="small primary" data-act="pzDnGonder" data-id="${i}" type="button">Trendyol'a gönder</button>${s?`<div style="font-size:.75rem;margin-top:4px" class="${s.hata?"neg":"pos"}">${esc(s.metin)}</div>`:""}</td></tr>`}).join("")}
-  </tbody></table></div><div class="muted" style="font-size:.8rem">“Arvenato stok” bu firmadaki ürün kaydının stoğudur (barkod veya stok koduyla eşleşir). Gönderilecek stok varsayılan olarak Arvenato stoğudur; değiştirebilirsiniz.</div>`}
+  </tbody></table></div><div class="muted" style="font-size:.8rem">“Arvenato stok” bu firmadaki ürün kaydının stoğudur (barkod veya stok koduyla eşleşir). Gönderilecek stok varsayılan olarak Arvenato stoğudur; değiştirirseniz Trendyol işledikten sonra programdaki stok ve satış fiyatı da gönderilen değere getirilir.</div>`}
 async function pzDenemeGonder(i){
   const t=pz.deneme&&pz.deneme.liste[i];if(!t)return;
   const g=id=>document.getElementById(id);const stok=Number(g("dn_s_"+i).value),satis=Number(g("dn_f_"+i).value),liste=Number(g("dn_l_"+i).value||satis);
   if(!Number.isInteger(stok)||stok<0||stok>20000){toast("Stok 0 ile 20.000 arasında tam sayı olmalı");return}
   if(!(satis>0)||!(liste>0)||liste<satis){toast("Fiyatları kontrol edin (liste fiyatı satış fiyatından küçük olamaz)");return}
-  const degisim=t.satis>0&&Math.abs(satis-t.satis)/t.satis>0.5;
+  const degisim=t.satis>0&&Math.abs(satis-t.satis)/t.satis>0.5;const u=pzArvUrun(t);const am=u?stokMiktar(u):null;
   openModal(`<div class="section-head"><h2>Trendyol'a gönderilsin mi?</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="panel" style="padding:12px;gap:6px"><b>${esc(t.ad)}</b><div class="muted" style="font-size:.8rem;font-family:var(--font-num)">${esc(t.barkod)}</div>
       <table><tbody><tr><td>Stok</td><td class="num">${fmtMiktar(t.stok)} → <b>${fmtMiktar(stok)}</b></td></tr><tr><td>Satış fiyatı</td><td class="num">${money(t.satis)} → <b>${money(satis)}</b></td></tr><tr><td>Liste fiyatı</td><td class="num">${money(t.liste)} → <b>${money(liste)}</b></td></tr></tbody></table></div>
     ${degisim?`<div class="notice"><b>Dikkat:</b> fiyat %50'den fazla değişiyor.</div><label style="display:flex;gap:8px;align-items:center"><input id="dnBuyuk" type="checkbox"> Evet, bu fiyat değişimini onaylıyorum</label>`:""}
+    ${u?((am!==stok||r2(Number(u.satisFiyat)||0)!==r2(satis))?`<div class="notice" style="font-size:.85rem">Trendyol işledikten sonra programda da güncellenir:${am!==stok?`<br>• Stok <b>${fmtMiktar(am)} → ${fmtMiktar(stok)}</b> (sayım kaydı düşülür)`:""}${r2(Number(u.satisFiyat)||0)!==r2(satis)?`<br>• Satış fiyatı <b>${money(Number(u.satisFiyat)||0)} → ${money(satis)}</b>`:""}</div>`:""):`<div class="notice" style="font-size:.85rem">Bu ürün programdaki bir ürünle eşleşmedi; yalnızca Trendyol güncellenir.</div>`}
     <div class="muted" style="font-size:.82rem">Bu değişiklik <b>Seyfi'nin canlı Trendyol mağazasına</b> gönderilir. Yengeç bu ürünün stok/fiyatını güncelliyorsa birkaç dakika içinde üstüne yazabilir.</div>
     <div class="err" id="dnErr"></div><div class="muted" id="dnDurum"></div>
     <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="gonder">Evet, gönder</button></div>`,
@@ -2910,6 +2911,8 @@ async function pzDenemeGonder(i){
         son=await pzCagir({islem:"batch",batchId:r.batchId});if(/COMPLETED|FAILED/i.test(son.durum||""))break}
       const kal=(son&&son.kalemler||[])[0]||{};const basarili=son&&/COMPLETED/i.test(son.durum||"")&&!son.hatali&&!/FAIL/i.test(kal.durum||"");
       const metin=basarili?"✓ Trendyol işledi ("+new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+")":son?("✕ "+(((kal.hatalar||[]).join(", "))||son.durum||"işlenemedi")):"⏳ İşlem sürüyor; birkaç dakika sonra Trendyol'dan getir'e basın";
+      if(basarili&&u){const fark=r2(stok-stokMiktar(u));if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(u.alisFiyat)||0,aciklama:"Trendyol'a gönderilen stok",hareketId:"",olusturma:Date.now()});
+        if(r2(Number(u.satisFiyat)||0)!==r2(satis)){const {id:_,...rest}=u;await api.setDoc("urunler",u.id,{...rest,satisFiyat:r2(satis)})}}
       pz.deneme.sonuc=pz.deneme.sonuc||{};pz.deneme.sonuc[t.barkod]={metin,hata:!basarili&&!!son};
       closeModal();toast(metin);await pzDenemeGetir()}
     catch(err){b.disabled=false;du.textContent="";er.textContent=(err.message||String(err))}}));
