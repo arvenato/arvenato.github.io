@@ -909,7 +909,7 @@ async function faturalariKaydet(list,o,ilerleme){
    Aynı fatura iki kez işlenmez (ETTN ve fatura no ile kontrol). */
 const EFK="http://localhost:8796";let efatSenkCalisiyor=false;
 async function efkIstek(yol,govde,sure){const c=new AbortController();const t=setTimeout(()=>c.abort(),sure||60000);
-  try{const r=await fetch(EFK+yol,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(govde||{}),signal:c.signal});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.hata||("Köprü hatası "+r.status));return j}
+  try{const r=await fetch(EFK+yol,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({profil:efatProfil()},govde||{})),signal:c.signal});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.hata||("Köprü hatası "+r.status));return j}
   finally{clearTimeout(t)}}
 function efatGecerli(x,efatura){
   if(!x||x.externalCancellationType)return false;
@@ -925,8 +925,12 @@ async function efatSenk(elle){
   if(efatSenkCalisiyor||state.readonly||!firmaId||!api||!api.setDoc)return;
   efatSenkCalisiyor=true;
   try{
+    const prof=efatProfil();
+    if(!prof){if(elle)toast("Bu firma için e-Faturam hesabı seçilmemiş: Hesabım › Pazaryeri ve e-Fatura ayarları");return}
     let d;try{d=await efkIstek("/durum",{},3000)}catch(e){if(elle)toast("e-Fatura köprüsüne ulaşılamadı. Köprünün kurulu olduğu bilgisayarda açın.");return}
-    if(!d.kurulu){if(elle)toast("Köprüde Arvenato'nun Trendyol hesabı kurulmamış: KURULUM-ARVENATO.cmd çalıştırın.");return}
+    // Güvenlik: köprü başka bir firmanın hesabıyla yanıt veriyorsa (eski köprü vb.) hiçbir fatura alınmaz
+    if(d.profil!==prof){if(elle)toast("e-Fatura köprüsü bu firmanın hesabını tanımıyor; köprüyü güncelleyin (sürüm 1.5).");return}
+    if(!d.kurulu){if(elle)toast("Köprüde bu firmanın e-Faturam hesabı kurulmamış: "+(prof==="seyfi"?"KURULUM-SEYFI.cmd":"KURULUM-ARVENATO.cmd")+" çalıştırın.");return}
     const anahtar="arv-efat-son-"+firmaId;let son="";try{son=localStorage.getItem(anahtar)||""}catch(e){}
     const g={baslangic:son?gunEkle(son,-7):new Date().getFullYear()+"-01-01",bitis:gunEkle(today(),1)};
     const gelenHam=[],gidenEf=[],gidenEa=[];
@@ -1385,7 +1389,7 @@ function ublSatirlari(xmlMetin){
       miktar,birim:UBL_BIRIM[bk]||bk,birimFiyat:sayi(l,"Price","PriceAmount"),iskonto:r2(iskonto),matrah,kdvOran:kEl?sayi(kEl,"Percent"):0,kdv,toplam:r2(matrah+kdv)}});
   return {no:yazi(kok,"ID"),tarih:yazi(kok,"IssueDate"),satirlar}}
 async function faturaXml(uuid,tip){
-  const r=await fetch(EFK+"/xml",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uuid,tip})});
+  const r=await fetch(EFK+"/xml",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uuid,tip,profil:efatProfil()})});
   if(!r.ok){let m="";try{m=(await r.json()).hata}catch(e){}throw new Error(m||("XML alınamadı "+r.status))}
   return await r.text()}
 async function faturaSatirExcel(btn){
@@ -1395,7 +1399,7 @@ async function faturaSatirExcel(btn){
   const satir=(f,s)=>{const c=cariById(f.cariId);return {"Fatura no":f.no,"Tarih":trDate(f.tarih),"Tür":f.tur==="satis"?"Satış":"Alış","Cari":c?c.ad:(f.musteriAd||""),"VKN / TCKN":c&&c.vergiNo||"","Sıra":s.sira,"Ürün / hizmet":s.ad,"Stok kodu":s.stokKodu||"","Barkod":s.barkod||"","Marka":s.marka||"",
     "Miktar":s.miktar,"Birim":s.birim||"","Birim fiyat (KDV hariç)":r2(s.birimFiyat),"İskonto (TL)":r2(s.iskonto),"Tutar (KDV hariç)":r2(s.matrah),"KDV %":s.kdvOran,"KDV (TL)":r2(s.kdv),"Toplam (KDV dahil)":r2(s.toplam),"ETTN":f.ettn||""}};
   try{
-    let kopru=null;if(sec.some(f=>f.ettn)){try{kopru=await efkIstek("/durum",{},3000)}catch(e){}}
+    let kopru=null;if(sec.some(f=>f.ettn)&&efatProfil()){try{kopru=await efkIstek("/durum",{},3000)}catch(e){}if(kopru&&kopru.profil!==efatProfil())kopru=null}
     for(let i=0;i<sec.length;i++){const f=sec[i];if(btn)btn.textContent=`⏳ ${i+1} / ${sec.length} hazırlanıyor…`;
       let tamam=false;
       if(f.ettn&&kopru&&kopru.kurulu){try{const u=ublSatirlari(await faturaXml(f.ettn,f.tur==="alis"?"GELEN":"GIDEN"));if(u.satirlar.length){u.satirlar.forEach(s=>satirlar.push(satir(f,s)));tamam=true}}catch(e){}}
@@ -2923,6 +2927,64 @@ function trendyolUrunCek(){
       catch(err){tyUrunCekiliyor=false;du.textContent="";er.textContent=err.message||String(err);root.querySelectorAll("button,input,textarea").forEach(x=>x.disabled=false)}});
   });
 }
+/* ---------- Firma başına Pazaryeri ve e-Fatura ayarları ----------
+   Trendyol API bilgileri "pazaryeri_hesap" tablosuna yalnızca YAZILIR (uygulama geri okuyamaz; yalnızca sunucu fonksiyonu kullanır).
+   e-Fatura köprüsünde her firma kendi Trendyol e-Faturam hesabını (köprü profili) kullanır; seçilmemişse e-Fatura işlemi yapılmaz. */
+let pzAyar=null;
+const EFAT_PROFILLER={arvenato:"Arvenato (KURULUM-ARVENATO.cmd)",seyfi:"Seyfi Kırtasiye (KURULUM-SEYFI.cmd)"};
+function efatProfil(){const p=((state.ayarEk||{}).efatura||{}).profil;if(p==="yok")return null;if(EFAT_PROFILLER[p])return p;
+  return /arvenato/i.test(state.firma||"")?"arvenato":null} // eski kurulum: Arvenato firması ayar seçilmeden de kendi hesabını kullanır
+async function pazaryeriAyarModal(){
+  if(firmaRol!=="sahip"){toast("Bu ayarları yalnızca firma sahibi değiştirebilir");return}
+  const durumYukle=async()=>{const {data,error}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:firmaId});if(error)throw error;pzAyar=data||[];return pzAyar};
+  const ty=()=>(pzAyar||[]).find(x=>x.pazaryeri==="trendyol");
+  const ciz=root=>{const t=ty();const p=efatProfil();
+    root.querySelector("#paGovde").innerHTML=`
+      <div class="panel" style="padding:12px;gap:8px">
+        <b>Trendyol (pazaryeri)</b>
+        <div style="font-size:.88rem">${t?`<span class="chip satis">Bağlı</span> ${esc(t.ozet)} <span class="muted">· ${new Date(t.guncelleme).toLocaleString("tr-TR")}</span>`:`<span class="chip alis">Bağlı değil</span>`}</div>
+        <div class="muted" style="font-size:.82rem">Trendyol satıcı panelinde sağ üstte mağaza adı › <b>Hesap Bilgilerim</b> › Entegrasyon Bilgileri. Kaydedilen bilgiler bir daha ekranda gösterilmez; yalnızca bu firma (<b>${esc(state.firma)}</b>) için kullanılır.</div>
+        <div class="grid2">
+          <div class="field"><label for="paSid">Satıcı ID</label><input id="paSid" inputmode="numeric" autocomplete="off"></div>
+          <div class="field"><label for="paKey">API Key</label><input id="paKey" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label for="paSec">API Secret</label><input id="paSec" type="password" autocomplete="new-password" spellcheck="false"></div>
+        </div>
+        <div class="filters"><button class="primary small" data-m="kaydet" type="button">${t?"Bilgileri değiştir":"Kaydet ve bağla"}</button>${t?`<button class="small" data-m="dene" type="button">Bağlantıyı dene</button><button class="small ghost danger" data-m="sil" type="button">Bağlantıyı kaldır</button>`:""}</div>
+        ${t?"":`<details style="font-size:.85rem"><summary style="cursor:pointer">Bilgiler daha önce Supabase'e (Secrets) girildiyse</summary><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px"><div class="muted">Supabase › Edge Functions › Secrets'taki <b>TRENDYOL_*</b> bilgileri tek bir mağazaya aittir. Yalnızca o mağazanın firması açıkken bağlayın.</div><button class="small" data-m="secret" type="button">Secrets'taki bilgileri “${esc(state.firma)}” firmasına bağla</button></div></details>`}
+      </div>
+      <div class="panel" style="padding:12px;gap:8px">
+        <b>e-Fatura köprüsü (Trendyol e-Faturam)</b>
+        <div class="muted" style="font-size:.82rem">Dükkan bilgisayarındaki köprüde bu firmanın hangi e-Faturam hesabının kullanılacağını seçin. Gelen/giden faturalar ve kalem bilgileri bu hesaptan alınır.</div>
+        <div class="field" style="max-width:420px"><label for="paProfil">Bu firmanın e-Faturam hesabı</label><select id="paProfil"><option value="yok" ${!p?"selected":""}>Kullanılmıyor</option>${Object.entries(EFAT_PROFILLER).map(([k,v])=>`<option value="${k}" ${p===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
+        <div class="muted" id="paKopru" style="font-size:.82rem"></div>
+      </div>`};
+  openModal(`<div class="section-head"><h2>Pazaryeri ve e-Fatura · ${esc(state.firma)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div id="paGovde"><div class="muted">Yükleniyor…</div></div><div class="err" id="paErr" role="alert"></div><div class="muted" id="paDurum" role="status" style="font-size:.85rem"></div>`,
+  async root=>{root.style.maxWidth="720px";const er=()=>root.querySelector("#paErr"),du=()=>root.querySelector("#paDurum");
+    const kopruBak=async()=>{const el=root.querySelector("#paKopru");if(!el)return;const p=efatProfil();if(!p){el.textContent="";return}
+      try{const d=await efkIstek("/durum",{},3000);el.innerHTML=d.profil===p&&d.kurulu?`Köprü bu bilgisayarda çalışıyor; <b>${esc(EFAT_PROFILLER[p])}</b> hesabı kurulu (${esc(d.eposta||"")}).`:`Köprü çalışıyor ama bu hesap kurulmamış: dükkan bilgisayarında <b>${p==="seyfi"?"KURULUM-SEYFI.cmd":"KURULUM-ARVENATO.cmd"}</b> çalıştırın.${d.surum&&d.surum<"1.5"?" (Köprü eski sürüm; güncelleyin.)":""}`}
+      catch(e){el.textContent="Köprüye bu cihazdan ulaşılamadı (köprü yalnızca dükkan bilgisayarında çalışır)."}};
+    try{await durumYukle();ciz(root);kopruBak()}catch(e){er().textContent="Ayarlar okunamadı: "+sbMesaj(e)+" (Supabase'de pazaryeri tablosu henüz kurulmamış olabilir.)";root.querySelector("#paGovde").innerHTML=""}
+    root.addEventListener("change",async e=>{if(e.target.id!=="paProfil")return;er().textContent="";
+      try{await api.setDoc("ayar","efatura",{profil:e.target.value});toast("e-Fatura hesabı kaydedildi");kopruBak()}catch(err){er().textContent=errMsg(err)}});
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;er().textContent="";du().textContent="";
+      if(m==="close")return closeModal();
+      if(m==="kaydet"){const sid=root.querySelector("#paSid").value.trim(),key=root.querySelector("#paKey").value.trim(),sec=root.querySelector("#paSec").value.trim();
+        if(!/^\d{3,12}$/.test(sid)){er().textContent="Satıcı ID yalnızca rakamlardan oluşur.";return}if(key.length<8||sec.length<8){er().textContent="API Key ve API Secret'ı eksiksiz yapıştırın.";return}
+        b.disabled=true;const oz="Satıcı "+(sid.length>4?sid.slice(0,2)+"***"+sid.slice(-2):"***");
+        const {error}=await sb.rpc("pazaryeri_hesap_kaydet",{p_firma:firmaId,p_pazaryeri:"trendyol",p_bilgi:{saticiId:sid,apiKey:key,apiSecret:sec},p_ozet:oz});b.disabled=false;
+        if(error){er().textContent=sbMesaj(error);return}
+        await durumYukle();ciz(root);kopruBak();du().textContent="Kaydedildi. Bağlantı deneniyor…";
+        try{const d=await pzCagir({islem:"durum"});du().textContent="Bağlantı tamam ✓ "+(d.pazaryerleri[0].son14GunSiparis!=null?"· son 14 günde "+d.pazaryerleri[0].son14GunSiparis+" sipariş":"")}catch(err){du().textContent="";er().textContent="Bilgiler kaydedildi ama Trendyol'a bağlanılamadı: "+(err.message||err)}
+        return}
+      if(m==="dene"){b.disabled=true;try{const d=await pzCagir({islem:"durum"});du().textContent="Bağlantı tamam ✓ · son 14 günde "+d.pazaryerleri[0].son14GunSiparis+" sipariş"}catch(err){er().textContent=err.message||String(err)}b.disabled=false;return}
+      if(m==="sil"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Kaldırmayı onayla";return}
+        const {error}=await sb.rpc("pazaryeri_hesap_sil",{p_firma:firmaId,p_pazaryeri:"trendyol"});if(error){er().textContent=sbMesaj(error);return}
+        await durumYukle();ciz(root);kopruBak();pz.siparisler=null;pz.hakedis=null;pz.bag=null;toast("Trendyol bağlantısı kaldırıldı");return}
+      if(m==="secret"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Eminim, “"+state.firma+"” firmasına bağla";return}
+        b.disabled=true;try{const d=await pzCagir({islem:"secretTasi"});await durumYukle();ciz(root);kopruBak();du().textContent="Bağlandı: "+d.ozet}catch(err){er().textContent=err.message||String(err);b.disabled=false}return}
+    })});
+}
 function vPazaryeri(){
   const deneme=`<div class="notice"><b>Deneme modu (yalnızca okuma):</b> Trendyol'dan siparişler ve hakedişler okunur; pazaryerinde hiçbir şey değiştirilmez ve bu kayıtlar muhasebeye işlenmez. Arvenato'nun kendi mağazası bağlanınca siparişler satış olarak işlenecek.</div>`;
   const ust=`<section class="section-head"><h2>Pazaryeri · Trendyol</h2><div class="filters">
@@ -3444,29 +3506,35 @@ function girisEkrani(mod){mod=mod||"giris";
 function sifreYenileEkrani(){kapiGoster(`<h2>Yeni şifre belirleyin</h2><form id="ySForm" style="display:flex;flex-direction:column;gap:10px"><div class="field"><label for="ySifre">Yeni şifre</label><input id="ySifre" type="password" autocomplete="new-password" minlength="6"></div><div class="err" id="yErr" role="alert"></div><button class="primary" type="submit">Şifreyi kaydet</button></form>`);
   kapi.querySelector("#ySForm").addEventListener("submit",async e=>{e.preventDefault();const s=kapi.querySelector("#ySifre").value;const er=kapi.querySelector("#yErr");if(s.length<6){er.textContent="Şifre en az 6 karakter olmalı.";return}
     const {error}=await sb.auth.updateUser({password:s});if(error){er.textContent=sbMesaj(error);return}toast("Şifreniz güncellendi");await firmaSec()})}
-async function firmaSec(){
+async function firmaSec(liste){
   kapiGoster(`<div class="empty">Firma bilgileri yükleniyor…</div>`);
   const {data,error}=await sb.from("firma_uyeleri").select("firma_id,rol,firmalar(ad)").eq("user_id",oturum.user.id);
   if(error){kapiGoster(`<h2>Bağlantı sorunu</h2><div class="err">${esc(sbMesaj(error))}</div><button class="primary" id="tekrarBtn" type="button">Tekrar dene</button><button class="ghost small" id="cikisBtn2" type="button">Çıkış yap</button>`);kapi.querySelector("#tekrarBtn").onclick=firmaSec;kapi.querySelector("#cikisBtn2").onclick=cikisYap;return}
   if(!data.length)return firmaOlusturEkrani();
   let sec=null;try{sec=localStorage.getItem("secili-firma")}catch(e){}
   const bul=data.find(d=>d.firma_id===sec);
-  if(data.length===1||bul)return firmaAc(bul||data[0]);
-  kapiGoster(`<h2>Firma seçin</h2><div style="display:grid;gap:8px">${data.map((d,i)=>`<button type="button" data-i="${i}" style="text-align:left;padding:12px">${esc(d.firmalar?d.firmalar.ad:"Firma")}<div class="muted" style="font-size:.8rem">${d.rol==="sahip"?"Sahip":"Kullanıcı"}</div></button>`).join("")}</div>`);
-  kapi.querySelectorAll("[data-i]").forEach(b=>b.addEventListener("click",()=>firmaAc(data[Number(b.dataset.i)])))}
-function firmaOlusturEkrani(){kapiGoster(`<h2>Firmanızı oluşturun</h2><div class="muted" style="font-size:.88rem">Hesabınız hazır. Kayıtlarınızı tutacağımız firmanın ünvanını yazın. Bir çalışan iseniz firma sahibinden sizi kullanıcı olarak eklemesini isteyin.</div>
-  <form id="fOlForm" style="display:flex;flex-direction:column;gap:10px"><div class="field"><label for="fOlAd">Firma ünvanı</label><input id="fOlAd" value="ARVENATO KIRTASİYE OFİS İTHALAT İHRACAT SAN VE TİC LTD STİ"></div><div class="err" id="fOlErr" role="alert"></div><button class="primary" type="submit">Firmayı oluştur</button></form>
-  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost small" id="fOlYenile" type="button">Beni eklediler, tekrar kontrol et</button><button class="ghost small" id="fOlCikis" type="button">Çıkış yap</button></div>`);
-  kapi.querySelector("#fOlYenile").onclick=firmaSec;kapi.querySelector("#fOlCikis").onclick=cikisYap;
+  if(!liste&&(data.length===1||bul))return firmaAc(bul||data[0]);
+  kapiGoster(`<h2>Firma seçin</h2><div style="display:grid;gap:8px">${data.map((d,i)=>`<button type="button" data-i="${i}" style="text-align:left;padding:12px${d.firma_id===firmaId?";border-color:var(--accent,#17624d)":""}">${esc(d.firmalar?d.firmalar.ad:"Firma")}${d.firma_id===firmaId?' <span class="chip satis">açık</span>':""}<div class="muted" style="font-size:.8rem">${d.rol==="sahip"?"Sahip":"Kullanıcı"}</div></button>`).join("")}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="small" id="fYeniFirma" type="button">+ Yeni firma ekle</button>${firmaId?`<button class="ghost small" id="fGeri" type="button">Vazgeç</button>`:""}</div>`);
+  kapi.querySelectorAll("[data-i]").forEach(b=>b.addEventListener("click",()=>firmaAc(data[Number(b.dataset.i)])));
+  kapi.querySelector("#fYeniFirma").onclick=()=>firmaOlusturEkrani(true);
+  const gb=kapi.querySelector("#fGeri");if(gb)gb.onclick=()=>{const d=data.find(x=>x.firma_id===firmaId);if(d)firmaAc(d);else kapiKapat()}}
+function firmaOlusturEkrani(ek){kapiGoster(`<h2>${ek?"Yeni firma ekle":"Firmanızı oluşturun"}</h2><div class="muted" style="font-size:.88rem">${ek?"Yeni firmanın kayıtları (ürün, cari, fatura, satış…) diğer firmalarınızdan tamamen ayrı tutulur. Girişte ya da Hesabım › Firma değiştir ile firmalar arasında geçersiniz.":"Hesabınız hazır. Kayıtlarınızı tutacağımız firmanın ünvanını yazın. Bir çalışan iseniz firma sahibinden sizi kullanıcı olarak eklemesini isteyin."}</div>
+  <form id="fOlForm" style="display:flex;flex-direction:column;gap:10px"><div class="field"><label for="fOlAd">Firma ünvanı</label><input id="fOlAd" value="${ek?"":"ARVENATO KIRTASİYE OFİS İTHALAT İHRACAT SAN VE TİC LTD STİ"}" placeholder="Örn. SEYFİ KIRTASİYE"></div><div class="err" id="fOlErr" role="alert"></div><button class="primary" type="submit">Firmayı oluştur</button></form>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">${ek?`<button class="ghost small" id="fOlGeri" type="button">Vazgeç</button>`:`<button class="ghost small" id="fOlYenile" type="button">Beni eklediler, tekrar kontrol et</button><button class="ghost small" id="fOlCikis" type="button">Çıkış yap</button>`}</div>`);
+  if(ek)kapi.querySelector("#fOlGeri").onclick=()=>firmaSec(true);else{kapi.querySelector("#fOlYenile").onclick=()=>firmaSec();kapi.querySelector("#fOlCikis").onclick=cikisYap}
   kapi.querySelector("#fOlForm").addEventListener("submit",async e=>{e.preventDefault();const ad=kapi.querySelector("#fOlAd").value.trim();const er=kapi.querySelector("#fOlErr");if(!ad){er.textContent="Firma ünvanını yazın.";return}
-    const {error}=await sb.rpc("firma_olustur",{p_ad:ad});if(error){er.textContent=sbMesaj(error);return}await firmaSec()})}
-async function firmaAc(d){firmaId=d.firma_id;firmaRol=d.rol;try{localStorage.setItem("secili-firma",firmaId)}catch(e){}kapiKapat();document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
+    const {data:yeniId,error}=await sb.rpc("firma_olustur",{p_ad:ad});if(error){er.textContent=sbMesaj(error);return}
+    if(yeniId)try{localStorage.setItem("secili-firma",yeniId)}catch(err){}
+    await firmaSec()})}
+async function firmaAc(d){const degisti=firmaId&&firmaId!==d.firma_id;firmaId=d.firma_id;firmaRol=d.rol;try{localStorage.setItem("secili-firma",firmaId)}catch(e){}kapiKapat();
+  if(degisti){urunSecim.clear();fatSecim.clear();pz.siparisler=null;pz.hakedis=null;pz.bag=null;pz.hata="";pzAyar=null}document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
 async function cikisYap(){try{if(kanal)sb.removeChannel(kanal);kanal=null;await sb.auth.signOut()}catch(e){}oturum=null;firmaId=null;for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";girisEkrani()}
 function idUret(){const a="abcdefghijklmnopqrstuvwxyz0123456789";let s="";for(const x of crypto.getRandomValues(new Uint8Array(20)))s+=a[x%36];return s}
 let _rt=null;function renderSonra(){clearTimeout(_rt);_rt=setTimeout(render,120)}
-function yerelUygula(col,id,veri){if(col==="ayar"){if(id==="firma")state.firma=veri?veri.ad||"":"";return}const k=KOLEKSIYONLAR[col];if(!k)return;const arr=state[k].filter(x=>x.id!==id);if(veri)arr.push({id,...veri});state[k]=arr}
+function yerelUygula(col,id,veri){if(col==="ayar"){if(id==="firma")state.firma=veri?veri.ad||"":"";else{state.ayarEk=state.ayarEk||{};if(veri)state.ayarEk[id]=veri;else delete state.ayarEk[id]}return}const k=KOLEKSIYONLAR[col];if(!k)return;const arr=state[k].filter(x=>x.id!==id);if(veri)arr.push({id,...veri});state[k]=arr}
 async function tumunuYukle(){const rows=[];const N=1000;for(let from=0;;from+=N){const {data,error}=await sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",firmaId).order("koleksiyon").order("id").range(from,from+N-1);if(error)throw error;rows.push(...data);if(data.length<N)break}
-  for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";for(const r of rows)yerelUygula(r.koleksiyon,r.id,r.veri)}
+  for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";state.ayarEk={};for(const r of rows)yerelUygula(r.koleksiyon,r.id,r.veri)}
 function sbHata(e){const m=e.message||"";const x=new Error(m);x.code=/rate|too many|429/i.test(m)?"resource_exhausted":/fetch|network|Failed/i.test(m)?"unavailable":"invalid_argument";return x}
 let _yenileZ=null;function veriYenile(){clearTimeout(_yenileZ);_yenileZ=setTimeout(async()=>{try{await tumunuYukle();render()}catch(e){}},800)}
 /* ---------- Yengeç'ten ürün ve stok aktarımı (yer imi düğmesi) ---------- */
@@ -3603,6 +3671,8 @@ function hesapModal(){
     <div class="panel" style="padding:12px;gap:4px"><b>${esc(oturum.user.email)}</b><div class="muted" style="font-size:.85rem">${esc(state.firma||"")} · ${firmaRol==="sahip"?"Firma sahibi":"Kullanıcı"}</div></div>
     ${kurulu?"":kurulumOlayi?`<button type="button" class="primary" data-m="kur" style="text-align:left;padding:12px 14px">Uygulamayı bu cihaza yükle<div style="font-weight:400;font-size:.8rem;opacity:.85">Masaüstüne / ana ekrana simgesiyle eklenir</div></button>`:`<div class="notice" style="font-size:.85rem"><b>Uygulama olarak yüklemek için:</b> ${ios?"Safari'de Paylaş düğmesine dokunup <b>Ana Ekrana Ekle</b>'yi seçin.":"Chrome'da adres çubuğunun sağındaki yükle simgesine ya da menüden <b>Uygulamayı yükle</b>'ye tıklayın. Android'de menüden <b>Ana ekrana ekle</b>."}</div>`}
     <div style="display:grid;gap:8px">
+      <button type="button" data-m="firma" style="text-align:left;padding:10px 14px">Firma değiştir / yeni firma ekle<div class="muted" style="font-weight:400;font-size:.8rem">Şu an açık: ${esc(state.firma||"")}</div></button>
+      ${firmaRol==="sahip"?`<button type="button" data-m="pzayar" style="text-align:left;padding:10px 14px">Pazaryeri ve e-Fatura ayarları<div class="muted" style="font-weight:400;font-size:.8rem">Bu firmanın Trendyol API bilgileri ve e-Fatura köprü hesabı</div></button>`:""}
       ${firmaRol==="sahip"?`<button type="button" data-m="kullanicilar" style="text-align:left;padding:10px 14px">Kullanıcılar<div class="muted" style="font-weight:400;font-size:.8rem">Çalışanlarınıza erişim verin</div></button>`:""}
       <button type="button" data-m="yedek" style="text-align:left;padding:10px 14px">Yedek al<div class="muted" style="font-weight:400;font-size:.8rem">Tüm kayıtları .json dosyası olarak indir</div></button>
       <button type="button" data-m="geri" style="text-align:left;padding:10px 14px">Yedekten geri yükle<div class="muted" style="font-weight:400;font-size:.8rem">Eski programdan aldığınız yedeği buraya aktarın</div></button>
@@ -3613,6 +3683,8 @@ function hesapModal(){
     if(m==="close")return closeModal();
     if(m==="kur"&&kurulumOlayi){kurulumOlayi.prompt();try{await kurulumOlayi.userChoice}catch(err){}kurulumOlayi=null;closeModal();return}
     if(m==="kullanicilar"){closeModal();return kullanicilarModal()}
+    if(m==="firma"){closeModal();return firmaSec(true)}
+    if(m==="pzayar"){closeModal();return pazaryeriAyarModal()}
     if(m==="yedek"){closeModal();return yedekAl()}
     if(m==="geri"){closeModal();return yedekYukleModal()}
     if(m==="sifre"){closeModal();return sifreYenileEkrani()}
