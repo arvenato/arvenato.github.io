@@ -242,7 +242,7 @@ const TYPES={
 const KANALLAR=["Mağaza","Trendyol","Hepsiburada","n11","Pazarama","Amazon","Web sitesi","Diğer"];
 const GIDER_KAT=["Kargo","Pazaryeri komisyonu","Reklam","Kira","Personel","Elektrik / su / internet","Yakıt","Mutfak","Muhasebe","Ofis malzemesi","Vergi / SGK","Diğer"];
 const KDV_ORAN=[20,10,1,0];
-const ODEME={acik:"Açık hesap",kasa:"Kasa (nakit)",banka:"Banka / POS",mahsup:"Maaştan mahsup"};
+const ODEME={acik:"Açık hesap",kasa:"Kasa (nakit)",banka:"Banka / POS",mahsup:"Maaştan mahsup",pazaryeri:"Pazaryeri (satış Trendyol carisinde)"};
 
 const state={cariler:[],hareketler:[],personeller:[],ekler:[],izinler:[],bankalar:[],virmanlar:[],urunler:[],stokHareketleri:[],teklifler:[],faturalar:[],ajanda:[],tedarikciler:[],tfiyatlar:[],firma:"",mode:"loading",readonly:false,stale:false,error:""};
 let api=null; // {setDoc(col,id,obj), del(col,id), newId(col), setFirma(name)}
@@ -948,6 +948,8 @@ async function efatSenk(elle){
     const rk=kurumsal.length?await faturalariKaydet(kurumsal,{tur:"satis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
     const rb=bireysel.length?await faturalariKaydet(bireysel,{tur:"satis",odeme:"banka",cariAc:false,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
     const rs={eklenen:rk.eklenen+rb.eklenen,cariYeni:rk.cariYeni+rb.cariYeni,hata:rk.hata+rb.hata};
+    // Trendyol siparişine ait giden faturaların satışı Trendyol carisinde sayıldığı için fatura satış hareketinden ayrılır
+    try{const n=await pzFaturaMutabakat();if(n)toast(n+" giden fatura Trendyol siparişine bağlandı (satış Trendyol carisinde)")}catch(e){console.warn("pzFaturaMutabakat",e)}
     if(!ra.hata&&!rs.hata)try{localStorage.setItem(anahtar,today())}catch(e){}
     const yc=ra.cariYeni+rs.cariYeni;
     if(ra.eklenen+rs.eklenen)toast(`Trendyol e-Faturam: ${ra.eklenen} gelen, ${rs.eklenen} giden fatura işlendi${yc?" · "+yc+" yeni cari açıldı":""}`);
@@ -2979,7 +2981,7 @@ function pzSiparisPlan(basOzel,listeOzel,hkOzel){
       const G=pzSatisGruplari(s,es);const gr=G.gr;
       const ozet=es.map(o=>(o.x.adet>1?o.x.adet+"× ":"")+(o.u.ad||o.x.ad)).join(", ");
       for(const [kd,top] of Object.entries(gr)){const net=r2(top/(1+Number(kd)/100));
-        istenen.push({col:"hareketler",id:`tyh-${s.paketId}-${kd}`,veri:{tur:"satis",tarih:pzGun(s.teslimTarihi||s.sonDegisim),odeme:"acik",cariId,kanal:"Trendyol",kategori:"",bankaId:"",kdvOran:Number(kd),net,kdv:r2(top-net),toplam:top,aciklama:("Trendyol sipariş "+s.siparisNo+" · "+ozet).slice(0,300),belgeNo:s.siparisNo,olusturma:olus}})}
+        istenen.push({col:"hareketler",id:`tyh-${s.paketId}-${kd}`,veri:{tur:"satis",tarih:pzGun(s.teslimTarihi||s.sonDegisim),odeme:"acik",cariId,kanal:"Trendyol",kategori:"",bankaId:"",kdvOran:Number(kd),net,kdv:r2(top-net),toplam:top,aciklama:("Trendyol sipariş "+s.siparisNo+" · "+ozet).slice(0,300),belgeNo:s.siparisNo,musteri:String(s.firma||s.faturaAd||s.musteri||"").trim().slice(0,120),olusturma:olus}})}
       // Trendyol'un bu siparişten kestiği tutar (komisyon): Trendyol carisinden düşülen gider. Hakediş kaydı oluşunca yazılır.
       // Siparişin yalnızca bir kısmı deneme ürünüyse kesinti satış tutarıyla orantılı paylaştırılır.
       const h=hk&&hk[s.siparisNo];
@@ -3125,6 +3127,7 @@ async function pzSiparisIsle(){
       let n=0;const top=yaz.length+sil.length;
       for(const w of yaz){du.textContent=`Kaydediliyor… ${++n} / ${top}`;await api.setDoc(w.col,w.id,w.veri)}
       for(const w of sil){du.textContent=`Kaydediliyor… ${++n} / ${top}`;await api.del(w.col,w.id)}
+      await pzFaturaMutabakat();
       closeModal();toast(top?top+" değişiklik programa işlendi":"Başlangıç zamanı kaydedildi");render()}
     catch(err){b.disabled=false;du.textContent="";er.textContent=errMsg(err)}}));
 }
@@ -3141,9 +3144,30 @@ async function pzOtoOku(ilk){const simdi=Date.now(),GUN=86400000;const tum=[];
   for(let bit=simdi;bit>ilk;bit-=14*GUN){const bas=Math.max(ilk,bit-14*GUN);
     for(let s=0;s<20;s++){const r=await pzCagir({islem:"siparisler",baslangic:bas,bitis:bit,sayfa:s});tum.push(...(r.siparisler||[]));if(s+1>=(r.toplamSayfa||1))break}}
   const gor=new Set();return tum.filter(x=>x.paketId&&!gor.has(x.paketId)&&gor.add(x.paketId))}
+/* ---------- Trendyol siparişinin faturası satış olarak iki kez sayılmasın ----------
+   Siparişin satışı Trendyol carisine yazılır. e-Faturam'dan otomatik alınan giden fatura aynı siparişe aitse
+   fatura listede kalır ama satış hareketi silinir; ödeme şekli "Pazaryeri" olur ve fatura siparişe bağlanır.
+   Eşleşme: alıcı adı + toplam tutar (±5 kuruş) + tarih (teslimden en fazla 30 gün önce / 15 gün sonra). */
+function pzAdEs(a,b){a=_norm(a||"");b=_norm(b||"");return !!a&&!!b&&(a===b||a.includes(b)||b.includes(a))}
+function pzTySiparisOzet(){const m={};for(const h of state.hareketler){if(!String(h.id).startsWith("tyh-")||!h.belgeNo)continue;
+  const o=m[h.belgeNo]=m[h.belgeNo]||{no:h.belgeNo,toplam:0,musteri:h.musteri||"",tarih:h.tarih};o.toplam=r2(o.toplam+(Number(h.toplam)||0));if(!o.musteri&&h.musteri)o.musteri=h.musteri}
+  return Object.values(m)}
+const pzGunFark=(a,b)=>Math.round((new Date(a+"T12:00")-new Date(b+"T12:00"))/86400000);
+function pzFaturaAdi(f){const c=f.cariId&&cariById(f.cariId);return (c&&c.ad)||f.musteriAd||""}
+async function pzFaturaMutabakat(){
+  if(state.readonly)return 0;const bagli=new Set(state.faturalar.filter(f=>f.tySiparisNo).map(f=>f.tySiparisNo));let n=0;
+  for(const o of pzTySiparisOzet()){if(bagli.has(o.no)||!o.musteri)continue;
+    const aday=state.faturalar.filter(f=>f.tur==="satis"&&f.kaynak==="trendyol"&&!f.tySiparisNo&&Math.abs((Number(f.toplam)||0)-o.toplam)<=0.05&&pzAdEs(pzFaturaAdi(f),o.musteri)&&f.tarih&&o.tarih&&(d=>d>=-30&&d<=15)(pzGunFark(f.tarih,o.tarih)))
+      .sort((x,y)=>Math.abs(pzGunFark(x.tarih,o.tarih))-Math.abs(pzGunFark(y.tarih,o.tarih)));
+    const f=aday[0];if(!f)continue;
+    for(const hid of f.hareketIds||[])if(state.hareketler.some(h=>h.id===hid))await api.del("hareketler",hid);
+    const {id,...rest}=f;await api.setDoc("faturalar",id,{...rest,odeme:"pazaryeri",bankaId:"",vade:"",hareketIds:[],tySiparisNo:o.no,notlar:((f.notlar||"")+" · Trendyol sipariş "+o.no+": satış Trendyol carisinde").slice(0,500)});
+    bagli.add(o.no);n++}
+  return n}
 async function pzPlanUygula(P){const yaz=P.liste.flatMap(p=>p.yaz),sil=P.liste.flatMap(p=>p.sil);
   if(!P.cari&&yaz.some(w=>w.col==="hareketler"))await api.setDoc("cariler","ty-cari",{ad:"Trendyol",tur:"musteri",telefon:"",vergiNo:"",vergiDairesi:"",olusturma:Date.now()});
-  for(const w of yaz)await api.setDoc(w.col,w.id,w.veri);for(const w of sil)await api.del(w.col,w.id);return yaz.length+sil.length}
+  for(const w of yaz)await api.setDoc(w.col,w.id,w.veri);for(const w of sil)await api.del(w.col,w.id);
+  return yaz.length+sil.length+await pzFaturaMutabakat()}
 async function pzOtoKontrol(){
   if(pzOto.calisiyor||!pzOtoUygun())return;const f=firmaId;pzOto.calisiyor=true;
   try{const ay=state.ayarEk.pazaryeriTest;const GUN=86400000;const simdi=Date.now();
