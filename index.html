@@ -895,10 +895,55 @@ async function faturalariKaydet(list,o,ilerleme){
       const odeme=o.odeme==="acik"&&!cari?"banka":o.odeme;
       const rate=kdvOranTahmin(v.net,v.kdv);const hid=api.newId("hareketler");const ad=cari?cari.ad:(v.unvan||"");
       await api.setDoc("hareketler",hid,{tur:satis?"satis":"alis",tarih:v.tarih,odeme,cariId:cari?cari.id:"",kanal:"",kategori:"",bankaId:odeme==="banka"&&vb?vb.id:"",kdvOran:rate,net:v.net,kdv:v.kdv,toplam:v.toplam,aciklama:"Fatura "+v.no+(ad?" · "+ad:""),belgeNo:v.no,olusturma:Date.now()});
-      await api.setDoc("faturalar",api.newId("faturalar"),{tur:o.tur,no:v.no,cariId:cari?cari.id:"",musteriAd:cari?"":(v.unvan||""),tarih:v.tarih,vade:odeme==="acik"?(v.vade||gunEkle(v.tarih,30)):"",odeme,bankaId:odeme==="banka"&&vb?vb.id:"",kanal:"",stokEtki:false,satirlar:[{urunId:"",ad:"Fatura toplamı",miktar:1,birim:"Adet",birimFiyat:v.net,kdvOran:rate,iskonto:0}],notlar:(o.kaynak==="pdf"?"PDF'ten":"Excel'den")+" aktarıldı"+(v.dosya?" ("+v.dosya+")":""),araToplam:v.net,iskonto:0,net:v.net,kdv:v.kdv,toplam:v.toplam,hareketIds:[hid],stokIds:[],odemeIds:[],kaynak:o.kaynak,olusturma:Date.now()});
+      await api.setDoc("faturalar",api.newId("faturalar"),{tur:o.tur,no:v.no,cariId:cari?cari.id:"",musteriAd:cari?"":(v.unvan||""),tarih:v.tarih,vade:odeme==="acik"?(v.vade||gunEkle(v.tarih,30)):"",odeme,bankaId:odeme==="banka"&&vb?vb.id:"",kanal:"",stokEtki:false,satirlar:[{urunId:"",ad:"Fatura toplamı",miktar:1,birim:"Adet",birimFiyat:v.net,kdvOran:rate,iskonto:0}],notlar:o.kaynak==="trendyol"?"Trendyol e-Faturam'dan otomatik alındı"+(v.tip&&v.tip!=="SATIS"?" · "+v.tip:""):(o.kaynak==="pdf"?"PDF'ten":"Excel'den")+" aktarıldı"+(v.dosya?" ("+v.dosya+")":""),araToplam:v.net,iskonto:0,net:v.net,kdv:v.kdv,toplam:v.toplam,hareketIds:[hid],stokIds:[],odemeIds:[],kaynak:o.kaynak,ettn:v.ettn||"",olusturma:Date.now()});
       eklenen++}
     catch(err){if(err&&(err.code==="resource_exhausted"||err.code==="unavailable")){await new Promise(r=>setTimeout(r,1500));n--;list.push(v);continue}hata++}}
   return {eklenen,atlanan,cariYeni,hata}}
+
+/* ---------- Trendyol e-Faturam: gelen ve giden faturaları otomatik al ----------
+   Bilgisayardaki e-Fatura köprüsü (localhost:8796, KURULUM-ARVENATO.cmd ile kurulur) üzerinden çalışır;
+   Trendyol yalnızca izinli internet adresinden bağlantı kabul ettiği için doğrudan bağlanılamaz.
+   Gelen faturalar alış, giden faturalar (e-Fatura + e-Arşiv) satış faturası olarak açık hesaba (cariye) işlenir.
+   Aynı fatura iki kez işlenmez (ETTN ve fatura no ile kontrol). */
+const EFK="http://localhost:8796";let efatSenkCalisiyor=false;
+async function efkIstek(yol,govde,sure){const c=new AbortController();const t=setTimeout(()=>c.abort(),sure||60000);
+  try{const r=await fetch(EFK+yol,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(govde||{}),signal:c.signal});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.hata||("Köprü hatası "+r.status));return j}
+  finally{clearTimeout(t)}}
+function efatGecerli(x,efatura){
+  if(!x||x.externalCancellationType)return false;
+  if(/DENIED|RETURNED/i.test(String(x.replyType||"")))return false;
+  if(/CANCEL|IPTAL|ERROR|FAIL|REJECT/i.test(String(x.gibStatus||"")))return false;
+  if(efatura&&Number(x.gibStatusCode)!==1300)return false;
+  return !!x.invoiceId&&Number(x.payableAmount??x.taxInclusiveAmount)>0}
+function efatKayit(x,gelen){
+  const ad=gelen?(x.senderTitle||[x.senderName,x.senderSurname].filter(Boolean).join(" ")):(x.receiverTitle||[x.receiverName,x.receiverSurname].filter(Boolean).join(" "));
+  const k=v=>v==null||v===""?NaN:r2(Number(v)/100); // Trendyol tutarları kuruş olarak verir
+  return fatTamamla({no:String(x.invoiceId||""),tarih:String(x.issuedAt||x.createdAt||"").slice(0,10),unvan:String(ad||"").trim().slice(0,120),vkn:String((gelen?x.senderTaxId:x.receiverTaxId)||""),net:k(x.taxExcludedPrice),kdv:k(x.taxAmount),toplam:k(x.payableAmount??x.taxInclusiveAmount),vade:"",ettn:x.invoiceUuid||"",tip:x.invoiceTypeCode||""},20)}
+async function efatSenk(elle){
+  if(efatSenkCalisiyor||state.readonly||!firmaId||!api||!api.setDoc)return;
+  efatSenkCalisiyor=true;
+  try{
+    let d;try{d=await efkIstek("/durum",{},3000)}catch(e){if(elle)toast("e-Fatura köprüsüne ulaşılamadı. Köprünün kurulu olduğu bilgisayarda açın.");return}
+    if(!d.kurulu){if(elle)toast("Köprüde Arvenato'nun Trendyol hesabı kurulmamış: KURULUM-ARVENATO.cmd çalıştırın.");return}
+    const anahtar="arv-efat-son-"+firmaId;let son="";try{son=localStorage.getItem(anahtar)||""}catch(e){}
+    const g={baslangic:son?gunEkle(son,-7):new Date().getFullYear()+"-01-01",bitis:gunEkle(today(),1)};
+    const gelenHam=[],gidenEf=[],gidenEa=[];
+    for(let s=0;s<50;s++){const j=await efkIstek("/gelen",{...g,sayfa:s},120000);if(j.kod!==200)throw new Error("Gelen faturalar alınamadı ("+j.kod+")");const y=j.yanit||{};gelenHam.push(...(y.content||[]));if(s+1>=(y.totalPageCount||1))break}
+    for(let s=0;s<50;s++){const j=await efkIstek("/giden",{...g,sayfa:s},120000);const a=j.efatura&&j.efatura.kod===200?j.efatura.yanit||{}:null,b=j.earsiv&&j.earsiv.kod===200?j.earsiv.yanit||{}:null;
+      if(a)gidenEf.push(...(a.content||[]));if(b)gidenEa.push(...(b.content||[]));if(!((a&&s+1<(a.totalPageCount||1))||(b&&s+1<(b.totalPageCount||1))))break}
+    const yeni=l=>l.filter(v=>v.no&&v.tarih&&v.toplam>0&&!state.faturalar.some(f=>(v.ettn&&f.ettn===v.ettn)||f.no===v.no));
+    const gelen=yeni(gelenHam.filter(x=>efatGecerli(x,true)).map(x=>efatKayit(x,true)));
+    // "Nihai tüketici" (11111111111) adına kesilen perakende faturaları Satış (kasa) ekranında zaten kayıtlı olduğu için alınmaz
+    const giden=yeni([...gidenEf.filter(x=>efatGecerli(x,true)),...gidenEa.filter(x=>efatGecerli(x,false))].filter(x=>String(x.receiverTaxId||"")!=="11111111111").map(x=>efatKayit(x,false)));
+    const ra=gelen.length?await faturalariKaydet(gelen,{tur:"alis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    const rs=giden.length?await faturalariKaydet(giden,{tur:"satis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    if(!ra.hata&&!rs.hata)try{localStorage.setItem(anahtar,today())}catch(e){}
+    const yc=ra.cariYeni+rs.cariYeni;
+    if(ra.eklenen+rs.eklenen)toast(`Trendyol e-Faturam: ${ra.eklenen} gelen, ${rs.eklenen} giden fatura işlendi${yc?" · "+yc+" yeni cari açıldı":""}`);
+    else if(elle)toast("Trendyol'da işlenmemiş yeni fatura yok");
+    if(ra.hata+rs.hata)toast((ra.hata+rs.hata)+" fatura kaydedilemedi; daha sonra yeniden denenecek");
+  }catch(err){console.warn("efatSenk",err);if(elle)toast("Trendyol'dan faturalar alınamadı: "+(err&&err.message?err.message:err))}
+  finally{efatSenkCalisiyor=false}}
 function fatAktarSecenek(kaynak){return `<div class="grid2">
     <div class="field"><label for="faTur">Fatura türü</label><select id="faTur"><option value="alis">Gelen faturalar (alış)</option><option value="satis">Giden faturalar (satış)</option></select></div>
     <div class="field"><label for="faOdeme">Ödeme durumu</label><select id="faOdeme"><option value="acik">Ödenmedi · açık hesap (cari bakiyeye yazılır)</option><option value="banka">Ödendi · banka</option><option value="kasa">Ödendi · kasa</option></select></div>
@@ -1107,7 +1152,7 @@ function vFaturalar(){
   const sAy=all.filter(f=>f.tur==="satis"&&ym(f.tarih)===buAy),aAy=all.filter(f=>f.tur==="alis"&&ym(f.tarih)===buAy);
   const tahsil=r2(all.filter(f=>f.tur==="satis").reduce((s,f)=>s+faturaKalan(f),0)),borc=r2(all.filter(f=>f.tur==="alis").reduce((s,f)=>s+faturaKalan(f),0));
   const gecen=all.filter(f=>faturaDurum(f)==="gecti");
-  return `<section class="section-head"><h2>Faturalar</h2>${state.readonly?"":`<div class="filters"><button class="small" data-act="fatAktar" type="button">Excel / PDF yükle</button><button class="small" data-act="newFatura" data-tur="alis" type="button">+ Alış faturası</button><button class="primary small" data-act="newFatura" data-tur="satis" type="button">+ Satış faturası</button></div>`}</section>
+  return `<section class="section-head"><h2>Faturalar</h2>${state.readonly?"":`<div class="filters"><button class="small" data-act="efatSenk" type="button" title="Trendyol e-Faturam'daki gelen ve giden faturaları şimdi al">⚡ Trendyol'dan al</button><button class="small" data-act="fatAktar" type="button">Excel / PDF yükle</button><button class="small" data-act="newFatura" data-tur="alis" type="button">+ Alış faturası</button><button class="primary small" data-act="newFatura" data-tur="satis" type="button">+ Satış faturası</button></div>`}</section>
   <section class="kpis">
     ${kpi("Bu ay satış faturası",money(sum(sAy)),sAy.length+" fatura",false,sAy.length>0)}
     ${kpi("Bu ay alış faturası",money(sum(aAy)),aAy.length+" fatura")}
@@ -2880,6 +2925,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="fOdeme")faturaOdemeForm(id);
   else if(a==="fIndir")faturaIndirModal(id);
   else if(a==="fatAktar")faturaAktarSecim();
+  else if(a==="efatSenk")efatSenk(true);
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
   else if(a==="fTemizle"){ui.fTur="";ui.fDurum="";ui.fAy="";render()}
   else if(a==="ajYeni")ajandaForm(null,b.dataset.t);
@@ -3086,6 +3132,8 @@ async function veriBaslat(){
   render();
   document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId)veriYenile()});
   yengecHazirBildir();
+  setTimeout(()=>efatSenk(false),4000);
+  if(!window._efatZamanlayici)window._efatZamanlayici=setInterval(()=>efatSenk(false),15*60*1000);
 }
 /* Yedek */
 async function yedekAl(){const k={};let n=0;for(const [c,sk] of Object.entries(KOLEKSIYONLAR)){k[c]=state[sk]||[];n+=k[c].length}
