@@ -1437,11 +1437,13 @@ function stokMiktar(u){return r2((Number(u.acilis)||0)+state.stokHareketleri.fil
 function stokDurum(u){const m=stokMiktar(u);if(m<=0)return "yok";if(Number(u.kritik)>0&&m<=Number(u.kritik))return "kritik";return "ok"}
 const urunSecim=new Set();let stokListeSon=[],stokSayfaSon=[],stokFiltreSon=null;
 const _ad=(a,b)=>a.ad.localeCompare(b.ad,"tr"),_sayi=(x,k)=>Number(x[k])||0;
+// Ürünün eklenme zamanı: pazaryerindeki oluşturma tarihi (varsa), yoksa programa eklendiği an
+const _eklenme=u=>Number(u.eklenme)||Number(u.olusturma)||0;
 const URUN_SIRA={
   adAZ:["Ada göre (A → Z)",_ad],
   adZA:["Ada göre (Z → A)",(a,b)=>_ad(b,a)],
-  yeni:["Son eklenenler",(a,b)=>_sayi(b,"olusturma")-_sayi(a,"olusturma")||_ad(a,b)],
-  eski:["İlk eklenenler",(a,b)=>_sayi(a,"olusturma")-_sayi(b,"olusturma")||_ad(a,b)],
+  yeni:["Son eklenenler",(a,b)=>_eklenme(b)-_eklenme(a)||_ad(a,b)],
+  eski:["İlk eklenenler",(a,b)=>_eklenme(a)-_eklenme(b)||_ad(a,b)],
   stokCok:["Stok: çoktan aza",(a,b)=>b.miktar-a.miktar||_ad(a,b)],
   stokAz:["Stok: azdan çoğa",(a,b)=>a.miktar-b.miktar||_ad(a,b)],
   satisYuksek:["Satış fiyatı: yüksekten düşüğe",(a,b)=>_sayi(b,"satisFiyat")-_sayi(a,"satisFiyat")||_ad(a,b)],
@@ -2917,7 +2919,7 @@ function trendyolUrunCek(){
           er.textContent=mod==="barkod"?"Bu barkodla Trendyol'da onaylı ürün bulunamadı: "+bulunamayan.join(", "):(tum.length?"Seçtiğiniz şartlara uyan ürün yok ("+tum.length.toLocaleString("tr-TR")+" ürün okundu).":"Trendyol'da onaylı ürün bulunamadı.");return}
         closeModal();
         if(bulunamayan.length)toast("Trendyol'da bulunamayan barkod: "+bulunamayan.join(", "));
-        yengecAktarModal(liste.map(u=>[u.tyId,u.ad,u.stokKodu,u.barkod,u.stok,u.fiyat,u.kdv,u.marka,u.kategori]),"trendyol")}
+        yengecAktarModal(liste.map(u=>[u.tyId,u.ad,u.stokKodu,u.barkod,u.stok,u.fiyat,u.kdv,u.marka,u.kategori,u.eklenme||0]),"trendyol")}
       catch(err){tyUrunCekiliyor=false;du.textContent="";er.textContent=err.message||String(err);root.querySelectorAll("button,input,textarea").forEach(x=>x.disabled=false)}});
   });
 }
@@ -3485,8 +3487,8 @@ const AKTARIM_KAYNAK={yengec:{ad:"Yengeç",alan:"yengecId",onek:"YNG-",stok:true
 function yengecPlan(liste,K=AKTARIM_KAYNAK.yengec){
   const byY={},byB={},byK={},byA={};state.urunler.forEach(u=>{if(u[K.alan])byY[String(u[K.alan])]=u;if(u.barkod)byB[String(u.barkod).trim()]=u;if(u.kod)byK[String(u.kod).trim()]=u;byA[_norm(u.ad)]=u});
   const yeni=[],eslesen=[];const gor=new Set();const adaylar=[];
-  for(const [yid,ad,sk,bk,stok,fiyat,kdv,marka,kategori] of liste){if(!ad)continue;const kod=sk||bk||K.onek+yid;const barkod=String(bk||"").trim()||(/^\d{8,14}$/.test(String(sk||"").trim())?String(sk).trim():"");
-    const v={yengecId:String(yid),ad:String(ad).trim(),kod,barkod,stok:r2(stok),satisFiyat:r2(fiyat),kdvOran:[20,10,1,0].includes(Number(kdv))?Number(kdv):20,marka:String(marka||"").trim(),kategori:String(kategori||"").trim()};
+  for(const [yid,ad,sk,bk,stok,fiyat,kdv,marka,kategori,eklenme] of liste){if(!ad)continue;const kod=sk||bk||K.onek+yid;const barkod=String(bk||"").trim()||(/^\d{8,14}$/.test(String(sk||"").trim())?String(sk).trim():"");
+    const v={yengecId:String(yid),ad:String(ad).trim(),kod,barkod,stok:r2(stok),satisFiyat:r2(fiyat),kdvOran:[20,10,1,0].includes(Number(kdv))?Number(kdv):20,marka:String(marka||"").trim(),kategori:String(kategori||"").trim(),eklenme:Number(eklenme)||0};
     if(gor.has(v.yengecId))continue;gor.add(v.yengecId);adaylar.push({v,sk,bk})}
   // Bir mevcut ürün yalnızca bir kaynak ürünle eşleşir (aynı ürün iki kez yazılırsa kayıt reddedilir).
   // Önce kaynak numarasıyla (ör. trendyolId) kesin eşleşmeler, sonra barkod / stok kodu / ad ile eşleşmeler.
@@ -3517,10 +3519,12 @@ function yengecAktarModal(liste0,kaynak){
   root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="aktar")return;
     const er=root.querySelector("#ygErr"),du=root.querySelector("#ygDurum");const yeniE=root.querySelector("#ygYeni").checked,stokE=root.querySelector("#ygStok").checked,fiyatE=root.querySelector("#ygFiyat").checked;
     const satir=[];const simdi=Date.now();const bugun=today();
-    if(yeniE)for(const v of p.yeni)satir.push({col:"urunler",id:idUret(),veri:{ad:v.ad,kod:v.kod,barkod:v.barkod,[K.alan]:v.yengecId,kategori:v.kategori||"",marka:v.marka||"",birim:"Adet",alisFiyat:0,satisFiyat:v.satisFiyat,kdvOran:v.kdvOran,kritik:"",acilis:v.stok,kaynak:K.ad,olusturma:simdi}});
+    // Toplu aktarımda her ürüne ayrı "eklenme" zamanı: kaynaktaki oluşturma tarihi, yoksa listedeki sırası (Son eklenenler sıralaması için)
+    if(yeniE)p.yeni.forEach((v,ix)=>satir.push({col:"urunler",id:idUret(),veri:{ad:v.ad,kod:v.kod,barkod:v.barkod,[K.alan]:v.yengecId,kategori:v.kategori||"",marka:v.marka||"",birim:"Adet",alisFiyat:0,satisFiyat:v.satisFiyat,kdvOran:v.kdvOran,kritik:"",acilis:v.stok,kaynak:K.ad,olusturma:simdi+ix,eklenme:v.eklenme||0}}));
     for(const {ex,v,fark} of p.eslesen){const {id,...rest}=ex;const y={...rest};let deg=false;
       if(!ex[K.alan]){y[K.alan]=v.yengecId;deg=true}if(!ex.barkod&&v.barkod){y.barkod=v.barkod;deg=true}
       if(!ex.marka&&v.marka){y.marka=v.marka;deg=true}if(!ex.kategori&&v.kategori){y.kategori=v.kategori;deg=true}
+      if(v.eklenme&&Number(ex.eklenme)!==v.eklenme){y.eklenme=v.eklenme;deg=true}
       if(fiyatE&&v.satisFiyat&&v.satisFiyat!==Number(ex.satisFiyat)){y.satisFiyat=v.satisFiyat;y.kdvOran=v.kdvOran;deg=true}
       if(deg)satir.push({col:"urunler",id,veri:y});
       if(stokE&&fark!==0)satir.push({col:"stokHareketleri",id:idUret(),veri:{urunId:id,tarih:bugun,tip:"Sayım",miktar:fark,birimFiyat:Number(ex.alisFiyat)||0,aciklama:K.ad+" eşitleme",hareketId:"",olusturma:simdi}})}
