@@ -457,7 +457,7 @@ function vCariler(){
       ${list.map(c=>`<tr><td><b>${esc(c.ad)}</b>${c.ornek?` <span class="chip ornek">Örnek</span>`:""}${c.vergiDairesi?`<div class="muted" style="font-size:.78rem">${esc(c.vergiDairesi)} V.D.</div>`:""}</td>
         <td>${c.tur==="tedarikci"?"Tedarikçi":"Müşteri"}</td><td class="date">${esc(c.vergiNo||"—")}</td><td class="date">${esc(c.telefon||"—")}</td>
         <td class="num ${c.bakiye>0?"pos":c.bakiye<0?"neg":""}">${money(Math.abs(c.bakiye))}<div style="font-size:.72rem;font-family:var(--font-body)" class="muted">${c.bakiye>0?"bize borçlu":c.bakiye<0?"biz borçluyuz":"kapalı"}</div></td>
-        <td><div class="rowact"><button class="small ghost" data-act="ekstre" data-id="${c.id}" type="button">Ekstre</button>${state.readonly?"":`<button class="small ghost" data-act="editCari" data-id="${c.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
+        <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="cariOdeme" data-id="${c.id}" type="button">${(c.bakiye<0||(c.bakiye===0&&c.tur==="tedarikci"))?"Öde":"Tahsil et"}</button>`}<button class="small ghost" data-act="ekstre" data-id="${c.id}" type="button">Ekstre</button>${state.readonly?"":`<button class="small ghost" data-act="editCari" data-id="${c.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
     </tbody></table></div>`:`<div class="empty">Henüz cari yok. Müşteri ve tedarikçilerinizi ekleyerek açık hesap satış ve alışlarını takip edebilirsiniz.</div>`}
   </section>`;
 }
@@ -1285,6 +1285,53 @@ function faturaOdemeForm(id){
         const hdoc={tur:satis?"tahsilat":"odeme",tarih:g("foTarih"),odeme:od,cariId:f.cariId,kanal:"",kategori:"",bankaId:od==="banka"?g("foBanka"):"",kdvOran:0,net:t,kdv:0,toplam:t,aciklama:"Fatura "+f.no+(satis?" tahsilatı":" ödemesi"),belgeNo:f.no,olusturma:Date.now()};if(satis)hdoc.makbuzNo=yeniMakbuzNo();await api.setDoc("hareketler",hid,hdoc);
         const {id:_,...rest}=f;await api.setDoc("faturalar",f.id,{...rest,odemeIds:(f.odemeIds||[]).concat(hid)});
         closeModal();toast((satis?"Tahsilat":"Ödeme")+" kaydedildi: "+money(t));if(satis)makbuzModal({id:hid,...hdoc})}catch(err){er.textContent=errMsg(err);b.disabled=false}})});
+}
+/* Cariler listesinden ödeme / tahsilat: ödeme türü seçilir; tutar carinin açık faturalarına eskiden yeniye dağıtılır */
+const ODEME_TURLERI=[{k:"nakit",ad:"Nakit",odeme:"kasa"},{k:"havale",ad:"Havale / EFT",odeme:"banka"},{k:"kart",ad:"Kredi kartı / POS",odeme:"banka"}];
+function cariOdemeForm(cariId){
+  const c=state.cariler.find(x=>x.id===cariId);if(!c)return;const bak=cariBakiye(c.id);const vb=varsayilanBanka();
+  const ilkTur=bak<0||(bak===0&&c.tur==="tedarikci")?"odeme":"tahsilat";
+  openModal(`<div class="section-head"><h2>${esc(c.ad)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">Bakiye: <b style="color:var(--fg)">${money(Math.abs(bak))}</b> ${bak>0?"(bize borçlu)":bak<0?"(biz borçluyuz)":"(kapalı)"}</div>
+    <div class="grid2">
+      <div class="field"><label for="coTur">İşlem</label><select id="coTur"><option value="odeme" ${ilkTur==="odeme"?"selected":""}>Ödeme yaptık (cariye para verdik)</option><option value="tahsilat" ${ilkTur==="tahsilat"?"selected":""}>Tahsilat aldık (cariden para aldık)</option></select></div>
+      <div class="field"><label for="coOt">Ödeme türü</label><select id="coOt">${ODEME_TURLERI.map((t,i)=>`<option value="${t.k}" ${i===1?"selected":""}>${t.ad}</option>`).join("")}</select></div>
+      <div class="field"><label for="coTarih">Tarih</label><input id="coTarih" type="date" value="${today()}"></div>
+      <div class="field"><label for="coTutar">Tutar (₺)</label><input id="coTutar" type="number" step="0.01" min="0" inputmode="decimal" value="${bak?Math.abs(bak):""}"></div>
+      ${state.bankalar.length?`<div class="field" id="coBankaF"><label for="coBanka">Banka hesabı</label><select id="coBanka">${state.bankalar.map(b=>`<option value="${b.id}" ${vb&&vb.id===b.id?"selected":""}>${esc(bankaAd(b.id))}</option>`).join("")}</select></div>`:""}
+      <div class="field"><label for="coAcik">Açıklama (isteğe bağlı)</label><input id="coAcik" placeholder="Örn. Kasım ödemesi"></div>
+    </div>
+    <div class="muted" style="font-size:.8rem" id="coBilgi"></div>
+    <div class="err" id="coErr" role="alert"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">Kaydet</button></div>`,
+  root=>{
+    const g=id=>{const el=root.querySelector("#"+id);return el?el.value.trim():""};
+    const acikFat=tur=>state.faturalar.filter(f=>f.cariId===c.id&&f.tur===(tur==="odeme"?"alis":"satis")&&faturaKalan(f)>0).sort((a,b)=>(a.vade||a.tarih||"").localeCompare(b.vade||b.tarih||"")||(a.tarih||"").localeCompare(b.tarih||""));
+    const guncelle=()=>{const t=ODEME_TURLERI.find(x=>x.k===g("coOt"));const bf=root.querySelector("#coBankaF");if(bf)bf.hidden=t.odeme!=="banka";
+      const l=acikFat(g("coTur"));root.querySelector("#coBilgi").textContent=l.length?`Bu cariye ait ${l.length} açık ${g("coTur")==="odeme"?"alış":"satış"} faturası var (${money(l.reduce((s,f)=>s+faturaKalan(f),0))}); tutar en eski vadeli faturadan başlayarak kapatılır.`:""};
+    guncelle();
+    root.addEventListener("change",e=>{if(e.target.id==="coOt"||e.target.id==="coTur")guncelle()});
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const er=root.querySelector("#coErr");
+      if(b.dataset.m==="close")return closeModal();
+      if(b.dataset.m!=="kaydet")return;
+      const tur=g("coTur"),ot=ODEME_TURLERI.find(x=>x.k===g("coOt")),tarih=g("coTarih"),toplam=r2(g("coTutar")),not=g("coAcik");
+      if(!tarih){er.textContent="Tarih girin.";return}
+      if(!(toplam>0)){er.textContent="Tutar sıfırdan büyük olmalı.";return}
+      b.disabled=true;
+      try{const tahsil=tur==="tahsilat";const makbuzNo=tahsil?yeniMakbuzNo():"";const bankaId=ot.odeme==="banka"?(g("coBanka")||(vb?vb.id:"")):"";
+        const parcalar=[];let kalan=toplam;
+        for(const f of acikFat(tur)){if(kalan<=0.009)break;const p=r2(Math.min(kalan,faturaKalan(f)));parcalar.push({f,p});kalan=r2(kalan-p)}
+        if(kalan>0.009)parcalar.push({f:null,p:kalan});
+        let ilk=null;
+        for(const {f,p} of parcalar){const hid=api.newId("hareketler");
+          const hdoc={tur,tarih,odeme:ot.odeme,cariId:c.id,kanal:"",kategori:"",bankaId,kdvOran:0,net:p,kdv:0,toplam:p,
+            aciklama:(f?"Fatura "+f.no+(tahsil?" tahsilatı":" ödemesi"):(tahsil?"Tahsilat":"Ödeme"))+" · "+ot.ad+(not?" · "+not:""),belgeNo:f?f.no:"",odemeTuru:ot.k,olusturma:Date.now()};
+          if(makbuzNo)hdoc.makbuzNo=makbuzNo;
+          await api.setDoc("hareketler",hid,hdoc);if(!ilk)ilk={id:hid,...hdoc};
+          if(f){const {id:_,...rest}=f;await api.setDoc("faturalar",f.id,{...rest,odemeIds:(f.odemeIds||[]).concat(hid)})}}
+        closeModal();toast((tahsil?"Tahsilat":"Ödeme")+" kaydedildi: "+money(toplam)+" · "+ot.ad);
+        if(tahsil&&ilk)makbuzModal({...ilk,net:toplam,toplam,aciklama:"Tahsilat · "+ot.ad+(not?" · "+not:"")})}
+      catch(err){er.textContent=errMsg(err);b.disabled=false}})});
 }
 function faturaIndirModal(id){
   const f=state.faturalar.find(x=>x.id===id);if(!f)return;const t=faturaBelge(f);
@@ -2909,6 +2956,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="newCari")cariForm(null);
   else if(a==="editCari"){const c=cariById(id);if(c)cariForm(c)}
   else if(a==="ekstre")ekstre(id);
+  else if(a==="cariOdeme")cariOdemeForm(id);
   else if(a==="newGider")hareketForm(null,"gider");
   else if(a==="newGelir")hareketForm(null,"satis");
   else if(a==="lTum"){ui.lAy="";render()}
