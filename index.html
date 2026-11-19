@@ -3334,7 +3334,7 @@ const AKTARIM_KAYNAK={yengec:{ad:"Yengeç",alan:"yengecId",onek:"YNG-",stok:true
 function yengecPlan(liste,K=AKTARIM_KAYNAK.yengec){
   const byY={},byB={},byK={},byA={};state.urunler.forEach(u=>{if(u[K.alan])byY[String(u[K.alan])]=u;if(u.barkod)byB[String(u.barkod).trim()]=u;if(u.kod)byK[String(u.kod).trim()]=u;byA[_norm(u.ad)]=u});
   const yeni=[],eslesen=[];const gor=new Set();
-  for(const [yid,ad,sk,bk,stok,fiyat,kdv,marka,kategori] of liste){if(!ad)continue;const kod=sk||bk||K.onek+yid;const barkod=bk&&bk!==kod?bk:"";
+  for(const [yid,ad,sk,bk,stok,fiyat,kdv,marka,kategori] of liste){if(!ad)continue;const kod=sk||bk||K.onek+yid;const barkod=String(bk||"").trim()||(/^\d{8,14}$/.test(String(sk||"").trim())?String(sk).trim():"");
     const v={yengecId:String(yid),ad:String(ad).trim(),kod,barkod,stok:r2(stok),satisFiyat:r2(fiyat),kdvOran:[20,10,1,0].includes(Number(kdv))?Number(kdv):20,marka:String(marka||"").trim(),kategori:String(kategori||"").trim()};
     if(gor.has(v.yengecId))continue;gor.add(v.yengecId);
     const ex=byY[v.yengecId]||(barkod&&byB[barkod])||byK[kod]||(sk&&byB[sk])||(bk&&byK[bk])||byA[_norm(v.ad)];
