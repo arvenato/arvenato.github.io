@@ -312,7 +312,7 @@ function donemOzet(filter){
 /* ---------- Görünümler ---------- */
 const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","satis"];
 let view="ozet";
-const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
+const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",fCari:"",fAra:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
 
 function setView(){
   const h=(location.hash||"").replace("#","");
@@ -1147,7 +1147,11 @@ function yeniFaturaNo(tur){const on=tur==="alis"?"AF":"SF";const y=new Date().ge
 function faturaBelge(f){return {...f,gecerlilik:f.vade||"",_baslik:f.tur==="alis"?"ALIŞ FATURASI":"FATURA",_noEtiket:"Fatura no: ",_gecEtiket:"Vade: ",_altBaslik:"Fatura",_musEtiket:f.tur==="alis"?"Satıcı":"Sayın",_dosyaAd:"Fatura",_dip:"Bilgi amaçlıdır; e-Fatura / e-Arşiv yerine geçmez."}}
 function vFaturalar(){
   const all=state.faturalar.slice().sort((a,b)=>(b.tarih||"").localeCompare(a.tarih||"")||(b.no||"").localeCompare(a.no||""));
-  const list=all.filter(f=>(!ui.fTur||f.tur===ui.fTur)&&(!ui.fDurum||faturaDurum(f)===ui.fDurum)&&(!ui.fAy||ym(f.tarih)===ui.fAy));
+  const ara=_norm(ui.fAra||"");
+  const list=all.filter(f=>(!ui.fTur||f.tur===ui.fTur)&&(!ui.fDurum||faturaDurum(f)===ui.fDurum)&&(!ui.fAy||ym(f.tarih)===ui.fAy)&&(!ui.fCari||f.cariId===ui.fCari)
+    &&(!ara||_norm([f.no,teklifMusteri(f),f.notlar,...(f.satirlar||[]).map(s=>s.ad)].join(" ")).includes(ara)));
+  const fCariler=state.cariler.filter(c=>all.some(f=>f.cariId===c.id)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  const filtreli=ui.fTur||ui.fDurum||ui.fAy||ui.fCari||ui.fAra;
   const buAy=ym(today());const sum=l=>l.reduce((s,f)=>s+(f.toplam||0),0);
   const sAy=all.filter(f=>f.tur==="satis"&&ym(f.tarih)===buAy),aAy=all.filter(f=>f.tur==="alis"&&ym(f.tarih)===buAy);
   const tahsil=r2(all.filter(f=>f.tur==="satis").reduce((s,f)=>s+faturaKalan(f),0)),borc=r2(all.filter(f=>f.tur==="alis").reduce((s,f)=>s+faturaKalan(f),0));
@@ -1164,8 +1168,11 @@ function vFaturalar(){
       <select id="fFTur" data-filter="fTur" aria-label="Fatura türü"><option value="">Tüm faturalar</option><option value="satis" ${ui.fTur==="satis"?"selected":""}>Satış faturaları</option><option value="alis" ${ui.fTur==="alis"?"selected":""}>Alış faturaları</option></select>
       <select id="fFDurum" data-filter="fDurum" aria-label="Durum"><option value="">Tüm durumlar</option>${Object.entries(FDURUM).map(([k,v])=>`<option value="${k}" ${ui.fDurum===k?"selected":""}>${v[0]}</option>`).join("")}</select>
       <input id="fFAy" type="month" data-filter="fAy" value="${esc(ui.fAy)}" aria-label="Ay">
-      ${ui.fTur||ui.fDurum||ui.fAy?`<button class="small ghost" data-act="fTemizle" type="button">Filtreyi temizle</button>`:""}
+      <select id="fFCari" data-filter="fCari" aria-label="Cari" style="max-width:260px"><option value="">Tüm cariler</option>${fCariler.map(c=>`<option value="${c.id}" ${ui.fCari===c.id?"selected":""}>${esc(c.ad)}</option>`).join("")}</select>
+      <input id="fFAra" type="search" data-filter="fAra" value="${esc(ui.fAra)}" placeholder="Cari adı, fatura no, ürün ara…" aria-label="Fatura ara" style="flex:1;min-width:180px">
+      ${filtreli?`<button class="small ghost" data-act="fTemizle" type="button">Filtreyi temizle</button>`:""}
     </div>
+    ${filtreli&&list.length?`<div class="muted" style="font-size:.85rem">${list.length} fatura · Toplam <b style="color:var(--fg)">${money(list.reduce((s,f)=>s+(f.toplam||0),0))}</b> · Kalan <b style="color:var(--fg)">${money(r2(list.reduce((s,f)=>s+faturaKalan(f),0)))}</b></div>`:""}
     ${list.length?`<div class="tscroll"><table><thead><tr><th>Fatura no</th><th>Tarih</th><th>Tür</th><th>Cari</th><th>Vade</th><th class="num">Tutar</th><th class="num">Kalan</th><th>Durum</th><th></th></tr></thead><tbody>
     ${list.map(f=>{const d=faturaDurum(f),k=faturaKalan(f);return `<tr><td class="date" style="color:var(--fg)"><b>${esc(f.no)}</b></td><td class="date">${trDate(f.tarih)}</td><td><span class="chip ${f.tur==="satis"?"satis":"alis"}">${f.tur==="satis"?"Satış":"Alış"}</span></td><td>${esc(teklifMusteri(f))}<div class="muted" style="font-size:.78rem">${(f.satirlar||[]).length} kalem · ${esc(odemeAd({odeme:f.odeme,bankaId:f.bankaId}))}</div></td><td class="date">${f.odeme==="acik"&&f.vade?trDate(f.vade):"—"}</td><td class="num">${money(f.toplam)}</td><td class="num ${k>0?"neg":""}">${k>0?money(k):"—"}</td><td><span class="chip ${FDURUM[d][1]}">${FDURUM[d][0]}</span></td>
       <td><div class="rowact">${!state.readonly&&k>0?`<button class="small primary" data-act="fOdeme" data-id="${f.id}" type="button">${f.tur==="satis"?"Tahsil et":"Öde"}</button>`:""}<button class="small ghost" data-act="fIndir" data-id="${f.id}" type="button">İndir</button>${state.readonly?"":`<button class="small ghost" data-act="editFatura" data-id="${f.id}" type="button">Düzenle</button>`}</div></td></tr>`}).join("")}
@@ -1272,19 +1279,25 @@ function faturaOdemeForm(id){
       <div class="field"><label for="foOdeme">${satis?"Nereye girdi":"Nereden çıktı"}</label><select id="foOdeme"><option value="banka">${ODEME.banka}</option><option value="kasa">${ODEME.kasa}</option></select></div>
       ${state.bankalar.length?`<div class="field" id="foBankaF"><label for="foBanka">Banka hesabı</label><select id="foBanka">${state.bankalar.map(b=>`<option value="${b.id}" ${vb&&vb.id===b.id?"selected":""}>${esc(bankaAd(b.id))}</option>`).join("")}</select></div>`:""}
     </div>
+    <div class="muted" id="foFazla" style="font-size:.85rem"></div>
     <div class="err" id="foErr" role="alert"></div>
     <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">${satis?"Tahsilatı kaydet":"Ödemeyi kaydet"}</button></div>`,
   root=>{root.addEventListener("change",e=>{if(e.target.id==="foOdeme"&&root.querySelector("#foBankaF"))root.querySelector("#foBankaF").hidden=e.target.value!=="banka"});
+    root.addEventListener("input",e=>{if(e.target.id!=="foTutar")return;const fz=r2(Number(e.target.value||0)-k);root.querySelector("#foFazla").innerHTML=fz>0.009?`<b style="color:var(--fg)">${money(fz)}</b> fazla ${satis?"tahsilat: müşteriye borç olarak yazılacak":"ödeme: firmadan alacak olarak yazılacak"}.`:""});
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const er=root.querySelector("#foErr");
       if(b.dataset.m==="close")return closeModal();
       const g=id=>{const el=root.querySelector("#"+id);return el?el.value.trim():""};const t=r2(g("foTutar"));
       if(!g("foTarih")){er.textContent="Tarih girin.";return}
       if(!(t>0)){er.textContent="Tutar sıfırdan büyük olmalı.";return}
-      if(t>k+0.009){er.textContent="Tutar kalan borçtan ("+money(k)+") büyük olamaz.";return}
-      b.disabled=true;try{const hid=api.newId("hareketler");const od=g("foOdeme");
-        const hdoc={tur:satis?"tahsilat":"odeme",tarih:g("foTarih"),odeme:od,cariId:f.cariId,kanal:"",kategori:"",bankaId:od==="banka"?g("foBanka"):"",kdvOran:0,net:t,kdv:0,toplam:t,aciklama:"Fatura "+f.no+(satis?" tahsilatı":" ödemesi"),belgeNo:f.no,olusturma:Date.now()};if(satis)hdoc.makbuzNo=yeniMakbuzNo();await api.setDoc("hareketler",hid,hdoc);
-        const {id:_,...rest}=f;await api.setDoc("faturalar",f.id,{...rest,odemeIds:(f.odemeIds||[]).concat(hid)});
-        closeModal();toast((satis?"Tahsilat":"Ödeme")+" kaydedildi: "+money(t));if(satis)makbuzModal({id:hid,...hdoc})}catch(err){er.textContent=errMsg(err);b.disabled=false}})});
+      if(t>k+0.009&&!f.cariId){er.textContent="Bu fatura bir cariye bağlı değil; kalan tutardan ("+money(k)+") fazla girilemez.";return}
+      // Fazla ödeme: faturanın kalanı faturaya, artanı ayrı kayıt olarak cariye işlenir (cari bakiyesinde alacak/borç olarak görünür)
+      b.disabled=true;try{const od=g("foOdeme");const fp=r2(Math.min(t,k)),fazla=r2(t-fp);const makbuzNo=satis?yeniMakbuzNo():"";let ilk=null;const yeniIds=[];
+        const ortak={tur:satis?"tahsilat":"odeme",tarih:g("foTarih"),odeme:od,cariId:f.cariId,kanal:"",kategori:"",bankaId:od==="banka"?g("foBanka"):"",kdvOran:0,kdv:0,belgeNo:f.no};
+        if(fp>0){const hid=api.newId("hareketler");const hdoc={...ortak,net:fp,toplam:fp,aciklama:"Fatura "+f.no+(satis?" tahsilatı":" ödemesi"),olusturma:Date.now()};if(makbuzNo)hdoc.makbuzNo=makbuzNo;await api.setDoc("hareketler",hid,hdoc);yeniIds.push(hid);ilk={id:hid,...hdoc}}
+        if(fazla>0){const hid=api.newId("hareketler");const hdoc={...ortak,net:fazla,toplam:fazla,aciklama:"Fatura "+f.no+(satis?" fazla tahsilat (müşteriye borcumuz)":" fazla ödeme (firmadan alacağımız)"),olusturma:Date.now()};if(makbuzNo)hdoc.makbuzNo=makbuzNo;await api.setDoc("hareketler",hid,hdoc);if(!ilk)ilk={id:hid,...hdoc}}
+        if(yeniIds.length){const {id:_,...rest}=f;await api.setDoc("faturalar",f.id,{...rest,odemeIds:(f.odemeIds||[]).concat(yeniIds)})}
+        closeModal();toast((satis?"Tahsilat":"Ödeme")+" kaydedildi: "+money(t)+(fazla>0?" · "+money(fazla)+(satis?" fazla tahsilat, müşteriye borç olarak yazıldı":" fazla ödeme, firmadan alacak olarak yazıldı"):""));
+        if(satis&&ilk)makbuzModal({...ilk,net:t,toplam:t,aciklama:"Fatura "+f.no+" tahsilatı"})}catch(err){er.textContent=errMsg(err);b.disabled=false}})});
 }
 /* Cariler listesinden ödeme / tahsilat: ödeme türü seçilir; tutar carinin açık faturalarına eskiden yeniye dağıtılır */
 const ODEME_TURLERI=[{k:"nakit",ad:"Nakit",odeme:"kasa"},{k:"havale",ad:"Havale / EFT",odeme:"banka"},{k:"kart",ad:"Kredi kartı / POS",odeme:"banka"}];
@@ -2975,7 +2988,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="fatAktar")faturaAktarSecim();
   else if(a==="efatSenk")efatSenk(true);
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
-  else if(a==="fTemizle"){ui.fTur="";ui.fDurum="";ui.fAy="";render()}
+  else if(a==="fTemizle"){ui.fTur="";ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
   else if(a==="ajYeni")ajandaForm(null,b.dataset.t);
   else if(a==="ajDuzenle"){const x=state.ajanda.find(y=>y.id===id);if(x)ajandaForm(x)}
   else if(a==="ajTamam"){b.disabled=true;try{await ajandaTamamla(id,b.dataset.t)}catch(err){toast(errMsg(err))}}
