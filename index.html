@@ -313,7 +313,7 @@ function donemOzet(filter){
 /* ---------- Görünümler ---------- */
 const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","satis","pazaryeri"];
 let view="ozet";
-const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sMarka:"",sSayfa:1,sBoyut:(()=>{try{return Number(localStorage.getItem("urun-sayfa-boyut"))||100}catch(e){return 100}})(),sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",fCari:"",fAra:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",pzGun:"14",pzDurum:"",pzAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
+const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sMarka:"",sSayfa:1,sKol:{},sSira:(()=>{try{return localStorage.getItem("urun-sira")||"adAZ"}catch(e){return "adAZ"}})(),sBoyut:(()=>{try{return Number(localStorage.getItem("urun-sayfa-boyut"))||100}catch(e){return 100}})(),sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",fCari:"",fAra:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",pzGun:"14",pzDurum:"",pzAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
 
 function setView(){
   const h=(location.hash||"").replace("#","");
@@ -1436,17 +1436,57 @@ function fmtMiktar(n){return (Math.round((Number(n)||0)*100)/100).toLocaleString
 function stokMiktar(u){return r2((Number(u.acilis)||0)+state.stokHareketleri.filter(s=>s.urunId===u.id).reduce((t,s)=>t+(Number(s.miktar)||0),0))}
 function stokDurum(u){const m=stokMiktar(u);if(m<=0)return "yok";if(Number(u.kritik)>0&&m<=Number(u.kritik))return "kritik";return "ok"}
 const urunSecim=new Set();let stokListeSon=[],stokSayfaSon=[],stokFiltreSon=null;
+const _ad=(a,b)=>a.ad.localeCompare(b.ad,"tr"),_sayi=(x,k)=>Number(x[k])||0;
+const URUN_SIRA={
+  adAZ:["Ada göre (A → Z)",_ad],
+  adZA:["Ada göre (Z → A)",(a,b)=>_ad(b,a)],
+  yeni:["Son eklenenler",(a,b)=>_sayi(b,"olusturma")-_sayi(a,"olusturma")||_ad(a,b)],
+  eski:["İlk eklenenler",(a,b)=>_sayi(a,"olusturma")-_sayi(b,"olusturma")||_ad(a,b)],
+  stokCok:["Stok: çoktan aza",(a,b)=>b.miktar-a.miktar||_ad(a,b)],
+  stokAz:["Stok: azdan çoğa",(a,b)=>a.miktar-b.miktar||_ad(a,b)],
+  satisYuksek:["Satış fiyatı: yüksekten düşüğe",(a,b)=>_sayi(b,"satisFiyat")-_sayi(a,"satisFiyat")||_ad(a,b)],
+  satisDusuk:["Satış fiyatı: düşükten yükseğe",(a,b)=>_sayi(a,"satisFiyat")-_sayi(b,"satisFiyat")||_ad(a,b)],
+  degerYuksek:["Stok değeri: yüksekten düşüğe",(a,b)=>Math.max(0,b.miktar)*_sayi(b,"alisFiyat")-Math.max(0,a.miktar)*_sayi(a,"alisFiyat")||_ad(a,b)],
+  marka:["Markaya göre",(a,b)=>String(a.marka||"￿").localeCompare(String(b.marka||"￿"),"tr")||_ad(a,b)],
+  kategori:["Kategoriye göre",(a,b)=>String(a.kategori||"￿").localeCompare(String(b.kategori||"￿"),"tr")||_ad(a,b)],
+  kod:["Stok koduna göre",(a,b)=>String(a.kod||"￿").localeCompare(String(b.kod||"￿"),"tr",{numeric:true})||_ad(a,b)],
+  kodZA:["Stok koduna göre (ters)",(a,b)=>String(b.kod||"").localeCompare(String(a.kod||""),"tr",{numeric:true})||_ad(a,b)],
+  barkodAZ:["Barkoda göre",(a,b)=>String(a.barkod||"￿").localeCompare(String(b.barkod||"￿"),"tr",{numeric:true})||_ad(a,b)],
+  barkodZA:["Barkoda göre (ters)",(a,b)=>String(b.barkod||"").localeCompare(String(a.barkod||""),"tr",{numeric:true})||_ad(a,b)],
+  markaZA:["Markaya göre (ters)",(a,b)=>String(b.marka||"").localeCompare(String(a.marka||""),"tr")||_ad(a,b)],
+  kategoriZA:["Kategoriye göre (ters)",(a,b)=>String(b.kategori||"").localeCompare(String(a.kategori||""),"tr")||_ad(a,b)],
+  alisYuksek:["Alış fiyatı: yüksekten düşüğe",(a,b)=>_sayi(b,"alisFiyat")-_sayi(a,"alisFiyat")||_ad(a,b)],
+  alisDusuk:["Alış fiyatı: düşükten yükseğe",(a,b)=>_sayi(a,"alisFiyat")-_sayi(b,"alisFiyat")||_ad(a,b)],
+  degerDusuk:["Stok değeri: düşükten yükseğe",(a,b)=>Math.max(0,a.miktar)*_sayi(a,"alisFiyat")-Math.max(0,b.miktar)*_sayi(b,"alisFiyat")||_ad(a,b)]};
+// Ürün tablosu sütunları: başlığa tıklayınca sıralama (artan ↔ azalan), altındaki kutuyla sütun filtresi
+const URUN_KOL=[
+  {k:"ad",l:"Ürün",deger:u=>u.ad,artan:"adAZ",azalan:"adZA"},
+  {k:"kod",l:"Stok kodu",deger:u=>u.kod||"",artan:"kod",azalan:"kodZA"},
+  {k:"barkod",l:"Barkod",deger:u=>u.barkod||"",artan:"barkodAZ",azalan:"barkodZA"},
+  {k:"marka",l:"Marka",deger:u=>u.marka||"",artan:"marka",azalan:"markaZA"},
+  {k:"kategori",l:"Kategori",deger:u=>u.kategori||"",artan:"kategori",azalan:"kategoriZA"},
+  {k:"stok",l:"Stok",sayi:true,deger:u=>u.miktar,artan:"stokAz",azalan:"stokCok"},
+  {k:"alis",l:"Alış",sayi:true,deger:u=>Number(u.alisFiyat)||0,artan:"alisDusuk",azalan:"alisYuksek"},
+  {k:"satis",l:"Satış",sayi:true,deger:u=>Number(u.satisFiyat)||0,artan:"satisDusuk",azalan:"satisYuksek"},
+  {k:"deger",l:"Stok değeri",sayi:true,deger:u=>r2(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0)),artan:"degerDusuk",azalan:"degerYuksek"}];
+// Sayı filtresi: "5" (eşit) · ">10" · "<100" · ">=5" · "<=0" · "10-20" (aralık); virgüllü ondalık da olur
+function sayiFiltre(ifade,deger){const s=String(ifade).replace(/\s/g,"").replace(",",".");const v=Number(deger)||0;let m;
+  if((m=/^(>=|<=|>|<|=)?(-?\d+(?:\.\d+)?)$/.exec(s))){const n=Number(m[2]);switch(m[1]){case ">":return v>n;case "<":return v<n;case ">=":return v>=n;case "<=":return v<=n;default:return Math.abs(v-n)<0.005}}
+  if((m=/^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/.exec(s))){const a=Number(m[1]),b=Number(m[2]);return v>=Math.min(a,b)&&v<=Math.max(a,b)}
+  return true}
 function vStok(){
   const q=ui.sAra.trim().toLocaleLowerCase("tr");
   const kats=[...new Set(state.urunler.map(u=>u.kategori).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
   const markalar=[...new Set(state.urunler.map(u=>u.marka).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
   const all=state.urunler.map(u=>({...u,miktar:stokMiktar(u),durum:stokDurum(u)}));
-  const list=all.filter(u=>(!q||[u.ad,u.kod,u.barkod,u.kategori,u.marka].join(" ").toLocaleLowerCase("tr").includes(q))&&(!ui.sKat||u.kategori===ui.sKat)&&(!ui.sMarka||u.marka===ui.sMarka)&&(!ui.sDurum||u.durum===ui.sDurum)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  const kf=ui.sKol||{};const kolUy=u=>URUN_KOL.every(c=>{const v=(kf[c.k]||"").trim();if(!v)return true;return c.sayi?sayiFiltre(v,c.deger(u)):_norm(c.deger(u)).includes(_norm(v))});
+  const list=all.filter(u=>(!q||[u.ad,u.kod,u.barkod,u.kategori,u.marka].join(" ").toLocaleLowerCase("tr").includes(q))&&(!ui.sKat||u.kategori===ui.sKat)&&(!ui.sMarka||u.marka===ui.sMarka)&&(!ui.sDurum||u.durum===ui.sDurum)&&kolUy(u)).sort(URUN_SIRA[ui.sSira]?URUN_SIRA[ui.sSira][1]:URUN_SIRA.adAZ[1]);
+  const kolVar=URUN_KOL.some(c=>(kf[c.k]||"").trim());
   for(const id of [...urunSecim])if(!state.urunler.some(u=>u.id===id))urunSecim.delete(id);
   stokListeSon=list.map(u=>u.id);
   const hepsiSecili=list.length>0&&list.every(u=>urunSecim.has(u.id));
   // Sayfalama: filtre değişince ilk sayfaya dön
-  const fk=[ui.sAra,ui.sKat,ui.sMarka,ui.sDurum].join("|");if(fk!==stokFiltreSon){stokFiltreSon=fk;ui.sSayfa=1}
+  const fk=[ui.sAra,ui.sKat,ui.sMarka,ui.sDurum,ui.sSira,JSON.stringify(kf)].join("|");if(fk!==stokFiltreSon){stokFiltreSon=fk;ui.sSayfa=1}
   const boyut=[100,200,500,1000].includes(Number(ui.sBoyut))?Number(ui.sBoyut):100;const sayfaSay=Math.max(1,Math.ceil(list.length/boyut));
   const sayfa=Math.min(sayfaSay,Math.max(1,Number(ui.sSayfa)||1));ui.sSayfa=sayfa;
   const gorunen=list.slice((sayfa-1)*boyut,sayfa*boyut);stokSayfaSon=gorunen.map(u=>u.id);
@@ -1461,7 +1501,7 @@ function vStok(){
   const deger=r2(all.reduce((s,u)=>s+Math.max(0,u.miktar)*(Number(u.alisFiyat)||0),0));
   const sDeger=r2(all.reduce((s,u)=>s+Math.max(0,u.miktar)*(Number(u.satisFiyat)||0),0));
   const kritik=all.filter(u=>u.durum==="kritik").length,yok=all.filter(u=>u.durum==="yok").length;
-  return `<section class="section-head"><h2>Ürünler</h2>${state.readonly?"":`<div class="filters"><button class="small primary" data-act="yengecCek" type="button">Yengeç'ten çek</button><button class="small primary" data-act="trendyolCek" type="button" title="Trendyol'daki onaylı ürünleri okur; önce neyin değişeceğini gösterir">Trendyol'dan çek</button><button class="small" data-act="stokAktar" type="button">Excel'den aktar</button><button class="primary small" data-act="newUrun" type="button">+ Ürün ekle</button></div>`}</section>
+  return `<section class="section-head"><h2>Ürünler</h2>${state.readonly?"":`<div class="filters"><button class="small primary" data-act="yengecCek" type="button">Yengeç'ten çek</button><button class="small primary" data-act="trendyolCek" type="button" title="Trendyol'daki onaylı ürünleri okur; önce neyin değişeceğini gösterir">Trendyol'dan çek</button><button class="small" data-act="stokAktar" type="button">Excel'den aktar</button><button class="small" data-act="uTumExcel" type="button" title="Ekrandaki (filtrelenmiş, sıralı) tüm ürünleri Excel dosyası olarak indirir">⬇ Dışa aktar</button><button class="primary small" data-act="newUrun" type="button">+ Ürün ekle</button></div>`}</section>
   <section class="kpis">
     ${kpi("Ürün çeşidi",String(all.length),kats.length?kats.length+" kategori":"")}
     ${kpi("Stok değeri (alış)",money(deger),"Satış değeri "+money(sDeger))}
@@ -1474,6 +1514,7 @@ function vStok(){
       <select id="fSKat" data-filter="sKat" aria-label="Kategori"><option value="">Tüm kategoriler</option>${kats.map(k=>`<option ${ui.sKat===k?"selected":""}>${esc(k)}</option>`).join("")}</select>
       ${markalar.length?`<select id="fSMarka" data-filter="sMarka" aria-label="Marka"><option value="">Tüm markalar</option>${markalar.map(k=>`<option ${ui.sMarka===k?"selected":""}>${esc(k)}</option>`).join("")}</select>`:""}
       <select id="fSDurum" data-filter="sDurum" aria-label="Durum"><option value="">Tüm durumlar</option><option value="ok" ${ui.sDurum==="ok"?"selected":""}>Yeterli</option><option value="kritik" ${ui.sDurum==="kritik"?"selected":""}>Kritik</option><option value="yok" ${ui.sDurum==="yok"?"selected":""}>Stokta yok</option></select>
+      <select id="fSSira" data-act-sayfa="sira" aria-label="Sıralama" title="Sıralama">${Object.entries(URUN_SIRA).map(([k,v])=>`<option value="${k}" ${(ui.sSira||"adAZ")===k?"selected":""}>↕ ${v[0]}</option>`).join("")}</select>
       ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}
     </div>
     ${!ro&&urunSecim.size?`<div class="toplu-bar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(23,98,77,.08));border:1px solid var(--accent,#17624d)">
@@ -1484,13 +1525,16 @@ function vStok(){
       <button class="small" data-act="uToplu" data-id="kritik" type="button">Kritik seviye</button><button class="small" data-act="uToplu" data-id="barkod" type="button" title="Barkodu boş olup stok kodu barkod gibi (8–14 rakam) olan ürünlerde stok kodunu Barkod alanına da yazar">Barkodu stok kodundan al</button><button class="small" data-act="uExcel" type="button">Excel'e aktar</button>
       <button class="small danger" data-act="uToplu" data-id="sil" type="button">Sil</button><button class="small ghost" data-act="uSecimKaldir" type="button">Seçimi kaldır</button></div>`:""}
     ${sayfaCubuk}
-    ${list.length?`<div class="tscroll"><table><thead><tr>${ro?"":`<th style="width:28px"><input type="checkbox" data-act="uSayfaSec" aria-label="Bu sayfadakileri seç" title="Bu sayfadakileri seç" ${sayfaSecili?"checked":""}></th>`}<th>Ürün</th><th>Stok kodu</th><th>Barkod</th><th>Marka</th><th>Kategori</th><th class="num">Stok</th><th class="num">Alış</th><th class="num">Satış</th><th class="num">Stok değeri</th><th></th></tr></thead><tbody>
+    ${all.length?`<div class="tscroll"><table><thead><tr>${ro?"":`<th style="width:28px"><input type="checkbox" data-act="uSayfaSec" aria-label="Bu sayfadakileri seç" title="Bu sayfadakileri seç" ${sayfaSecili?"checked":""}></th>`}${URUN_KOL.map(c=>{const ak=URUN_SIRA[ui.sSira]&&(ui.sSira===c.artan||ui.sSira===c.azalan);const ok=ui.sSira===c.artan?"▲":ui.sSira===c.azalan?"▼":"↕";
+        return `<th class="${c.sayi?"num":""}"><button type="button" data-act="uKolSira" data-id="${c.k}" title="${esc(c.l)} sütununa göre sırala (tekrar basınca ters çevirir)" style="all:unset;cursor:pointer;white-space:nowrap;${ak?"color:var(--fg);font-weight:700":""}">${c.l} <span style="opacity:${ak?1:.45}">${ok}</span></button></th>`}).join("")}<th></th></tr>
+      <tr class="kol-filtre">${ro?"":"<th></th>"}${URUN_KOL.map(c=>`<th style="padding-top:0"><input id="fK_${c.k}" data-kolf="${c.k}" value="${esc(kf[c.k]||"")}" placeholder="${c.sayi?"örn. >10":"Filtrele…"}" title="${c.sayi?"Sayı filtresi: 5 · >10 · <100 · >=5 · 10-20":"Bu sütunda içerenleri göster"}" style="width:100%;min-width:${c.sayi?"64px":"80px"};padding:4px 6px;font-size:.78rem;font-weight:400;${c.sayi?"text-align:right;":""}${(kf[c.k]||"").trim()?"border-color:var(--accent,#17624d);background:rgba(23,98,77,.06)":""}"></th>`).join("")}<th>${kolVar?`<button class="small ghost" data-act="uKolTemizle" type="button" title="Sütun filtrelerini temizle">✕ Temizle</button>`:""}</th></tr></thead><tbody>
+    ${gorunen.length?"":`<tr><td colspan="${URUN_KOL.length+(ro?1:2)}" class="empty">Filtreye uyan ürün yok.</td></tr>`}
     ${gorunen.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><b>${esc(u.ad)}</b></td>
       <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${esc(u.marka||"—")}</td><td>${esc(u.kategori||"—")}</td>
       <td class="num ${u.durum==="yok"?"neg":""}">${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
       <td class="num">${money(u.alisFiyat)}</td><td class="num">${money(u.satisFiyat)}</td><td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
       <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="stokGiris" data-id="${u.id}" type="button">Giriş</button><button class="small" data-act="stokCikis" data-id="${u.id}" type="button">Çıkış</button><button class="small ghost" data-act="stokSayim" data-id="${u.id}" type="button">Sayım</button>`}<button class="small ghost" data-act="stokGecmis" data-id="${u.id}" type="button">Hareketler</button>${state.readonly?"":`<button class="small ghost" data-act="editUrun" data-id="${u.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
-    </tbody></table></div>`:`<div class="empty">${all.length?"Filtreye uyan ürün yok.":"Henüz ürün yok. <b>+ Ürün ekle</b> ile defter, kalem, boya gibi ürünlerinizi ve mevcut stok miktarlarını girin. Sonra mal geldiğinde <b>Giriş</b>, sattığınızda <b>Çıkış</b> yapın."}</div>`}
+    </tbody></table></div>`:`<div class="empty">${"Henüz ürün yok. <b>+ Ürün ekle</b> ile defter, kalem, boya gibi ürünlerinizi ve mevcut stok miktarlarını girin. Sonra mal geldiğinde <b>Giriş</b>, sattığınızda <b>Çıkış</b> yapın."}</div>`}
     ${sayfaSay>1?sayfaCubuk.replace('id="fSBoyut"','id="fSBoyut2"'):""}
   </section>`;
 }
@@ -1583,14 +1627,26 @@ function urunTopluForm(tip){
         closeModal();toast(`${satir.length.toLocaleString("tr-TR")} üründe “${baslik}” uygulandı`)}
       catch(err){er.textContent=errMsg(err);root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false)}})});
 }
+// Ürünleri Excel (.xlsx) dosyasına yazar; ekrandaki sıralama korunur
+async function urunlerExcel(liste,dosyaAdi){
+  if(!liste.length){toast("Aktarılacak ürün yok");return}
+  const satirlar=liste.map(u=>{const m=stokMiktar(u);return {"Ürün adı":u.ad,"Stok kodu":u.kod||"","Barkod":u.barkod||"","Marka":u.marka||"","Kategori":u.kategori||"","Birim":u.birim||"Adet",
+    "Stok":m,"Alış fiyatı (KDV dahil)":r2(u.alisFiyat),"Satış fiyatı (KDV dahil)":r2(u.satisFiyat),"KDV %":Number(u.kdvOran??20),"Kritik seviye":u.kritik===""||u.kritik==null?"":Number(u.kritik),
+    "Stok değeri (alış)":r2(Math.max(0,m)*(Number(u.alisFiyat)||0)),"Kâr marjı %":Number(u.alisFiyat)>0&&Number(u.satisFiyat)>0?Math.round((u.satisFiyat-u.alisFiyat)/u.alisFiyat*100):"","Kaynak":u.kaynak||""}});
+  try{await loadScript(LIBS.xlsx);const U=window.XLSX.utils,ws=U.json_to_sheet(satirlar),wb=U.book_new();
+    ws["!cols"]=Object.keys(satirlar[0]).map(k=>({wch:Math.min(50,Math.max(9,k.length+2,...satirlar.slice(0,300).map(r=>String(r[k]??"").length+1)))}));
+    ws["!autofilter"]={ref:U.encode_range({s:{r:0,c:0},e:{r:satirlar.length,c:Object.keys(satirlar[0]).length-1}})};
+    U.book_append_sheet(wb,ws,"Ürünler");const veri=window.XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    const ok=await dosyaKaydet(dosyaAdi||("urunler-"+today()+".xlsx"),new Blob([veri],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    if(ok)toast(satirlar.length.toLocaleString("tr-TR")+" ürün Excel dosyasına aktarıldı")}
+  catch(e){toast("Excel oluşturulamadı"+(e&&e.message==="load"?": internet gerekli":""))}}
 async function urunSeciliExcel(){
-  const sec=state.urunler.filter(u=>urunSecim.has(u.id)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));if(!sec.length)return;
-  const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"',n=x=>(Number(x)||0).toFixed(2).replace(".",",");
-  const head=["Ürün adı","Stok kodu","Barkod","Marka","Kategori","Birim","Stok","Alış (KDV dahil)","Satış (KDV dahil)","KDV %","Kritik seviye"];
-  const rows=sec.map(u=>[u.ad,u.kod,u.barkod,u.marka,u.kategori,u.birim||"Adet",fmtMiktar(stokMiktar(u)),n(u.alisFiyat),n(u.satisFiyat),u.kdvOran,u.kritik].map(q).join(";"));
-  const csv="﻿"+[head.map(q).join(";"),...rows].join("\r\n");
-  try{const ok=await dosyaKaydet("urunler-"+today()+".csv",new Blob([csv],{type:"text/csv;charset=utf-8"}));if(ok)toast(sec.length+" ürün Excel dosyasına aktarıldı")}catch(e){toast("Dosya oluşturulamadı")}
-}
+  const sira=new Map(stokListeSon.map((id,i)=>[id,i]));
+  const sec=state.urunler.filter(u=>urunSecim.has(u.id)).sort((a,b)=>(sira.has(a.id)?sira.get(a.id):1e9)-(sira.has(b.id)?sira.get(b.id):1e9)||a.ad.localeCompare(b.ad,"tr"));
+  await urunlerExcel(sec,"urunler-secilen-"+today()+".xlsx")}
+async function urunTumExcel(){
+  const byId=new Map(state.urunler.map(u=>[u.id,u]));const liste=stokListeSon.map(id=>byId.get(id)).filter(Boolean);
+  await urunlerExcel(liste,"urunler-"+today()+".xlsx")}
 function stokHareketForm(uid,tip){
   const u=state.urunler.find(x=>x.id===uid);if(!u)return;
   const giris=tip==="Giriş";const mevcut=stokMiktar(u);
@@ -3281,6 +3337,9 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="sSayfa"){ui.sSayfa=Number(id)||1;render();const m=document.getElementById("main");if(m)m.scrollIntoView({block:"start"})}
   else if(a==="uToplu")urunTopluForm(id);
   else if(a==="uExcel")urunSeciliExcel();
+  else if(a==="uTumExcel")urunTumExcel();
+  else if(a==="uKolSira"){const c=URUN_KOL.find(x=>x.k===id);if(c){ui.sSira=ui.sSira===c.artan?c.azalan:c.artan;ui.sSayfa=1;try{localStorage.setItem("urun-sira",ui.sSira)}catch(err){}render()}}
+  else if(a==="uKolTemizle"){ui.sKol={};render()}
   else if(a==="pzSekme"){pz.sekme=id;pz.hata="";render();if(pz.bag&&(id==="siparis"?!pz.siparisler:!pz.hakedis))pzGetir()}
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
   else if(a==="fTemizle"){ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
@@ -3334,7 +3393,9 @@ document.getElementById("main").addEventListener("click",async e=>{
       toast("Örnek kayıtlar silindi")}catch(err){toast(errMsg(err))}}
 });
 
-document.getElementById("main").addEventListener("change",e=>{if(e.target.dataset&&e.target.dataset.actSayfa==="boyut"){ui.sBoyut=Number(e.target.value)||100;ui.sSayfa=1;try{localStorage.setItem("urun-sayfa-boyut",String(ui.sBoyut))}catch(err){}render()}});
+document.getElementById("main").addEventListener("input",e=>{const k=e.target.dataset&&e.target.dataset.kolf;if(!k)return;ui.sKol=Object.assign({},ui.sKol,{[k]:e.target.value});rerenderKeepFocus(e.target.id)});
+document.getElementById("main").addEventListener("change",e=>{if(e.target.dataset&&e.target.dataset.actSayfa==="sira"){ui.sSira=e.target.value;ui.sSayfa=1;try{localStorage.setItem("urun-sira",ui.sSira)}catch(err){}render();return}
+  if(e.target.dataset&&e.target.dataset.actSayfa==="boyut"){ui.sBoyut=Number(e.target.value)||100;ui.sSayfa=1;try{localStorage.setItem("urun-sayfa-boyut",String(ui.sBoyut))}catch(err){}render()}});
 document.getElementById("main").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="fTdAra"){e.preventDefault();ui.tdAra=e.target.value;tdCanliGetir(false)}});
 
 /* ---------- Veri katmanı ---------- */
