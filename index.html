@@ -3597,7 +3597,20 @@ async function firmaAc(d){const degisti=firmaId&&firmaId!==d.firma_id;firmaId=d.
   if(degisti){urunSecim.clear();fatSecim.clear();pz.siparisler=null;pz.hakedis=null;pz.bag=null;pz.hata="";pz.deneme=null;pzAyar=null}document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
 async function cikisYap(){try{if(kanal)sb.removeChannel(kanal);kanal=null;await sb.auth.signOut()}catch(e){}oturum=null;firmaId=null;for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";girisEkrani()}
 function idUret(){const a="abcdefghijklmnopqrstuvwxyz0123456789";let s="";for(const x of crypto.getRandomValues(new Uint8Array(20)))s+=a[x%36];return s}
-let _rt=null;function renderSonra(){clearTimeout(_rt);_rt=setTimeout(render,120)}
+// Arka plandan gelen yeniden çizim, kullanıcı bir kutuya (yazı, seçim) tıklamışken yapılmaz; kutudan çıkınca yapılır.
+// (Aksi halde açılır liste kapanır, yazılan kutu kaybolur.)
+let _rt=null;function renderSonra(){clearTimeout(_rt);_rt=setTimeout(()=>{if(kullaniciKutuda()){renderSonra();return}render()},120)}
+function kullaniciKutuda(){const a=document.activeElement;if(!a||a===document.body)return false;
+  const m=document.getElementById("main");if(!m||!m.contains(a))return false;
+  return a.tagName==="SELECT"||a.tagName==="TEXTAREA"||(a.tagName==="INPUT"&&!/^(checkbox|radio|button|submit)$/i.test(a.type))}
+// Canlı eşitleme: gelen kayıt bizdeki ile aynıysa (ör. kendi kaydımızın yankısı) hiçbir şey yapılmaz
+const _sirali=v=>v&&typeof v==="object"?(Array.isArray(v)?"["+v.map(_sirali).join(",")+"]":"{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+_sirali(v[k])).join(",")+"}"):JSON.stringify(v);
+function uzakUygula(col,id,veri){
+  if(col==="ayar"){const eski=id==="firma"?{ad:state.firma}:(state.ayarEk||{})[id];if(veri&&eski&&_sirali(eski)===_sirali(id==="firma"?{ad:veri.ad||""}:veri))return}
+  else{const k=KOLEKSIYONLAR[col];if(!k)return;const mevcut=state[k].find(x=>x.id===id);
+    if(!veri&&!mevcut)return;
+    if(veri&&mevcut){const {id:_,...m}=mevcut;if(_sirali(m)===_sirali(veri))return}}
+  yerelUygula(col,id,veri);renderSonra()}
 function yerelUygula(col,id,veri){if(col==="ayar"){if(id==="firma")state.firma=veri?veri.ad||"":"";else{state.ayarEk=state.ayarEk||{};if(veri)state.ayarEk[id]=veri;else delete state.ayarEk[id]}return}const k=KOLEKSIYONLAR[col];if(!k)return;const arr=state[k].filter(x=>x.id!==id);if(veri)arr.push({id,...veri});state[k]=arr}
 async function tumunuYukle(){const rows=[];const N=1000;for(let from=0;;from+=N){const {data,error}=await sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",firmaId).order("koleksiyon").order("id").range(from,from+N-1);if(error)throw error;rows.push(...data);if(data.length<N)break}
   for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";state.ayarEk={};for(const r of rows)yerelUygula(r.koleksiyon,r.id,r.veri)}
@@ -3690,9 +3703,9 @@ async function veriBaslat(){
   try{await tumunuYukle();state.mode="db"}catch(e){state.mode="db";state.error="Kayıtlar yüklenemedi. "+sbMesaj(e)}
   if(kanal)sb.removeChannel(kanal);
   kanal=sb.channel("kayitlar-"+firmaId)
-    .on("postgres_changes",{event:"INSERT",schema:"public",table:"kayitlar",filter:"firma_id=eq."+firmaId},p=>{yerelUygula(p.new.koleksiyon,p.new.id,p.new.veri);renderSonra()})
-    .on("postgres_changes",{event:"UPDATE",schema:"public",table:"kayitlar",filter:"firma_id=eq."+firmaId},p=>{yerelUygula(p.new.koleksiyon,p.new.id,p.new.veri);renderSonra()})
-    .on("postgres_changes",{event:"DELETE",schema:"public",table:"kayitlar"},p=>{const o=p.old||{};if(o.firma_id===firmaId&&o.koleksiyon){yerelUygula(o.koleksiyon,o.id,null);renderSonra()}})
+    .on("postgres_changes",{event:"INSERT",schema:"public",table:"kayitlar",filter:"firma_id=eq."+firmaId},p=>uzakUygula(p.new.koleksiyon,p.new.id,p.new.veri))
+    .on("postgres_changes",{event:"UPDATE",schema:"public",table:"kayitlar",filter:"firma_id=eq."+firmaId},p=>uzakUygula(p.new.koleksiyon,p.new.id,p.new.veri))
+    .on("postgres_changes",{event:"DELETE",schema:"public",table:"kayitlar"},p=>{const o=p.old||{};if(o.firma_id===firmaId&&o.koleksiyon)uzakUygula(o.koleksiyon,o.id,null)})
     .subscribe();
   api={newId:()=>idUret(),
     setDoc:async(col,id,obj)=>{yerelUygula(col,id,obj);renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
