@@ -2936,13 +2936,21 @@ function pzSiparisBas(){const t=((state.ayarEk||{}).pazaryeriTest||{}).siparisBa
   const son=state.stokHareketleri.filter(h=>h.aciklama==="Trendyol'a gönderilen stok").reduce((m,h)=>Math.max(m,Number(h.olusturma)||0),0);
   return {zaman:son||Date.now(),kayitli:false}}
 function pzTyCari(){return state.cariler.find(c=>c.id==="ty-cari")||state.cariler.find(c=>/^trendyol\b/i.test((c.ad||"").trim()))||null}
+// Deneme ürününü tanıyan kimlikler: listedeki kodlar + bu kodlarla eşleşen program ürünlerinin ve Trendyol ürünlerinin barkod/stok kodları
+const pzKimlik=v=>String(v==null?"":v).trim().toLocaleUpperCase("tr").replace(/İ/g,"I").replace(/\s+/g,"");
+function pzDenemeKimlikler(){const k=new Set(pzDenemeKodlar().map(pzKimlik).filter(Boolean));
+  for(const u of state.urunler)if(k.has(pzKimlik(u.kod))||k.has(pzKimlik(u.barkod))){if(u.kod)k.add(pzKimlik(u.kod));if(u.barkod)k.add(pzKimlik(u.barkod))}
+  for(const t of (pz.deneme&&pz.deneme.liste)||[])if(!t.bulunamadi){if(t.barkod)k.add(pzKimlik(t.barkod));if(t.stokKodu)k.add(pzKimlik(t.stokKodu))}
+  return k}
+function pzKimlikUrun(x){const a=[x.barkod,x.stokKodu].map(pzKimlik).filter(Boolean);return state.urunler.find(u=>a.includes(pzKimlik(u.barkod))||a.includes(pzKimlik(u.kod)))||null}
 function pzSiparisPlan(basOzel){
-  const kods=new Set(pzDenemeKodlar().map(String));const bas=basOzel||pzSiparisBas().zaman;const cari=pzTyCari();const cariId=cari?cari.id:"ty-cari";
-  const sonuc=[];
+  const kods=pzDenemeKimlikler();const bas=basOzel||pzSiparisBas().zaman;const cari=pzTyCari();const cariId=cari?cari.id:"ty-cari";
+  const sonuc=[];let once=0;
   for(const s of pz.siparisler||[]){
-    if(!s.paketId||!(Number(s.siparisTarihi)>=bas))continue;
-    const sat=(s.satirlar||[]).map((x,i)=>({x,i,u:(kods.has(String(x.barkod))||kods.has(String(x.stokKodu)))?pzArvUrun({barkod:x.barkod,stokKodu:x.stokKodu}):null,deneme:kods.has(String(x.barkod))||kods.has(String(x.stokKodu))})).filter(o=>o.deneme);
+    if(!s.paketId)continue;
+    const sat=(s.satirlar||[]).filter(x=>kods.has(pzKimlik(x.barkod))||kods.has(pzKimlik(x.stokKodu))).map(x=>({x,i:s.satirlar.indexOf(x),u:pzKimlikUrun(x)}));
     if(!sat.length)continue;
+    if(!(Number(s.siparisTarihi)>=bas)){once++;continue}
     const eslesmeyen=sat.filter(o=>!o.u);const es=sat.filter(o=>o.u);
     const istenen=[];const olus=Number(s.siparisTarihi)||0;
     if(PZ_STOK_DUSEN.test(s.durum))for(const o of es)istenen.push({col:"stokHareketleri",id:`tys-${s.paketId}-${o.i}`,veri:{urunId:o.u.id,tarih:pzGun(s.siparisTarihi),tip:"Çıkış",miktar:-Number(o.x.adet||0),birimFiyat:Number(o.x.birimFiyat)||0,aciklama:"Trendyol sipariş "+s.siparisNo,hareketId:"",olusturma:olus}});
@@ -2959,7 +2967,7 @@ function pzSiparisPlan(basOzel){
     const sil=mevcut.filter(m=>!istenen.some(w=>w.col===m.col&&w.id===m.h.id)).map(m=>({col:m.col,id:m.h.id}));
     const durumMetin=mevcut.some(m=>m.col==="hareketler")?"Satış yazıldı":mevcut.length?"Stok düşüldü":"İşlenmedi";
     sonuc.push({s,es,eslesmeyen,yaz,sil,durumMetin,istenenSay:istenen.length})}
-  return {liste:sonuc,cari,cariId,bas}}
+  return {liste:sonuc,cari,cariId,bas,once}}
 function pzSiparisPanel(){
   if(!pzDenemeKodlar().length||!pz.siparisler)return "";
   const P=pzSiparisPlan();const b=pzSiparisBas();const deg=P.liste.reduce((t,p)=>t+p.yaz.length+p.sil.length,0);
@@ -2970,16 +2978,19 @@ function pzSiparisPanel(){
     return a.length?a.join(" · "):`<span class="pos">✓ güncel</span>`};
   return `<div class="panel" style="padding:12px;gap:8px;margin-bottom:10px;border:1px dashed var(--line)">
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"><b>🧪 Deneme ürünlü siparişler → programa işleme</b>
-      <button class="small primary" data-act="pzIsle" type="button" ${deg&&!state.readonly?"":"disabled"}>Programa işle${deg?" ("+deg+" değişiklik)":""}</button></div>
+      <button class="small ${deg?"primary":""}" data-act="pzIsle" type="button">Programa işle${deg?" ("+deg+" değişiklik)":""}</button></div>
+    ${deg?"":`<div style="font-size:.85rem"><b>Şu an işlenecek değişiklik yok.</b> ${P.liste.length?"Listedeki deneme siparişleri programda güncel.":"Seçilen dönemde, başlangıç zamanından sonra deneme ürünü içeren sipariş bulunmadı."}${P.once?` Başlangıçtan önceki ${P.once} deneme siparişi işlenmez (stoğa zaten yansımıştı).`:""}</div>`}
     <div class="muted" style="font-size:.82rem">Yalnızca deneme ürünlerinin satırları işlenir. Sipariş gelince stok düşer; <b>teslim edilince</b> “${esc(P.cari?P.cari.ad:"Trendyol")}” carisine açık hesap satış yazılır${P.cari?"":" (cari yoksa oluşturulur)"}; iptal / iade olursa stok ve satış geri alınır. Aynı sipariş tekrar işlense de kayıt çoğalmaz.</div>
     <div class="filters" style="font-size:.85rem;align-items:center"><label for="pzBas">Bu zamandan sonraki siparişler:</label><input id="pzBas" type="datetime-local" value="${yerel}" style="max-width:220px"><span class="muted" style="font-size:.8rem">${b.kayitli?"kayıtlı":"öneri: deneme ürünlerine son stok gönderimi · ilk işlemde kaydedilir"}</span></div>
     ${P.liste.length?`<div class="tscroll"><table><thead><tr><th>Sipariş</th><th>Durum</th><th>Deneme ürünleri</th><th>Programda</th><th>Yapılacak</th></tr></thead><tbody>
       ${P.liste.map(p=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(p.s.siparisNo)}</b><div class="muted" style="font-size:.75rem">${pzTarih(p.s.siparisTarihi)}</div></td><td>${esc(PZ_DURUM[p.s.durum]||p.s.durum)}</td>
         <td style="font-size:.85rem">${p.es.concat(p.eslesmeyen).map(o=>`${esc(o.x.adet)} × ${esc((o.u&&o.u.ad)||o.x.ad)}`).join("<br>")}</td><td style="font-size:.85rem">${esc(p.durumMetin)}</td><td style="font-size:.82rem">${ne(p)}</td></tr>`).join("")}
-    </tbody></table></div>`:`<div class="muted" style="font-size:.85rem">Bu tarihten sonra deneme ürünü içeren sipariş yok (seçilen dönemde).</div>`}</div>`}
+    </tbody></table></div>`:""}</div>`}
 async function pzSiparisIsle(){
   if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}
-  const inp=document.getElementById("pzBas");const yeniBas=inp&&inp.value?new Date(inp.value).getTime():pzSiparisBas().zaman;
+  // Kutu dakikaya yuvarlanmış gösterir; kullanıcı değiştirmediyse saniyesiyle birlikte asıl zaman kullanılır
+  const inp=document.getElementById("pzBas");const eski=pzSiparisBas().zaman;const ed=new Date(eski);const eskiYazi=new Date(eski-ed.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const yeniBas=inp&&inp.value&&inp.value!==eskiYazi?new Date(inp.value).getTime():eski;
   if(!(yeniBas>0)){toast("Başlangıç zamanını kontrol edin");return}
   const ayar=Object.assign({},(state.ayarEk||{}).pazaryeriTest||{});const basDegisti=Number(ayar.siparisBas)!==yeniBas;
   ayar.siparisBas=yeniBas;
