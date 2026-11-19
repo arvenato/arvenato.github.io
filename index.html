@@ -204,18 +204,18 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
     </div>
     <nav class="tabs" id="tabs">
       <a href="#satis">Satış</a>
+      <a href="#stok">Ürünler</a>
       <a href="#tedarik">Tedarikçiler</a>
+      <a href="#faturalar">Faturalar</a>
+      <a href="#cariler">Cariler</a>
+      <a href="#personeller">Personeller</a>
+      <a href="#bankalar">Bankalar</a>
       <a href="#gelirler">Gelirler</a>
       <a href="#giderler">Giderler</a>
-      <a href="#cariler">Cariler</a>
-      <a href="#bankalar">Bankalar</a>
-      <a href="#stok">Stok</a>
-      <a href="#teklifler">Teklifler</a>
-      <a href="#personeller">Personeller</a>
       <a href="#hareketler">Hareketler</a>
-      <a href="#ozet">Özet</a>
+      <a href="#teklifler">Teklifler</a>
       <a href="#rapor">Aylık rapor</a>
-      <a href="#faturalar">Faturalar</a>
+      <a href="#ozet">Özet</a>
       <a href="#ajanda">Ajanda</a>
     </nav>
   </div>
@@ -1272,7 +1272,7 @@ function vStok(){
   const deger=r2(all.reduce((s,u)=>s+Math.max(0,u.miktar)*(Number(u.alisFiyat)||0),0));
   const sDeger=r2(all.reduce((s,u)=>s+Math.max(0,u.miktar)*(Number(u.satisFiyat)||0),0));
   const kritik=all.filter(u=>u.durum==="kritik").length,yok=all.filter(u=>u.durum==="yok").length;
-  return `<section class="section-head"><h2>Stok</h2>${state.readonly?"":`<div class="filters"><button class="small primary" data-act="yengecCek" type="button">Yengeç'ten çek</button><button class="small" data-act="stokAktar" type="button">Excel'den aktar</button><button class="primary small" data-act="newUrun" type="button">+ Ürün ekle</button></div>`}</section>
+  return `<section class="section-head"><h2>Ürünler</h2>${state.readonly?"":`<div class="filters"><button class="small primary" data-act="yengecCek" type="button">Yengeç'ten çek</button><button class="small" data-act="stokAktar" type="button">Excel'den aktar</button><button class="primary small" data-act="newUrun" type="button">+ Ürün ekle</button></div>`}</section>
   <section class="kpis">
     ${kpi("Ürün çeşidi",String(all.length),kats.length?kats.length+" kategori":"")}
     ${kpi("Stok değeri (alış)",money(deger),"Satış değeri "+money(sDeger))}
