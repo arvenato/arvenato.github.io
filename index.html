@@ -614,7 +614,7 @@ function teklifHtml(t){
 function teklifMetin(t){const o=teklifTop(t.satirlar||[]);return [`${state.firma||""} – Fiyat teklifi ${t.no}`.trim(),`Sayın ${teklifMusteri(t)}`,`Tarih: ${trDate(t.tarih)}${t.gecerlilik?" · Geçerlilik: "+trDate(t.gecerlilik):""}`,"",...(t.satirlar||[]).map(s=>`• ${s.ad}: ${fmtMiktar(s.miktar)} ${s.birim||""} × ${money(s.birimFiyat)}${s.iskonto?" (%"+s.iskonto+" isk.)":""} = ${money(satirTutar(s))} + %${s.kdvOran} KDV`),"",`Ara toplam: ${money(o.ara)}`,...(o.isk?[`İskonto: −${money(o.isk)}`]:[]),`KDV: ${money(o.kdv)}`,`Genel toplam: ${money(o.toplam)}`,...(t.notlar?["",t.notlar]:[])].join("\n")}
 async function teklifIndir(id){const t=state.teklifler.find(x=>x.id===id);if(!t)return;
   await dosyaKaydet(t.no+".html",new Blob([teklifHtml(t)],{type:"text/html"}))}
-const LIBS={jszip:"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",pdflib:"https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"};
+const LIBS={xlsx:"https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",jszip:"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",pdflib:"https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"};
 const _yuklu={};
 function loadScript(src){if(_yuklu[src])return _yuklu[src];_yuklu[src]=new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=()=>res();s.onerror=()=>{delete _yuklu[src];rej(new Error("load"))};document.head.appendChild(s)});return _yuklu[src]}
 async function dosyaKaydet(name,blob){
@@ -1154,6 +1154,8 @@ function vFaturalar(){
     &&(!ara||_norm([f.no,teklifMusteri(f),f.notlar,...(f.satirlar||[]).map(s=>s.ad)].join(" ")).includes(ara)));
   const fCariler=state.cariler.filter(c=>all.some(f=>f.cariId===c.id)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   const filtreli=ui.fTur||ui.fDurum||ui.fAy||ui.fCari||ui.fAra;
+  for(const id of [...fatSecim])if(!state.faturalar.some(f=>f.id===id))fatSecim.delete(id);
+  fatListeSon=list.map(f=>f.id);
   const buAy=ym(today());const sum=l=>l.reduce((s,f)=>s+(f.toplam||0),0);
   const sAy=all.filter(f=>f.tur==="satis"&&ym(f.tarih)===buAy),aAy=all.filter(f=>f.tur==="alis"&&ym(f.tarih)===buAy);
   const tahsil=r2(all.filter(f=>f.tur==="satis").reduce((s,f)=>s+faturaKalan(f),0)),borc=r2(all.filter(f=>f.tur==="alis").reduce((s,f)=>s+faturaKalan(f),0));
@@ -1175,8 +1177,9 @@ function vFaturalar(){
       ${filtreli?`<button class="small ghost" data-act="fTemizle" type="button">Filtreyi temizle</button>`:""}
     </div>
     ${filtreli&&list.length?`<div class="muted" style="font-size:.85rem">${list.length} fatura · Toplam <b style="color:var(--fg)">${money(list.reduce((s,f)=>s+(f.toplam||0),0))}</b> · Kalan <b style="color:var(--fg)">${money(r2(list.reduce((s,f)=>s+faturaKalan(f),0)))}</b></div>`:""}
-    ${list.length?`<div class="tscroll"><table><thead><tr><th>Fatura no</th><th>Tarih</th><th>Tür</th><th>Cari</th><th>Vade</th><th class="num">Tutar</th><th class="num">Kalan</th><th>Durum</th><th></th></tr></thead><tbody>
-    ${list.map(f=>{const d=faturaDurum(f),k=faturaKalan(f);return `<tr><td class="date" style="color:var(--fg)"><b>${esc(f.no)}</b></td><td class="date">${trDate(f.tarih)}</td><td><span class="chip ${f.tur==="satis"?"satis":"alis"}">${f.tur==="satis"?"Satış":"Alış"}</span></td><td>${esc(teklifMusteri(f))}<div class="muted" style="font-size:.78rem">${(f.satirlar||[]).length} kalem · ${esc(odemeAd({odeme:f.odeme,bankaId:f.bankaId}))}</div></td><td class="date">${f.odeme==="acik"&&f.vade?trDate(f.vade):"—"}</td><td class="num">${money(f.toplam)}</td><td class="num ${k>0?"neg":""}">${k>0?money(k):"—"}</td><td><span class="chip ${FDURUM[d][1]}">${FDURUM[d][0]}</span></td>
+    ${fatSecim.size?`<div class="toplu-bar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:10px;background:rgba(23,98,77,.08);border:1px solid var(--accent,#17624d)"><b>${fatSecim.size} fatura seçildi</b><span style="flex:1"></span><button class="small primary" data-act="fatSatirExcel" type="button">⬇ Seçilenleri satır satır indir (Excel)</button><button class="small ghost" data-act="fatSecKaldir" type="button">Seçimi kaldır</button></div>`:""}
+    ${list.length?`<div class="tscroll"><table><thead><tr><th style="width:28px"><input type="checkbox" data-act="fatHepsi" aria-label="Listedekilerin hepsini seç" ${list.every(f=>fatSecim.has(f.id))?"checked":""}></th><th>Fatura no</th><th>Tarih</th><th>Tür</th><th>Cari</th><th>Vade</th><th class="num">Tutar</th><th class="num">Kalan</th><th>Durum</th><th></th></tr></thead><tbody>
+    ${list.map(f=>{const d=faturaDurum(f),k=faturaKalan(f);return `<tr${fatSecim.has(f.id)?' style="background:rgba(23,98,77,.07)"':""}><td><input type="checkbox" data-act="fatSec" data-id="${f.id}" aria-label="Seç" ${fatSecim.has(f.id)?"checked":""}></td><td class="date" style="color:var(--fg)"><b>${esc(f.no)}</b>${f.ettn?`<div class="muted" style="font-size:.72rem">e-Fatura</div>`:""}</td><td class="date">${trDate(f.tarih)}</td><td><span class="chip ${f.tur==="satis"?"satis":"alis"}">${f.tur==="satis"?"Satış":"Alış"}</span></td><td>${esc(teklifMusteri(f))}<div class="muted" style="font-size:.78rem">${(f.satirlar||[]).length} kalem · ${esc(odemeAd({odeme:f.odeme,bankaId:f.bankaId}))}</div></td><td class="date">${f.odeme==="acik"&&f.vade?trDate(f.vade):"—"}</td><td class="num">${money(f.toplam)}</td><td class="num ${k>0?"neg":""}">${k>0?money(k):"—"}</td><td><span class="chip ${FDURUM[d][1]}">${FDURUM[d][0]}</span></td>
       <td><div class="rowact">${!state.readonly&&k>0?`<button class="small primary" data-act="fOdeme" data-id="${f.id}" type="button">${f.tur==="satis"?"Tahsil et":"Öde"}</button>`:""}<button class="small ghost" data-act="fIndir" data-id="${f.id}" type="button">İndir</button>${state.readonly?"":`<button class="small ghost" data-act="editFatura" data-id="${f.id}" type="button">Düzenle</button>`}</div></td></tr>`}).join("")}
     </tbody></table></div>`:`<div class="empty">${all.length?"Bu filtrede fatura yok.":"Henüz fatura yok. <b>+ Satış faturası</b> ile müşterinize fatura hazırlayın; satış kaydı, cari borcu ve stok çıkışı otomatik oluşur. Tedarikçiden gelen faturaları <b>+ Alış faturası</b> ile girin."}</div>`}
     <div class="muted" style="font-size:.8rem">Bu bölüm faturalarınızın ön muhasebe kaydını tutar. Resmi e-Fatura / e-Arşiv düzenlemez; resmi faturanızı Yengeç veya e-Fatura portalınızdan kesmeye devam edin.</div>
@@ -1348,6 +1351,57 @@ function cariOdemeForm(cariId){
         if(tahsil&&ilk)makbuzModal({...ilk,net:toplam,toplam,aciklama:"Tahsilat · "+ot.ad+(not?" · "+not:"")})}
       catch(err){er.textContent=errMsg(err);b.disabled=false}})});
 }
+/* Faturalar: seçilenleri kalem (satır) bazında tek Excel dosyasına indir.
+   Trendyol e-Faturam'dan gelen faturalarda gerçek kalemler e-Fatura köprüsünden (UBL XML) okunur; diğerlerinde programdaki satırlar kullanılır. */
+const fatSecim=new Set();let fatListeSon=[];
+const UBL_BIRIM={NIU:"Adet",C62:"Adet",H87:"Adet",EA:"Adet",KGM:"Kg",GRM:"Gr",LTR:"Lt",MTR:"Metre",MTK:"m²",BX:"Kutu",PA:"Paket",PK:"Paket",SET:"Set",PR:"Çift",DZN:"Düzine",CT:"Koli",KT:"Kit",TNE:"Ton"};
+function ublSatirlari(xmlMetin){
+  const doc=new DOMParser().parseFromString(xmlMetin,"application/xml");
+  const cocuk=(el,ad)=>el?[...el.children].find(c=>c.localName===ad)||null:null;
+  const yol=(el,...ad)=>{for(const a of ad){el=cocuk(el,a);if(!el)return null}return el};
+  const yazi=(el,...ad)=>{const x=yol(el,...ad);return x?x.textContent.trim():""};
+  const sayi=(el,...ad)=>{const t=yazi(el,...ad);return t===""?0:+t};
+  const kok=doc.documentElement;
+  const satirlar=[...kok.children].filter(c=>c.localName==="InvoiceLine").map(l=>{
+    const mEl=cocuk(l,"InvoicedQuantity"),miktar=mEl?+mEl.textContent:0,bk=mEl?mEl.getAttribute("unitCode")||"":"";
+    const iskonto=[...l.children].filter(c=>c.localName==="AllowanceCharge"&&yazi(c,"ChargeIndicator")!=="true").reduce((s,c)=>s+sayi(c,"Amount"),0);
+    const matrah=sayi(l,"LineExtensionAmount");const vs=yol(l,"TaxTotal");const subs=vs?[...vs.children].filter(c=>c.localName==="TaxSubtotal"):[];
+    const kEl=subs.find(s=>/KDV|0015/.test(yazi(s,"TaxCategory","TaxScheme","Name")+yazi(s,"TaxCategory","TaxScheme","TaxTypeCode")))||subs[0];
+    const kdv=vs?sayi(vs,"TaxAmount"):0;const not=yazi(l,"Note"),item=cocuk(l,"Item");
+    const bid=yazi(item,"BuyersItemIdentification","ID");
+    const barkod=yazi(item,"StandardItemIdentification","ID")||(bid.replace(/\D/g,"").length>=8?bid:"")||((not.match(/(?:^|\D)(\d{8,14})(?!\d)/)||[])[1]||"");
+    const adN=yazi(item,"Name"),adD=yazi(item,"Description"),stk=yazi(item,"SellersItemIdentification","ID"),mrk=yazi(item,"BrandName")||yazi(item,"ManufacturersItemIdentification","ID");
+    return {sira:yazi(l,"ID"),ad:adD&&(adD.length>adN.length||adN===stk)?adD:(adN||adD),stokKodu:stk,barkod,marka:mrk&&mrk!==stk?mrk:"",
+      miktar,birim:UBL_BIRIM[bk]||bk,birimFiyat:sayi(l,"Price","PriceAmount"),iskonto:r2(iskonto),matrah,kdvOran:kEl?sayi(kEl,"Percent"):0,kdv,toplam:r2(matrah+kdv)}});
+  return {no:yazi(kok,"ID"),tarih:yazi(kok,"IssueDate"),satirlar}}
+async function faturaXml(uuid,tip){
+  const r=await fetch(EFK+"/xml",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uuid,tip})});
+  if(!r.ok){let m="";try{m=(await r.json()).hata}catch(e){}throw new Error(m||("XML alınamadı "+r.status))}
+  return await r.text()}
+async function faturaSatirExcel(btn){
+  const sec=state.faturalar.filter(f=>fatSecim.has(f.id)).sort((a,b)=>(a.tarih||"").localeCompare(b.tarih||"")||(a.no||"").localeCompare(b.no||""));if(!sec.length)return;
+  const eskiYazi=btn?btn.textContent:"";if(btn)btn.disabled=true;
+  const satirlar=[],yerel=[],alinamayan=[];
+  const satir=(f,s)=>{const c=cariById(f.cariId);return {"Fatura no":f.no,"Tarih":trDate(f.tarih),"Tür":f.tur==="satis"?"Satış":"Alış","Cari":c?c.ad:(f.musteriAd||""),"VKN / TCKN":c&&c.vergiNo||"","Sıra":s.sira,"Ürün / hizmet":s.ad,"Stok kodu":s.stokKodu||"","Barkod":s.barkod||"","Marka":s.marka||"",
+    "Miktar":s.miktar,"Birim":s.birim||"","Birim fiyat (KDV hariç)":r2(s.birimFiyat),"İskonto (TL)":r2(s.iskonto),"Tutar (KDV hariç)":r2(s.matrah),"KDV %":s.kdvOran,"KDV (TL)":r2(s.kdv),"Toplam (KDV dahil)":r2(s.toplam),"ETTN":f.ettn||""}};
+  try{
+    let kopru=null;if(sec.some(f=>f.ettn)){try{kopru=await efkIstek("/durum",{},3000)}catch(e){}}
+    for(let i=0;i<sec.length;i++){const f=sec[i];if(btn)btn.textContent=`⏳ ${i+1} / ${sec.length} hazırlanıyor…`;
+      let tamam=false;
+      if(f.ettn&&kopru&&kopru.kurulu){try{const u=ublSatirlari(await faturaXml(f.ettn,f.tur==="alis"?"GELEN":"GIDEN"));if(u.satirlar.length){u.satirlar.forEach(s=>satirlar.push(satir(f,s)));tamam=true}}catch(e){}}
+      if(!tamam){if(f.ettn)alinamayan.push(f.no);
+        const ls=(f.satirlar||[]).filter(s=>(s.ad||"").trim());if(f.ettn||ls.length===1&&ls[0].ad==="Fatura toplamı")yerel.push(f.no);
+        ls.forEach((s,j)=>{const u=s.urunId?state.urunler.find(x=>x.id===s.urunId):null;const brut=r2((Number(s.miktar)||0)*(Number(s.birimFiyat)||0)),mat=satirTutar(s),kdv=r2(mat*(Number(s.kdvOran)||0)/100);
+          satirlar.push(satir(f,{sira:j+1,ad:s.ad,stokKodu:u?u.kod:"",barkod:u?u.barkod:"",marka:u?u.marka:"",miktar:Number(s.miktar)||0,birim:s.birim||"Adet",birimFiyat:Number(s.birimFiyat)||0,iskonto:r2(brut-mat),matrah:mat,kdvOran:Number(s.kdvOran)||0,kdv,toplam:r2(mat+kdv)}))})}}
+    if(!satirlar.length){toast("Seçilen faturalarda satır yok");return}
+    await loadScript(LIBS.xlsx);const U=window.XLSX.utils,ws=U.json_to_sheet(satirlar),wb=U.book_new();
+    ws["!cols"]=Object.keys(satirlar[0]).map(k=>({wch:Math.min(45,Math.max(10,k.length+2,...satirlar.slice(0,200).map(r=>String(r[k]??"").length+1)))}));
+    U.book_append_sheet(wb,ws,"Fatura satırları");
+    const ad="faturalar-satirlar-"+today()+".xlsx",veri=window.XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    const ok=await dosyaKaydet(ad,new Blob([veri],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    if(ok)toast(`${sec.length} fatura, ${satirlar.length} satır indirildi`+(alinamayan.length?` · ${alinamayan.length} e-faturanın kalemleri Trendyol'dan alınamadı (köprü bu bilgisayarda çalışıyor mu?), programdaki satırlar yazıldı`:""));
+  }catch(e){toast("Excel oluşturulamadı: "+(e&&e.message==="load"?"internet gerekli":(e.message||e)))}
+  finally{if(btn){btn.disabled=false;btn.textContent=eskiYazi}}}
 function faturaIndirModal(id){
   const f=state.faturalar.find(x=>x.id===id);if(!f)return;const t=faturaBelge(f);
   openModal(`<div class="section-head"><h2>${esc(f.no)} · indir</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
@@ -3206,6 +3260,10 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="efatSenk")efatSenk(true);
   else if(a==="pzGetir")pzGetir();
   else if(a==="trendyolCek")trendyolUrunCek();
+  else if(a==="fatSec"){if(b.checked)fatSecim.add(id);else fatSecim.delete(id);render()}
+  else if(a==="fatHepsi"){const hepsi=fatListeSon.length&&fatListeSon.every(x=>fatSecim.has(x));if(hepsi)fatListeSon.forEach(x=>fatSecim.delete(x));else fatListeSon.forEach(x=>fatSecim.add(x));render()}
+  else if(a==="fatSecKaldir"){fatSecim.clear();render()}
+  else if(a==="fatSatirExcel")faturaSatirExcel(b);
   else if(a==="uSec"){if(b.checked)urunSecim.add(id);else urunSecim.delete(id);render()}
   else if(a==="uHepsi"){const hepsi=stokListeSon.length&&stokListeSon.every(x=>urunSecim.has(x));if(hepsi)stokListeSon.forEach(x=>urunSecim.delete(x));else stokListeSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="uSecimKaldir"){urunSecim.clear();render()}
