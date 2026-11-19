@@ -1405,7 +1405,7 @@ function vStok(){
       <button class="small" data-act="uToplu" data-id="kategori" type="button">Kategori</button><button class="small" data-act="uToplu" data-id="marka" type="button">Marka</button>
       <button class="small" data-act="uToplu" data-id="kdv" type="button">KDV</button><button class="small" data-act="uToplu" data-id="birim" type="button">Birim</button>
       <button class="small" data-act="uToplu" data-id="satis" type="button">Satış fiyatı</button><button class="small" data-act="uToplu" data-id="alis" type="button">Alış fiyatı</button>
-      <button class="small" data-act="uToplu" data-id="kritik" type="button">Kritik seviye</button><button class="small" data-act="uExcel" type="button">Excel'e aktar</button>
+      <button class="small" data-act="uToplu" data-id="kritik" type="button">Kritik seviye</button><button class="small" data-act="uToplu" data-id="barkod" type="button" title="Barkodu boş olup stok kodu barkod gibi (8–14 rakam) olan ürünlerde stok kodunu Barkod alanına da yazar">Barkodu stok kodundan al</button><button class="small" data-act="uExcel" type="button">Excel'e aktar</button>
       <button class="small danger" data-act="uToplu" data-id="sil" type="button">Sil</button><button class="small ghost" data-act="uSecimKaldir" type="button">Seçimi kaldır</button></div>`:""}
     ${list.length?`<div class="tscroll"><table><thead><tr>${ro?"":`<th style="width:28px"><input type="checkbox" data-act="uHepsi" aria-label="Hepsini seç" ${hepsiSecili?"checked":""}></th>`}<th>Ürün</th><th>Stok kodu</th><th>Barkod</th><th>Marka</th><th>Kategori</th><th class="num">Stok</th><th class="num">Alış</th><th class="num">Satış</th><th class="num">Stok değeri</th><th></th></tr></thead><tbody>
     ${list.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><b>${esc(u.ad)}</b></td>
@@ -1456,9 +1456,11 @@ function urunTopluForm(tip){
   const sec=state.urunler.filter(u=>urunSecim.has(u.id));if(!sec.length)return;const n=sec.length.toLocaleString("tr-TR");
   const kats=[...new Set(state.urunler.map(x=>x.kategori).filter(Boolean))],markalar=[...new Set(state.urunler.map(x=>x.marka).filter(Boolean))];
   const fiyat=tip==="satis"||tip==="alis";const alan=tip==="satis"?"satisFiyat":tip==="alis"?"alisFiyat":"";
-  const baslik={kategori:"Kategori ata",marka:"Marka ata",kdv:"KDV oranı",birim:"Birim",satis:"Satış fiyatı güncelle",alis:"Alış fiyatı güncelle",kritik:"Kritik stok seviyesi",sil:"Ürünleri sil"}[tip];
+  const baslik={kategori:"Kategori ata",marka:"Marka ata",kdv:"KDV oranı",birim:"Birim",satis:"Satış fiyatı güncelle",alis:"Alış fiyatı güncelle",kritik:"Kritik stok seviyesi",sil:"Ürünleri sil",barkod:"Barkodu stok kodundan al"}[tip];
   const hareketli=tip==="sil"?sec.filter(u=>state.stokHareketleri.some(s=>s.urunId===u.id)):[];
+  const barkodAday=tip==="barkod"?sec.filter(u=>!String(u.barkod||"").trim()&&/^\d{8,14}$/.test(String(u.kod||"").trim())):[];
   let govde="";
+  if(tip==="barkod")govde=`<div class="notice">${barkodAday.length?`Seçilen ${n} üründen <b>${barkodAday.length.toLocaleString("tr-TR")}</b> tanesinin barkodu boş ve stok kodu barkod gibi (8–14 rakam). Bunlarda stok kodu <b>Barkod</b> alanına da yazılacak; stok kodu olduğu gibi kalır.`:"Seçilen ürünlerde barkodu boş ve stok kodu barkod gibi olan ürün yok."}</div>`;
   if(tip==="kategori")govde=`<div class="field"><label for="tpDeger">Kategori</label><input id="tpDeger" list="tpListe" placeholder="Örn. Kalem"><datalist id="tpListe">${kats.map(k=>`<option value="${esc(k)}"></option>`).join("")}</datalist></div>`;
   else if(tip==="marka")govde=`<div class="field"><label for="tpDeger">Marka</label><input id="tpDeger" list="tpListe" placeholder="Örn. Faber-Castell"><datalist id="tpListe">${markalar.map(k=>`<option value="${esc(k)}"></option>`).join("")}</datalist></div>`;
   else if(tip==="kdv")govde=`<div class="field"><label for="tpDeger">KDV oranı</label><select id="tpDeger">${KDV_ORAN.map(k=>`<option value="${k}" ${k===20?"selected":""}>%${k}</option>`).join("")}</select></div>`;
@@ -1467,10 +1469,11 @@ function urunTopluForm(tip){
   else if(fiyat)govde=`<div class="grid2"><div class="field"><label for="tpYol">Nasıl</label><select id="tpYol"><option value="yuzde">Yüzde artır / azalt</option><option value="tutar">Tutar ekle / çıkar (₺)</option><option value="sabit">Hepsine aynı fiyat (₺)</option></select></div>
       <div class="field"><label for="tpDeger">Değer</label><input id="tpDeger" type="number" step="0.01" inputmode="decimal" placeholder="Örn. 10 (azaltmak için −10)"></div></div>
       <label style="display:flex;gap:8px;align-items:center;font-size:.88rem"><input id="tpYuvarla" type="checkbox"> Kuruşları yuvarla (tam liraya)</label>`;
-  else if(tip==="sil")govde=`<div class="notice"><b>${n} ürün silinecek.</b> ${hareketli.length?`Bunlardan <b>${hareketli.length.toLocaleString("tr-TR")}</b> tanesinin stok hareketi (satış, giriş vb.) olduğu için <b>silinmeyecek</b>; ${(sec.length-hareketli.length).toLocaleString("tr-TR")} ürün silinecek.`:"Bu işlem geri alınamaz."}</div>`;
+  else if(tip==="sil")govde=`<div class="notice"><b>${n} ürün silinecek. Bu işlem geri alınamaz.</b> ${hareketli.length?`Bunlardan <b>${hareketli.length.toLocaleString("tr-TR")}</b> tanesinin stok hareketi (satış, giriş, sayım vb.) var; aşağıdaki kutu işaretlenmezse bunlar <b>silinmez</b>.`:""}</div>
+    ${hareketli.length?`<label style="display:flex;gap:8px;align-items:flex-start;font-size:.88rem"><input id="tpHareket" type="checkbox" style="margin-top:3px"> Stok hareketi olan ${hareketli.length.toLocaleString("tr-TR")} ürünü de, <b>stok hareketleriyle birlikte</b> sil (deneme verilerini temizlemek için). Satış, gelir ve fatura kayıtları silinmez.</label>`:""}`;
   openModal(`<div class="section-head"><h2>${baslik} · ${n} ürün</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>${govde}
     <div class="muted" id="tpOrnek" style="font-size:.85rem"></div><div class="err" id="tpErr" role="alert"></div><div class="muted" id="tpDurum" role="status" style="font-size:.85rem"></div>
-    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="${tip==="sil"?"danger":"primary"}" data-m="uygula" ${tip==="sil"&&hareketli.length===sec.length?"disabled":""}>${tip==="sil"?"Evet, sil":"Uygula"}</button></div>`,
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="${tip==="sil"?"danger":"primary"}" data-m="uygula" ${tip==="barkod"&&!barkodAday.length?"disabled":""}>${tip==="sil"?"Evet, sil":"Uygula"}</button></div>`,
   root=>{
     const g=id=>{const el=root.querySelector("#"+id);return el?el.value.trim():""};
     const yeniFiyat=(eski)=>{const d=Number(g("tpDeger"));const yol=g("tpYol");let f=yol==="yuzde"?eski*(1+d/100):yol==="tutar"?eski+d:d;if(root.querySelector("#tpYuvarla")&&root.querySelector("#tpYuvarla").checked)f=Math.round(f);return r2(Math.max(0,f))};
@@ -1478,21 +1481,28 @@ function urunTopluForm(tip){
     root.addEventListener("input",ornek);root.addEventListener("change",ornek);
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="uygula")return;
       const er=root.querySelector("#tpErr"),du=root.querySelector("#tpDurum");const d=g("tpDeger");
-      if(tip!=="sil"&&d===""&&tip!=="kategori"&&tip!=="marka"){er.textContent="Bir değer girin.";return}
+      if(tip!=="sil"&&tip!=="barkod"&&d===""&&tip!=="kategori"&&tip!=="marka"){er.textContent="Bir değer girin.";return}
       if(fiyat&&!isFinite(Number(d))){er.textContent="Geçerli bir sayı girin.";return}
       root.querySelectorAll("button,input,select").forEach(x=>x.disabled=true);
       try{
-        if(tip==="sil"){const silinecek=sec.filter(u=>!hareketli.includes(u));
+        if(tip==="sil"){const hepsi=!!(root.querySelector("#tpHareket")&&root.querySelector("#tpHareket").checked);
+          const silinecek=hepsi?sec:sec.filter(u=>!hareketli.includes(u));
+          if(!silinecek.length){er.textContent="Silinecek ürün yok. Stok hareketi olanları da silmek için kutuyu işaretleyin.";root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false);return}
+          if(hepsi){const sset=new Set(hareketli.map(u=>u.id));const shIds=state.stokHareketleri.filter(s=>sset.has(s.urunId)).map(s=>s.id);
+            for(let i=0;i<shIds.length;i+=200){const ids=shIds.slice(i,i+200);ids.forEach(id=>yerelUygula("stokHareketleri",id,null));
+              const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","stokHareketleri").in("id",ids);if(error){veriYenile();throw sbHata(error)}
+              du.textContent=`Stok hareketleri siliniyor… ${Math.min(i+200,shIds.length)} / ${shIds.length}`}}
           for(let i=0;i<silinecek.length;i+=200){const ids=silinecek.slice(i,i+200).map(u=>u.id);ids.forEach(id=>{yerelUygula("urunler",id,null);urunSecim.delete(id)});
             const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","urunler").in("id",ids);if(error){veriYenile();throw sbHata(error)}
             du.textContent=`Siliniyor… ${Math.min(i+200,silinecek.length)} / ${silinecek.length}`}
-          renderSonra();closeModal();toast(`${silinecek.length.toLocaleString("tr-TR")} ürün silindi${hareketli.length?` · ${hareketli.length} ürün hareketi olduğu için silinmedi`:""}`);return}
-        const satir=sec.map(u=>{const {id,miktar:_m,durum:_d,...r}=u;const y={...r};
+          renderSonra();closeModal();toast(`${silinecek.length.toLocaleString("tr-TR")} ürün silindi${!hepsi&&hareketli.length?` · ${hareketli.length} ürün hareketi olduğu için silinmedi`:""}`);return}
+        const satir=(tip==="barkod"?barkodAday:sec).map(u=>{const {id,miktar:_m,durum:_d,...r}=u;const y={...r};
+          if(tip==="barkod")y.barkod=String(u.kod).trim();
           if(tip==="kategori")y.kategori=d;else if(tip==="marka")y.marka=d;else if(tip==="kdv")y.kdvOran=Number(d);else if(tip==="birim")y.birim=d;else if(tip==="kritik")y.kritik=r2(d);
           else if(fiyat)y[alan]=yeniFiyat(Number(u[alan])||0);
           return {col:"urunler",id,veri:y}});
         await topluYaz(satir,(x,t)=>{du.textContent=`Kaydediliyor… ${x.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});
-        closeModal();toast(`${n} üründe “${baslik}” uygulandı`)}
+        closeModal();toast(`${satir.length.toLocaleString("tr-TR")} üründe “${baslik}” uygulandı`)}
       catch(err){er.textContent=errMsg(err);root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false)}})});
 }
 async function urunSeciliExcel(){
@@ -1599,7 +1609,8 @@ const AKTAR_ALAN=[
   {k:"satisFiyat",l:"Satış fiyatı (KDV dahil)",tam:["satis fiyati","fiyat","price","satis","indirimli fiyat","trendyol satis fiyati","web satis fiyati"],ic:["satis fiyat","fiyat","price"],haric:["alis","maliyet","piyasa","liste","kdv haric"]},
   {k:"alisFiyat",l:"Alış fiyatı (KDV dahil)",tam:["alis fiyati","maliyet","alis","cost","maliyet fiyati"],ic:["alis fiyat","maliyet","cost"]},
   {k:"kdvOran",l:"KDV oranı",tam:["kdv","kdv orani","vat","kdv %","vergi orani"],ic:["kdv","vat"]},
-  {k:"kategori",l:"Kategori",tam:["kategori","category","kategori adi"],ic:["kategori","category"]}
+  {k:"kategori",l:"Kategori",tam:["kategori","category","kategori adi"],ic:["kategori","category"]},
+  {k:"marka",l:"Marka",tam:["marka","brand","marka adi","brand name"],ic:["marka","brand"]}
 ];
 function kolonTahmin(basliklar,alanlar){const sec={};const kul=new Set();
   for(const pass of ["tam","ic"])for(const a of (alanlar||AKTAR_ALAN)){if(sec[a.k]!=null)continue;
@@ -1635,7 +1646,7 @@ function stokAktarModal(){
     rows.slice(hi+1).forEach(r=>{const ad=String(g(r,"ad")).trim();if(!ad){o.hatali++;return}
       const barkod=String(g(r,"barkod")).trim(),kod=String(g(r,"kod")).trim();const key=barkod||kod||_norm(ad);if(seen.has(key))return;seen.add(key);
       const stok=sayiOku(g(r,"stok")),sf=sayiOku(g(r,"satisFiyat")),af=sayiOku(g(r,"alisFiyat"));let kdv=sayiOku(g(r,"kdvOran"));if(kdv>0&&kdv<1)kdv=kdv*100;
-      const v={ad,barkod,kod,stok:isNaN(stok)?null:r2(stok),satisFiyat:isNaN(sf)?null:r2(sf),alisFiyat:isNaN(af)?null:r2(af),kdvOran:isNaN(kdv)?null:Math.round(kdv),kategori:String(g(r,"kategori")).trim()};
+      const v={ad,barkod,kod,stok:isNaN(stok)?null:r2(stok),satisFiyat:isNaN(sf)?null:r2(sf),alisFiyat:isNaN(af)?null:r2(af),kdvOran:isNaN(kdv)?null:Math.round(kdv),kategori:String(g(r,"kategori")).trim(),marka:String(g(r,"marka")).trim()};
       const ex=(barkod&&byB[barkod])||(kod&&byK[kod])||byA[_norm(ad)];
       if(ex){o.guncel.push({ex,v})}else o.yeni.push(v)});
     return o};
@@ -1652,7 +1663,7 @@ function stokAktarModal(){
       <div style="display:flex;flex-direction:column;gap:6px;font-size:.88rem">
         <label style="display:flex;gap:8px;align-items:center"><input id="akYeni" type="checkbox" checked> Yeni ürünleri ekle (${o.yeni.length})</label>
         <label style="display:flex;gap:8px;align-items:center"><input id="akStok" type="checkbox" ${map.stok!=null&&map.stok!==""?"checked":"disabled"}> Mevcut ürünlerin stok miktarını dosyadakiyle eşitle</label>
-        <label style="display:flex;gap:8px;align-items:center"><input id="akFiyat" type="checkbox" checked> Mevcut ürünlerin fiyat, KDV ve kategorisini güncelle</label>
+        <label style="display:flex;gap:8px;align-items:center"><input id="akFiyat" type="checkbox" checked> Mevcut ürünlerin fiyat, KDV, kategori ve markasını güncelle</label>
       </div>
       <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">${kpi("Yeni ürün",String(o.yeni.length),"eklenecek",false,o.yeni.length>0)}${kpi("Eşleşen",String(o.guncel.length),"mevcut ürün")}${kpi("Atlanan",String(o.hatali),"adı boş satır",o.hatali>0)}</div>
       ${o.yeni.length+o.guncel.length?`<div class="tscroll"><table><thead><tr><th>Ürün</th><th>Barkod / kod</th><th class="num">Stok</th><th class="num">Satış</th><th></th></tr></thead><tbody>${o.yeni.slice(0,4).map(v=>({v,t:"Yeni"})).concat(o.guncel.slice(0,4).map(x=>({v:x.v,t:"Eşleşti"}))).map(({v,t})=>`<tr><td>${esc(v.ad)}</td><td class="date">${esc(v.barkod||v.kod||"—")}</td><td class="num">${v.stok==null?"—":fmtMiktar(v.stok)}</td><td class="num">${v.satisFiyat==null?"—":money(v.satisFiyat)}</td><td><span class="chip ${t==="Yeni"?"satis":""}">${t}</span></td></tr>`).join("")}</tbody></table></div><div class="muted" style="font-size:.8rem">Önizleme: ilk birkaç satır gösteriliyor.</div>`:""}`;
@@ -1678,9 +1689,9 @@ function stokAktarModal(){
       if(map.ad==null||map.ad===""){er.textContent="Ürün adı sütununu seçin.";return}
       const o=plan();const yeniEkle=root.querySelector("#akYeni").checked,stokEs=root.querySelector("#akStok").checked&&map.stok!=null,fiyatG=root.querySelector("#akFiyat").checked;
       const isler=[];
-      if(yeniEkle)o.yeni.forEach(v=>isler.push(async()=>{const id=api.newId("urunler");await api.setDoc("urunler",id,{ad:v.ad,kod:v.kod,barkod:v.barkod,kategori:v.kategori,birim:"Adet",alisFiyat:v.alisFiyat??0,satisFiyat:v.satisFiyat??0,kdvOran:v.kdvOran??20,kritik:"",acilis:v.stok??0,kaynak:"Excel",olusturma:Date.now()})}));
+      if(yeniEkle)o.yeni.forEach(v=>isler.push(async()=>{const id=api.newId("urunler");await api.setDoc("urunler",id,{ad:v.ad,kod:v.kod,barkod:v.barkod||(!v.barkod&&/^\d{8,14}$/.test(v.kod)?v.kod:""),kategori:v.kategori,marka:v.marka,birim:"Adet",alisFiyat:v.alisFiyat??0,satisFiyat:v.satisFiyat??0,kdvOran:v.kdvOran??20,kritik:"",acilis:v.stok??0,kaynak:"Excel",olusturma:Date.now()})}));
       o.guncel.forEach(({ex,v})=>{const {id,...rest}=ex;const yeni={...rest};let degisti=false;
-        if(fiyatG){for(const k of ["satisFiyat","alisFiyat","kdvOran"])if(v[k]!=null&&v[k]!==ex[k]){yeni[k]=v[k];degisti=true}if(v.kategori&&v.kategori!==ex.kategori){yeni.kategori=v.kategori;degisti=true}}
+        if(fiyatG){for(const k of ["satisFiyat","alisFiyat","kdvOran"])if(v[k]!=null&&v[k]!==ex[k]){yeni[k]=v[k];degisti=true}if(v.kategori&&v.kategori!==ex.kategori){yeni.kategori=v.kategori;degisti=true}if(v.marka&&v.marka!==ex.marka){yeni.marka=v.marka;degisti=true}}
         if(v.barkod&&!ex.barkod){yeni.barkod=v.barkod;degisti=true}if(v.kod&&!ex.kod){yeni.kod=v.kod;degisti=true}
         if(degisti)isler.push(()=>api.setDoc("urunler",id,yeni));
         if(stokEs&&v.stok!=null){const fark=r2(v.stok-stokMiktar(ex));if(fark)isler.push(()=>api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(ex.alisFiyat)||0,aciklama:"Excel aktarımı ("+dosya+")",hareketId:"",olusturma:Date.now()}))}});
