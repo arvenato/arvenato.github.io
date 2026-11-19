@@ -2867,7 +2867,7 @@ async function pzDenemeGetir(){
   const kodlar=pzDenemeKodlar();pz.deneme=pz.deneme||{};
   if(!kodlar.length){pz.deneme={liste:[]};render();return}
   pz.hata="";pz.yuk="Deneme ürünleri Trendyol'dan okunuyor…";render();
-  try{const r=await pzCagir({islem:"urunBul",kodlar});pz.deneme={liste:r.urunler||[],zaman:Date.now(),sonuc:(pz.deneme&&pz.deneme.sonuc)||{}}}
+  try{const r=await pzCagir({islem:"urunBul",kodlar});pz.deneme={liste:r.urunler||[],zaman:Date.now(),sonuc:(pz.deneme&&pz.deneme.sonuc)||{},girdi:(pz.deneme&&pz.deneme.girdi)||{}}}
   catch(e){pz.hata=e.message||String(e)}
   pz.yuk="";render()}
 function pzDenemeHtml(){
@@ -2877,14 +2877,14 @@ function pzDenemeHtml(){
   if(!d||!d.liste)return bilgi+`<div class="empty">${kodlar.length} deneme ürünü tanımlı. Görmek için <b>📡 Trendyol'dan getir</b>'e basın.</div>`;
   return bilgi+`<div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Trendyol stok</th><th class="num">Trendyol fiyat</th><th class="num">Arvenato stok</th><th>Gönderilecek</th><th></th></tr></thead><tbody>
     ${d.liste.map((t,i)=>{if(t.bulunamadi)return `<tr><td colspan="6"><b>${esc(t.kod)}</b> — <span class="neg">Trendyol'da bulunamadı</span></td></tr>`;
-      const u=pzArvUrun(t);const am=u?stokMiktar(u):null;const s=(d.sonuc||{})[t.barkod];
+      const u=pzArvUrun(t);const am=u?stokMiktar(u):null;const s=(d.sonuc||{})[t.barkod];const gi=(d.girdi||{})[t.barkod]||{};const gv=(k,v)=>esc(gi[k]!=null?gi[k]:String(v));
       return `<tr><td><b>${esc(t.ad)}</b><div class="muted" style="font-size:.78rem;font-family:var(--font-num)">${esc(t.barkod)}${t.stokKodu&&t.stokKodu!==t.barkod?" · "+esc(t.stokKodu):""}</div>${t.satista?"":`<span class="chip alis">satışa kapalı</span>`}</td>
         <td class="num"><b>${fmtMiktar(t.stok)}</b></td><td class="num">${money(t.satis)}${t.liste&&t.liste!==t.satis?`<div class="muted" style="font-size:.75rem;text-decoration:line-through">${money(t.liste)}</div>`:""}</td>
         <td class="num">${u?fmtMiktar(am):`<span class="muted">eşleşmedi</span>`}</td>
         <td><div style="display:grid;grid-template-columns:repeat(3,minmax(70px,1fr));gap:4px;font-size:.75rem">
-          <label>Stok<input id="dn_s_${i}" type="number" min="0" max="20000" step="1" value="${u?Math.max(0,Math.round(am)):t.stok}" style="width:100%"></label>
-          <label>Satış ₺<input id="dn_f_${i}" type="number" min="0" step="0.01" value="${t.satis}" style="width:100%"></label>
-          <label>Liste ₺<input id="dn_l_${i}" type="number" min="0" step="0.01" value="${t.liste||t.satis}" style="width:100%"></label></div></td>
+          <label>Stok<input id="dn_s_${i}" type="number" min="0" max="20000" step="1" value="${gv("s",u?Math.max(0,Math.round(am)):t.stok)}" style="width:100%"></label>
+          <label>Satış ₺<input id="dn_f_${i}" type="number" min="0" step="0.01" value="${gv("f",t.satis)}" style="width:100%"></label>
+          <label>Liste ₺<input id="dn_l_${i}" type="number" min="0" step="0.01" value="${gv("l",t.liste||t.satis)}" style="width:100%"></label></div></td>
         <td><button class="small primary" data-act="pzDnGonder" data-id="${i}" type="button">Trendyol'a gönder</button>${s?`<div style="font-size:.75rem;margin-top:4px" class="${s.hata?"neg":"pos"}">${esc(s.metin)}</div>`:""}</td></tr>`}).join("")}
   </tbody></table></div><div class="muted" style="font-size:.8rem">“Arvenato stok” bu firmadaki ürün kaydının stoğudur (barkod veya stok koduyla eşleşir). Gönderilecek stok varsayılan olarak Arvenato stoğudur; değiştirirseniz Trendyol işledikten sonra programdaki stok ve satış fiyatı da gönderilen değere getirilir.</div>`}
 async function pzDenemeGonder(i){
@@ -2908,12 +2908,16 @@ async function pzDenemeGonder(i){
     try{const r=await pzCagir({islem:"stokFiyat",kalemler:[{barkod:t.barkod,stok,satis,liste}],buyukDegisim:degisim});
       if(!r.batchId)throw new Error("Trendyol işlem numarası dönmedi");
       let son=null;for(let k=0;k<12;k++){du.textContent="Trendyol işliyor… ("+(k+1)+")";await new Promise(x=>setTimeout(x,4000));
-        son=await pzCagir({islem:"batch",batchId:r.batchId});if(/COMPLETED|FAILED/i.test(son.durum||""))break}
-      const kal=(son&&son.kalemler||[])[0]||{};const basarili=son&&/COMPLETED/i.test(son.durum||"")&&!son.hatali&&!/FAIL/i.test(kal.durum||"");
-      const metin=basarili?"✓ Trendyol işledi ("+new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+")":son?("✕ "+(((kal.hatalar||[]).join(", "))||son.durum||"işlenemedi")):"⏳ İşlem sürüyor; birkaç dakika sonra Trendyol'dan getir'e basın";
+        // Stok/fiyat paketlerinde genel "status" alanı gelmeyebilir; kalemin kendi durumu (SUCCESS/FAILED) esas alınır
+        son=await pzCagir({islem:"batch",batchId:r.batchId});const kd=String(((son.kalemler||[])[0]||{}).durum||"");if(/COMPLETED|FAILED/i.test(son.durum||"")||/SUCCESS|FAIL/i.test(kd))break}
+      const kal=(son&&son.kalemler||[])[0]||{};const kd=String(kal.durum||"");
+      const basarili=!!son&&!son.hatali&&!/FAIL/i.test(kd)&&(/SUCCESS/i.test(kd)||/COMPLETED/i.test(son.durum||""));
+      const bitti=!!son&&(basarili||/FAIL/i.test(kd)||/FAIL/i.test(son.durum||"")||son.hatali>0);
+      const metin=basarili?"✓ Trendyol işledi ("+new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+")":bitti?("✕ Trendyol reddetti: "+(((kal.hatalar||[]).join(", "))||kd||son.durum||"neden bildirilmedi")):"⏳ Trendyol henüz sonuçlandırmadı; birkaç dakika sonra Trendyol'dan getir'e basıp kontrol edin";
+      if(basarili&&pz.deneme.girdi)delete pz.deneme.girdi[t.barkod];
       if(basarili&&u){const fark=r2(stok-stokMiktar(u));if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(u.alisFiyat)||0,aciklama:"Trendyol'a gönderilen stok",hareketId:"",olusturma:Date.now()});
         if(r2(Number(u.satisFiyat)||0)!==r2(satis)){const {id:_,...rest}=u;await api.setDoc("urunler",u.id,{...rest,satisFiyat:r2(satis)})}}
-      pz.deneme.sonuc=pz.deneme.sonuc||{};pz.deneme.sonuc[t.barkod]={metin,hata:!basarili&&!!son};
+      pz.deneme.sonuc=pz.deneme.sonuc||{};pz.deneme.sonuc[t.barkod]={metin,hata:bitti&&!basarili};
       closeModal();toast(metin);await pzDenemeGetir()}
     catch(err){b.disabled=false;du.textContent="";er.textContent=(err.message||String(err))}}));
 }
@@ -3526,6 +3530,7 @@ document.getElementById("main").addEventListener("click",async e=>{
       toast("Örnek kayıtlar silindi")}catch(err){toast(errMsg(err))}}
 });
 
+document.getElementById("main").addEventListener("input",e=>{const m=/^dn_([sfl])_(\d+)$/.exec(e.target.id||"");if(!m||!pz.deneme)return;const t=(pz.deneme.liste||[])[Number(m[2])];if(!t)return;pz.deneme.girdi=pz.deneme.girdi||{};(pz.deneme.girdi[t.barkod]=pz.deneme.girdi[t.barkod]||{})[m[1]]=e.target.value});
 document.getElementById("main").addEventListener("input",e=>{const k=e.target.dataset&&e.target.dataset.kolf;if(!k)return;ui.sKol=Object.assign({},ui.sKol,{[k]:e.target.value});rerenderKeepFocus(e.target.id)});
 document.getElementById("main").addEventListener("change",e=>{if(e.target.dataset&&e.target.dataset.actSayfa==="sira"){ui.sSira=e.target.value;ui.sSayfa=1;try{localStorage.setItem("urun-sira",ui.sSira)}catch(err){}render();return}
   if(e.target.dataset&&e.target.dataset.actSayfa==="boyut"){ui.sBoyut=Number(e.target.value)||100;ui.sSayfa=1;try{localStorage.setItem("urun-sayfa-boyut",String(ui.sBoyut))}catch(err){}render()}});
