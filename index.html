@@ -935,10 +935,15 @@ async function efatSenk(elle){
       if(a)gidenEf.push(...(a.content||[]));if(b)gidenEa.push(...(b.content||[]));if(!((a&&s+1<(a.totalPageCount||1))||(b&&s+1<(b.totalPageCount||1))))break}
     const yeni=l=>l.filter(v=>v.no&&v.tarih&&v.toplam>0&&!state.faturalar.some(f=>(v.ettn&&f.ettn===v.ettn)||f.no===v.no));
     const gelen=yeni(gelenHam.filter(x=>efatGecerli(x,true)).map(x=>efatKayit(x,true)));
-    // "Nihai tüketici" (11111111111) adına kesilen perakende faturaları Satış (kasa) ekranında zaten kayıtlı olduğu için alınmaz
-    const giden=yeni([...gidenEf.filter(x=>efatGecerli(x,true)),...gidenEa.filter(x=>efatGecerli(x,false))].filter(x=>String(x.receiverTaxId||"")!=="11111111111").map(x=>efatKayit(x,false)));
+    // Kesilen faturaların hepsi alınır. Firmalara (10 haneli VKN) kesilenler cariye açık hesap işlenir;
+    // şahıslara / nihai tüketiciye (11 haneli TCKN, 11111111111 dahil) kesilenler cari açılmadan "ödendi · banka" satış faturası olarak yazılır.
+    const gidenTum=yeni([...gidenEf.filter(x=>efatGecerli(x,true)),...gidenEa.filter(x=>efatGecerli(x,false))].map(x=>efatKayit(x,false)));
+    const kurumsal=gidenTum.filter(v=>String(v.vkn||"").replace(/\D/g,"").length===10),bireysel=gidenTum.filter(v=>String(v.vkn||"").replace(/\D/g,"").length!==10);
+    bireysel.forEach(v=>{if(!v.unvan||/^nihai/i.test(v.unvan))v.unvan=v.unvan||"Nihai tüketici";if(v.vkn==="11111111111")v.vkn=""});
     const ra=gelen.length?await faturalariKaydet(gelen,{tur:"alis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
-    const rs=giden.length?await faturalariKaydet(giden,{tur:"satis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    const rk=kurumsal.length?await faturalariKaydet(kurumsal,{tur:"satis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    const rb=bireysel.length?await faturalariKaydet(bireysel,{tur:"satis",odeme:"banka",cariAc:false,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    const rs={eklenen:rk.eklenen+rb.eklenen,cariYeni:rk.cariYeni+rb.cariYeni,hata:rk.hata+rb.hata};
     if(!ra.hata&&!rs.hata)try{localStorage.setItem(anahtar,today())}catch(e){}
     const yc=ra.cariYeni+rs.cariYeni;
     if(ra.eklenen+rs.eklenen)toast(`Trendyol e-Faturam: ${ra.eklenen} gelen, ${rs.eklenen} giden fatura işlendi${yc?" · "+yc+" yeni cari açıldı":""}`);
@@ -1148,12 +1153,14 @@ const FDURUM={odendi:["Ödendi","satis"],kismi:["Kısmi ödendi","ornek"],acik:[
 function yeniFaturaNo(tur){const on=tur==="alis"?"AF":"SF";const y=new Date().getFullYear();let n=0;state.faturalar.forEach(f=>{const m=new RegExp("^"+on+"-(\\d{4})-(\\d+)$").exec(f.no||"");if(m&&Number(m[1])===y)n=Math.max(n,Number(m[2]))});return `${on}-${y}-${String(n+1).padStart(4,"0")}`}
 function faturaBelge(f){return {...f,gecerlilik:f.vade||"",_baslik:f.tur==="alis"?"ALIŞ FATURASI":"FATURA",_noEtiket:"Fatura no: ",_gecEtiket:"Vade: ",_altBaslik:"Fatura",_musEtiket:f.tur==="alis"?"Satıcı":"Sayın",_dosyaAd:"Fatura",_dip:"Bilgi amaçlıdır; e-Fatura / e-Arşiv yerine geçmez."}}
 function vFaturalar(){
+  if(ui.fTur!=="alis"&&ui.fTur!=="satis")ui.fTur="alis";
   const all=state.faturalar.slice().sort((a,b)=>(b.tarih||"").localeCompare(a.tarih||"")||(b.no||"").localeCompare(a.no||""));
   const ara=_norm(ui.fAra||"");
   const list=all.filter(f=>(!ui.fTur||f.tur===ui.fTur)&&(!ui.fDurum||faturaDurum(f)===ui.fDurum)&&(!ui.fAy||ym(f.tarih)===ui.fAy)&&(!ui.fCari||f.cariId===ui.fCari)
     &&(!ara||_norm([f.no,teklifMusteri(f),f.notlar,...(f.satirlar||[]).map(s=>s.ad)].join(" ")).includes(ara)));
   const fCariler=state.cariler.filter(c=>all.some(f=>f.cariId===c.id)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
-  const filtreli=ui.fTur||ui.fDurum||ui.fAy||ui.fCari||ui.fAra;
+  const filtreli=ui.fDurum||ui.fAy||ui.fCari||ui.fAra;
+  const sekmeSay=t=>all.filter(f=>f.tur===t).length;
   for(const id of [...fatSecim])if(!state.faturalar.some(f=>f.id===id))fatSecim.delete(id);
   fatListeSon=list.map(f=>f.id);
   const buAy=ym(today());const sum=l=>l.reduce((s,f)=>s+(f.toplam||0),0);
@@ -1168,8 +1175,11 @@ function vFaturalar(){
     ${kpi("Ödenecek",money(borc),gecen.length?gecen.length+" faturanın vadesi geçti":"Açık alış faturaları",gecen.length>0)}
   </section>
   <section class="panel">
+    <div class="filters" role="tablist">
+      <button class="${ui.fTur==="alis"?"primary":""}" data-act="fSekme" data-id="alis" type="button" role="tab" aria-selected="${ui.fTur==="alis"}">📥 Gelen faturalar <span class="muted" style="font-size:.8rem">(${sekmeSay("alis")})</span></button>
+      <button class="${ui.fTur==="satis"?"primary":""}" data-act="fSekme" data-id="satis" type="button" role="tab" aria-selected="${ui.fTur==="satis"}">📤 Giden faturalar <span class="muted" style="font-size:.8rem">(${sekmeSay("satis")})</span></button>
+    </div>
     <div class="filters">
-      <select id="fFTur" data-filter="fTur" aria-label="Fatura türü"><option value="">Tüm faturalar</option><option value="satis" ${ui.fTur==="satis"?"selected":""}>Satış faturaları</option><option value="alis" ${ui.fTur==="alis"?"selected":""}>Alış faturaları</option></select>
       <select id="fFDurum" data-filter="fDurum" aria-label="Durum"><option value="">Tüm durumlar</option>${Object.entries(FDURUM).map(([k,v])=>`<option value="${k}" ${ui.fDurum===k?"selected":""}>${v[0]}</option>`).join("")}</select>
       <input id="fFAy" type="month" data-filter="fAy" value="${esc(ui.fAy)}" aria-label="Ay">
       <select id="fFCari" data-filter="fCari" aria-label="Cari" style="max-width:260px"><option value="">Tüm cariler</option>${fCariler.map(c=>`<option value="${c.id}" ${ui.fCari===c.id?"selected":""}>${esc(c.ad)}</option>`).join("")}</select>
@@ -1181,7 +1191,7 @@ function vFaturalar(){
     ${list.length?`<div class="tscroll"><table><thead><tr><th style="width:28px"><input type="checkbox" data-act="fatHepsi" aria-label="Listedekilerin hepsini seç" ${list.every(f=>fatSecim.has(f.id))?"checked":""}></th><th>Fatura no</th><th>Tarih</th><th>Tür</th><th>Cari</th><th>Vade</th><th class="num">Tutar</th><th class="num">Kalan</th><th>Durum</th><th></th></tr></thead><tbody>
     ${list.map(f=>{const d=faturaDurum(f),k=faturaKalan(f);return `<tr${fatSecim.has(f.id)?' style="background:rgba(23,98,77,.07)"':""}><td><input type="checkbox" data-act="fatSec" data-id="${f.id}" aria-label="Seç" ${fatSecim.has(f.id)?"checked":""}></td><td class="date" style="color:var(--fg)"><b>${esc(f.no)}</b>${f.ettn?`<div class="muted" style="font-size:.72rem">e-Fatura</div>`:""}</td><td class="date">${trDate(f.tarih)}</td><td><span class="chip ${f.tur==="satis"?"satis":"alis"}">${f.tur==="satis"?"Satış":"Alış"}</span></td><td>${esc(teklifMusteri(f))}<div class="muted" style="font-size:.78rem">${(f.satirlar||[]).length} kalem · ${esc(odemeAd({odeme:f.odeme,bankaId:f.bankaId}))}</div></td><td class="date">${f.odeme==="acik"&&f.vade?trDate(f.vade):"—"}</td><td class="num">${money(f.toplam)}</td><td class="num ${k>0?"neg":""}">${k>0?money(k):"—"}</td><td><span class="chip ${FDURUM[d][1]}">${FDURUM[d][0]}</span></td>
       <td><div class="rowact">${!state.readonly&&k>0?`<button class="small primary" data-act="fOdeme" data-id="${f.id}" type="button">${f.tur==="satis"?"Tahsil et":"Öde"}</button>`:""}<button class="small ghost" data-act="fIndir" data-id="${f.id}" type="button">İndir</button>${state.readonly?"":`<button class="small ghost" data-act="editFatura" data-id="${f.id}" type="button">Düzenle</button>`}</div></td></tr>`}).join("")}
-    </tbody></table></div>`:`<div class="empty">${all.length?"Bu filtrede fatura yok.":"Henüz fatura yok. <b>+ Satış faturası</b> ile müşterinize fatura hazırlayın; satış kaydı, cari borcu ve stok çıkışı otomatik oluşur. Tedarikçiden gelen faturaları <b>+ Alış faturası</b> ile girin."}</div>`}
+    </tbody></table></div>`:`<div class="empty">${sekmeSay(ui.fTur)?"Bu filtrede fatura yok.":all.length?(ui.fTur==="alis"?"Henüz gelen (alış) fatura yok. Trendyol e-Faturam'a gelen faturalar otomatik buraya düşer; elle girmek için <b>+ Alış faturası</b>.":"Henüz giden (satış) fatura yok. Trendyol e-Faturam'dan kestiğiniz faturalar otomatik buraya düşer; elle girmek için <b>+ Satış faturası</b>."):"Henüz fatura yok. <b>+ Satış faturası</b> ile müşterinize fatura hazırlayın; satış kaydı, cari borcu ve stok çıkışı otomatik oluşur. Tedarikçiden gelen faturaları <b>+ Alış faturası</b> ile girin."}</div>`}
     <div class="muted" style="font-size:.8rem">Bu bölüm faturalarınızın ön muhasebe kaydını tutar. Resmi e-Fatura / e-Arşiv düzenlemez; resmi faturanızı Yengeç veya e-Fatura portalınızdan kesmeye devam edin.</div>
   </section>`;
 }
@@ -3273,7 +3283,8 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uExcel")urunSeciliExcel();
   else if(a==="pzSekme"){pz.sekme=id;pz.hata="";render();if(pz.bag&&(id==="siparis"?!pz.siparisler:!pz.hakedis))pzGetir()}
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
-  else if(a==="fTemizle"){ui.fTur="";ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
+  else if(a==="fTemizle"){ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
+  else if(a==="fSekme"){ui.fTur=id==="satis"?"satis":"alis";fatSecim.clear();render()}
   else if(a==="ajYeni")ajandaForm(null,b.dataset.t);
   else if(a==="ajDuzenle"){const x=state.ajanda.find(y=>y.id===id);if(x)ajandaForm(x)}
   else if(a==="ajTamam"){b.disabled=true;try{await ajandaTamamla(id,b.dataset.t)}catch(err){toast(errMsg(err))}}
