@@ -1678,6 +1678,7 @@ function hizliDuzenle(uid,alan){
       const asiri=!stokMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
       const degisim=stokMu?`${fark>0?"+":""}${fmtMiktar(fark)}`:(oran!=null?`%${(Math.abs(oran-1)*100).toLocaleString("tr-TR",{maximumFractionDigits:1})} ${yeni>=eski?"artış":"düşüş"}`:"");
       f.innerHTML=`<table><tbody><tr><td>${ad}</td><td class="num">${goster(eski)} → <b>${goster(yeni)}</b></td></tr>${degisim?`<tr><td>Değişim</td><td class="num">${degisim}</td></tr>`:""}</tbody></table>
+        ${alan==="satis"&&pzFiyatGider(u)?`<div class="notice" style="font-size:.85rem"><b>Pazaryerlerine de gidecek:</b> bu ürün deneme listesinde; yeni satış fiyatı bağlı bütün pazaryerlerine gönderilir (pazaryerindeki liste/üstü çizili fiyat, yeni fiyattan yüksekse korunur).</div>`:""}
         ${adim===3?`<div class="notice" style="border-color:var(--neg,#b42318)"><b>İkinci onay:</b> fiyat ${yeni<eski?"yarısından daha fazla düşüyor":"iki katından fazla artıyor"} (${goster(eski)} → ${goster(yeni)}). Yanlış yazılmadığından emin olun.</div>`
           :asiri?`<div class="notice"><b>Dikkat:</b> fiyat ${yeni<eski?"yarısından fazla düşüyor":"iki katından fazla artıyor"}; onaydan sonra bir kez daha sorulacak.</div>`:""}
         <div class="err" id="hdErr" role="alert"></div>
@@ -1699,7 +1700,8 @@ function hizliDuzenle(uid,alan){
         try{if(stokMu){const guncel=stokMiktar(u),fark=r2(yeni-guncel);
             if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(u.alisFiyat)||0,aciklama:"Ürünler ekranından düzeltme",hareketId:"",olusturma:Date.now()})}
           else{const x=state.urunler.find(y=>y.id===uid)||u;const {id:_,...rest}=x;await api.setDoc("urunler",uid,{...rest,[alan==="alis"?"alisFiyat":"satisFiyat"]:yeni})}
-          closeModal();toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni)))}
+          closeModal();toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni)));
+          if(alan==="satis"&&pzFiyatGider(u))pzFiyatGonder(u,yeni,asiri).catch(err=>toast("Fiyat pazaryerlerine gönderilemedi: "+(err.message||err)))}
         catch(err){b.disabled=false;const er=root.querySelector("#hdErr");if(er)er.textContent=errMsg(err)}})})}
 function stokHareketForm(uid,tip){
   const u=state.urunler.find(x=>x.id===uid);if(!u)return;
@@ -3308,6 +3310,21 @@ let _pzStokZ=null;
 function pzStokTetikle(){if(!pzStokOtoAcik())return;clearTimeout(_pzStokZ);
   _pzStokZ=setTimeout(async()=>{if(pzOto.calisiyor||pzOto.hata||!pzOtoUygun()){if(pzOto.calisiyor)pzStokTetikle();return}
     try{await pzStokEsitle(await pzBagliAl())}catch(e){}},3000)}
+/* Deneme ürününün satış fiyatı Ürünler ekranında (çift tıklama, onaylı) değişince bağlı pazaryerlerine de gönderilir.
+   Yalnızca firma sahibi, yalnızca otomatik gönderim açıkken. Sonuç ayar › pazaryeriFiyat'a yazılır; ~40 sn sonra fiyat geri okunarak doğrulanır. */
+const pzFiyatGider=u=>firmaRol==="sahip"&&pzStokOtoAcik()&&pzDenemeKodlar().some(k=>pzKimlik(k)===pzKimlik(u.kod)||pzKimlik(k)===pzKimlik(u.barkod));
+async function pzFiyatGonder(u,satis,buyuk){
+  const kod=pzDenemeKodlar().find(k=>pzKimlik(k)===pzKimlik(u.kod)||pzKimlik(k)===pzKimlik(u.barkod));if(!kod)return;
+  const bagli=(await pzBagliAl()).filter(k=>PZ_STOK_YAZ.includes(k));const zaman=Date.now();const sonuc={};
+  await Promise.all(bagli.map(async pz=>{try{const r=await pzCagir({islem:"fiyatGonder",pazaryeri:pz,kod,satis,buyukDegisim:!!buyuk});sonuc[pz]={satis,zaman,durum:r.durum,onceki:r.onceki??null,mesaj:r.mesaj||""}}
+    catch(e){sonuc[pz]={satis,zaman,durum:"hata",mesaj:(e.message||String(e)).slice(0,200)}}}));
+  const kaydet=async()=>{const k=JSON.parse(JSON.stringify((state.ayarEk||{}).pazaryeriFiyat||{}));for(const [pz,v] of Object.entries(sonuc))(k[pz]=k[pz]||{})[kod]=v;await api.setDoc("ayar","pazaryeriFiyat",k)};
+  await kaydet();
+  const ok=bagli.filter(p=>sonuc[p].durum==="gonderildi").map(p=>PZ_ADLAR[p]),hata=bagli.filter(p=>sonuc[p].durum==="hata");
+  toast(`Fiyat ${money(satis)}: ${ok.length?ok.join(", ")+" gönderildi":"hiçbir pazaryerine gitmedi"}${hata.length?" · ✕ "+hata.map(p=>PZ_ADLAR[p]+": "+sonuc[p].mesaj).join(" · "):""}`);
+  // Doğrulama: pazaryerindeki fiyat yeniden okunur
+  setTimeout(async()=>{for(const pz of bagli.filter(p=>sonuc[p].durum==="gonderildi")){try{const r=await pzCagir({islem:"fiyatSonuc",pazaryeri:pz,kod,satis});sonuc[pz]={...sonuc[pz],durum:r.durum==="tamam"?"tamam":"bekliyor",okunan:r.satis??null}}catch(e){}}
+    try{await kaydet()}catch(e){}},40000)}
 // Pazaryerlerindeki stokları yalnızca okur (gönderim yapmaz)
 async function pzStokOku(){const bagli=(await pzBagliAl()).filter(k=>PZ_STOK_YAZ.includes(k));const kodlar=pzDenemeKodlar();
   pz.stokYuk="Pazaryerlerindeki stoklar okunuyor…";pz.stokTablo={};render();
@@ -3321,9 +3338,11 @@ function pzStokHtml(){
   const K=pzStokKayit(),T=pz.stokTablo||{},acik=pzStokOtoAcik(),H=pzDenemeHedefler();
   const saat=t=>new Date(t).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
   const hucre=(pzAd,h)=>{const t=(T[pzAd]||{})[h.kod],r=(K[pzAd]||{})[h.kod];let s="";
-    if(t)s+=t.durum==="var"?`<b>${fmtMiktar(t.stok)}</b>`:t.durum==="bulunamadi"?`<span class="muted">ürün yok</span>`:`<span class="neg" title="${esc(t.mesaj||"")}">okunamadı</span>`;
+    const fy=(((state.ayarEk||{}).pazaryeriFiyat||{})[pzAd]||{})[h.kod];
+    if(t)s+=t.durum==="var"?`<b>${fmtMiktar(t.stok)}</b>${t.satis!=null?`<div class="muted" style="font-size:.75rem">${money(t.satis)}</div>`:""}`:t.durum==="bulunamadi"?`<span class="muted">ürün yok</span>`:`<span class="neg" title="${esc(t.mesaj||"")}">okunamadı</span>`;
     if(r){const ik={gonderildi:"⏳",tamam:"✓",hata:"✕",bulunamadi:"–",dogrulanamadi:"?"}[r.durum]||"";
       s+=`<div class="${r.durum==="hata"?"neg":r.durum==="tamam"?"pos":"muted"}" style="font-size:.75rem" title="${esc(r.mesaj||"")}">${ik} ${r.durum==="bulunamadi"?"ürün yok":"gönderilen "+fmtMiktar(r.stok)} · ${saat(r.zaman)}</div>`}
+    if(fy)s+=`<div class="${fy.durum==="hata"?"neg":fy.durum==="tamam"?"pos":"muted"}" style="font-size:.75rem" title="${esc(fy.mesaj||"")}">${{gonderildi:"⏳",tamam:"✓",hata:"✕",bulunamadi:"–",bekliyor:"⏳"}[fy.durum]||""} fiyat ${money(fy.satis)} · ${saat(fy.zaman)}</div>`;
     return s||`<span class="muted">—</span>`};
   return `<div class="panel" style="padding:12px;gap:8px"><div class="section-head"><h3 style="margin:0">Stok eşitleme · bütün pazaryerleri</h3><div class="filters">
       <button class="small" data-act="pzStokOku" type="button" ${pz.stokYuk?"disabled":""}>📡 Pazaryerlerindeki stokları oku</button>
