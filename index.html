@@ -3058,7 +3058,15 @@ function pzSatisGruplari(s,satirlar){
    Satıcı hakedişi alanı gelmezse komisyon tutarı kullanılır. */
 // Komisyonun Trendyol carisine yazılması. 2026-11-20 kuru denemesinde gerçek veriyle doğrulandı
 // (iade edilmemiş 32.009 siparişin 31.966'sında satış − kesinti = Trendyol'un ödeyeceği; kalanlar kurumsal fatura kayıtlarıydı, eklendi).
-const PZ_KOMISYON_ACIK=true;
+// 2026-11-21 kullanıcı kararı: KAPALI. Trendyol'un komisyon/kargo faturaları (DSM Grup) e-Faturam'dan otomatik gider olarak geliyor;
+// sipariş başına komisyon da yazılırsa gider iki kez sayılır. (Hakediş okuması ve kuru deneme çalışmaya devam eder.)
+const PZ_KOMISYON_ACIK=false;
+/* Diğer pazaryerlerinin komisyonu (faturaları programa gelmiyor; kullanıcı kararı 2026-11-21):
+   N11: siparişteki oranlar (komisyon − kampanya komisyon indirimi + pazarlama hizmet + pazaryeri hizmet) × satış, + %20 KDV
+   İdefix, Pazarama: satış × ayardaki oran (varsayılan %18), + %20 KDV. Shopify: yok.
+   Satış = KDV dahil satış tutarı (İdefix ekranı: 399,90 × %20 = 79,98). Kayıt: pzk-{pz}-{siparişNo}, teslimde yazılır, satış silinirse silinir. */
+const PZ_KOMISYON_VARSAYILAN={idefix:18,pazarama:18};
+const pzKomisyonOrani=pzAd=>{const a=((state.ayarEk||{}).pazaryeriKomisyon||{})[pzAd];const n=Number(a);return a!=null&&a!==""&&isFinite(n)?n:PZ_KOMISYON_VARSAYILAN[pzAd]};
 // Trendyol işlem türünü İngilizce ya da Türkçe gelmesinden bağımsız tanır: satis | iade | indirim | indirimIptal | diger
 function pzIslemTuru(k){const t=String((k&&k.transactionType)||"").trim().toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/ş/g,"s").replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ü/g,"u").replace(/ö/g,"o").replace(/[\s_-]+/g,"");
   if(t==="sale"||t==="satis")return "satis";if(t==="return"||t==="iade")return "iade";
@@ -3107,11 +3115,21 @@ function pzSiparisPlan(basOzel,listeOzel,hkOzel,pzAdOzel){
       const h=PZ_KOMISYON_ACIK&&hk&&hk[s.siparisNo];
       if(h&&h.kesinti>0&&!komGoruldu.has(s.siparisNo)){komGoruldu.add(s.siparisNo);
         const oran=pzSatisHedef(s)>0?Math.min(1,G.toplam/pzSatisHedef(s)):1;const top=r2(h.kesinti*oran);
-        if(top>0){const net=r2(top/1.2);istenen.push({col:"hareketler",id:`tyk-${s.siparisNo}`,veri:{tur:"gider",tarih:pzGun(h.tarih||s.teslimTarihi||s.sonDegisim),odeme:"acik",cariId,kanal:"",kategori:"Pazaryeri komisyonu",bankaId:"",kdvOran:20,net,kdv:r2(top-net),toplam:top,aciklama:("Trendyol komisyon / kesinti · sipariş "+s.siparisNo).slice(0,300),belgeNo:s.siparisNo,olusturma:olus+1}})}}}
+        if(top>0){const net=r2(top/1.2);istenen.push({col:"hareketler",id:`tyk-${s.siparisNo}`,veri:{tur:"gider",tarih:pzGun(h.tarih||s.teslimTarihi||s.sonDegisim),odeme:"acik",cariId,kanal:"",kategori:"Pazaryeri komisyonu",bankaId:"",kdvOran:20,net,kdv:r2(top-net),toplam:top,aciklama:("Trendyol komisyon / kesinti · sipariş "+s.siparisNo).slice(0,300),belgeNo:s.siparisNo,olusturma:olus+1}})}}
+      // N11 / İdefix / Pazarama komisyonu: satış (KDV dahil) × oran = KDV hariç komisyon, üstüne %20 KDV
+      if(!ty&&pzAd!=="shopify"&&!komGoruldu.has(s.siparisNo)){komGoruldu.add(s.siparisNo);
+        let net=0,oranAc="";
+        if(pzAd==="n11"){for(const o of es){const or=Number(o.x.komisyonOran)||0;net+=(Number(o.x.tutar)||r2((Number(o.x.birimFiyat)||0)*(Number(o.x.adet)||0)))*or/100}
+          const orn=[...new Set(es.map(o=>Number(o.x.komisyonOran)||0))];oranAc="%"+orn.map(x=>x.toLocaleString("tr-TR")).join("/")}
+        else{const or=pzKomisyonOrani(pzAd)||0;net=G.toplam*or/100;oranAc="%"+or.toLocaleString("tr-TR")}
+        net=r2(net);if(net>0){const kdv=r2(net*0.2);
+          istenen.push({col:"hareketler",id:`pzk-${pzAd}-${s.siparisNo}`,veri:{tur:"gider",tarih:pzGun(s.teslimTarihi||s.sonDegisim),odeme:"acik",cariId,kanal:"",kategori:"Pazaryeri komisyonu",bankaId:"",kdvOran:20,net,kdv,toplam:r2(net+kdv),aciklama:(pzIsim+" komisyon "+oranAc+" + KDV · sipariş "+s.siparisNo).slice(0,300),belgeNo:s.siparisNo,olusturma:olus+1}})}}}
     const satisIsteniyor=istenen.some(w=>w.col==="hareketler"&&w.id.startsWith(O.h+"-"));
     const mevcut=[...state.stokHareketleri.filter(h=>String(h.id).startsWith(`${O.s}-${s.paketId}-`)).map(h=>({col:"stokHareketleri",h})),...state.hareketler.filter(h=>String(h.id).startsWith(`${O.h}-${s.paketId}-`)).map(h=>({col:"hareketler",h})),
       // Komisyon kaydı (yalnızca Trendyol): satış geri alınırsa silinir; satış duruyorsa hakediş okunamadığında olduğu gibi bırakılır
-      ...(ty?state.hareketler.filter(h=>h.id===`tyk-${s.siparisNo}`&&(!satisIsteniyor||istenen.some(w=>w.id===h.id))).map(h=>({col:"hareketler",h})):[])];
+      ...(ty?state.hareketler.filter(h=>h.id===`tyk-${s.siparisNo}`&&(!satisIsteniyor||istenen.some(w=>w.id===h.id))).map(h=>({col:"hareketler",h})):[]),
+      // Diğer pazaryerlerinin komisyon kaydı: satış yoksa silinir, varsa güncel orana göre yeniden yazılır
+      ...(!ty?state.hareketler.filter(h=>h.id===`pzk-${pzAd}-${s.siparisNo}`).map(h=>({col:"hareketler",h})):[])];
     const yaz=istenen.filter(w=>{const m=mevcut.find(x=>x.col===w.col&&x.h.id===w.id);if(!m)return true;const {id:_,...r}=m.h;return _sirali(r)!==_sirali(w.veri)});
     const sil=mevcut.filter(m=>!istenen.some(w=>w.col===m.col&&w.id===m.h.id)).map(m=>({col:m.col,id:m.h.id}));
     const durumMetin=mevcut.some(m=>m.col==="hareketler")?"Satış yazıldı":mevcut.length?"Stok düşüldü":"İşlenmedi";
@@ -3379,7 +3397,7 @@ function pzStokHtml(){
     return s||`<span class="muted">—</span>`};
   return `<div class="panel" style="padding:12px;gap:8px"><div class="section-head"><h3 style="margin:0">Stok eşitleme · bütün pazaryerleri</h3><div class="filters">
       <button class="small" data-act="pzStokOku" type="button" ${pz.stokYuk?"disabled":""}>📡 Pazaryerlerindeki stokları oku</button>
-      ${firmaRol==="sahip"?`<button class="small ${acik?"":"primary"}" data-act="pzStokOto" type="button">${acik?"Otomatik gönderimi kapat":"Otomatik gönderimi aç"}</button>`:""}</div></div>
+      ${firmaRol==="sahip"?`<button class="small ${acik?"":"primary"}" data-act="pzStokOto" type="button">${acik?"Otomatik gönderimi kapat":"Otomatik gönderimi aç"}</button><button class="small" data-act="pzKomisyon" type="button" title="İdefix ve Pazarama komisyon oranı">Komisyon oranları</button>`:""}</div></div>
     <div style="font-size:.85rem">${acik?`<b class="pos">Otomatik gönderim açık.</b> Programda deneme ürününün stoğu değişince yeni adet birkaç saniye içinde aşağıdaki pazaryerlerine gönderilir; bir pazaryerinden gelen sipariş ise en geç 1 dakikada işlenip diğerlerine yansır.`:`<b>Otomatik gönderim kapalı.</b> Açınca deneme ürünlerinin program stoğu bağlı pazaryerlerine gönderilir ve stok değiştikçe güncellenir.`} Yalnızca stok adedi gider, fiyat değişmez.</div>
     ${(s=>s?`<div style="font-size:.82rem" class="${s.hata?"neg":"muted"}">☁️ Sunucu (program kapalıyken de çalışır): son tur ${saat(s.son)}${s.hata?" · hata: "+esc(s.hata):" · sorunsuz"}${s.islenen?" · işlenen "+esc(s.islenen):""}${s.gonderim?" · "+s.gonderim+" gönderim":""}${Date.now()-(Number(s.son)||0)>300000?` · <b class="neg">5 dakikadır çalışmadı</b>`:""}</div>`:`<div class="muted" style="font-size:.82rem">☁️ Sunucu turu henüz çalışmadı; şu an gönderimleri yalnızca açık program yapıyor.</div>`)(pzSunucu())}
     ${pz.stokYuk?`<div class="muted">⏳ ${esc(pz.stokYuk)}</div>`:""}
@@ -3387,6 +3405,15 @@ function pzStokHtml(){
       ${H.map(h=>`<tr><td><b>${esc(h.kod)}</b></td><td class="num">${h.u?`<b>${fmtMiktar(h.stok)}</b>`:`<span class="muted">eşleşmedi</span>`}</td>${bagli.map(k=>`<td class="num">${hucre(k,h)}</td>`).join("")}</tr>`).join("")}
     </tbody></table></div>
     <div class="muted" style="font-size:.78rem">Kalın sayı: pazaryerinde şu an okunan stok. Altındaki satır: programın son gönderdiği adet (⏳ işleniyor · ✓ işlendi · ✕ reddedildi).</div></div>`}
+function pzKomisyonModal(){
+  openModal(`<div class="section-head"><h2>Pazaryeri komisyon oranları</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">Teslim edilen deneme siparişlerinde komisyon, <b>KDV dahil satış tutarı × oran</b> olarak hesaplanır ve üstüne %20 KDV eklenerek pazaryeri carisine gider yazılır. N11'in oranı her siparişte N11'den gelir (komisyon + pazarlama + pazaryeri hizmet bedeli). Trendyol'un komisyonu DSM faturalarından geldiği için ayrıca yazılmaz; Shopify'da komisyon yoktur.</div>
+    <div class="grid2">${["idefix","pazarama"].map(k=>`<div class="field"><label for="km_${k}">${esc(PZ_ADLAR[k])} (%)</label><input id="km_${k}" type="number" min="0" max="60" step="0.1" value="${esc(String(pzKomisyonOrani(k)))}"></div>`).join("")}</div>
+    <div class="muted" style="font-size:.8rem">Yeni oran, henüz komisyonu yazılmamış ve yeniden işlenen siparişlere uygulanır.</div>
+    <div class="err" id="kmErr"></div><div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">Kaydet</button></div>`,
+  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="kaydet")return;
+    const v={};for(const k of ["idefix","pazarama"]){const n=Number(String(root.querySelector("#km_"+k).value).replace(",","."));if(!isFinite(n)||n<0||n>60){root.querySelector("#kmErr").textContent=PZ_ADLAR[k]+": 0 ile 60 arasında bir oran girin";return}v[k]=n}
+    b.disabled=true;await api.setDoc("ayar","pazaryeriKomisyon",v);closeModal();toast("Komisyon oranları kaydedildi")}))}
 async function pzStokOtoDegistir(){const ay=(state.ayarEk||{}).pazaryeriTest||{};
   if(ay.stokOto){await api.setDoc("ayar","pazaryeriTest",{...ay,stokOto:false});toast("Otomatik stok gönderimi kapatıldı");return}
   const bagli=(await pzBagliAl()).filter(k=>PZ_STOK_YAZ.includes(k));const H=pzDenemeHedefler().filter(h=>h.u);
@@ -4128,6 +4155,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzDnGonder")pzDenemeGonder(Number(id));
   else if(a==="pzStokOku")pzStokOku();
   else if(a==="pzStokOto")pzStokOtoDegistir();
+  else if(a==="pzKomisyon")pzKomisyonModal();
   else if(a==="pzIsle")pzSiparisIsle();
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
