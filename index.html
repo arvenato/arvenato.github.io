@@ -3211,6 +3211,92 @@ async function pzPlanUygula(P){const yaz=P.liste.flatMap(p=>p.yaz),sil=P.liste.f
   if(!P.cari&&yaz.some(w=>w.col==="hareketler"))await api.setDoc("cariler",P.cariId,{ad:PZ_ADLAR[P.pazaryeri]||P.pazaryeri,tur:"musteri",telefon:"",vergiNo:"",vergiDairesi:"",olusturma:Date.now()});
   for(const w of yaz)await api.setDoc(w.col,w.id,w.veri);for(const w of sil)await api.del(w.col,w.id);
   return yaz.length+sil.length+await pzFaturaMutabakat()}
+/* ---------- Deneme ürünlerinin stoğu bütün pazaryerlerine (otomatik) ----------
+   Program stoğu esas alınır: deneme ürününün stoğu değişince (giriş, sayım, mağaza ya da pazaryeri satışı) yeni adet bağlı
+   pazaryerlerine gönderilir. Yalnızca stok adedi gider, fiyat değişmez. Yalnızca o turda bütün pazaryerlerinin siparişleri
+   hatasız işlendiyse çalışır (yoksa henüz işlenmemiş bir siparişin düşürdüğü stok ezilebilirdi).
+   Son gönderimler firmanın ortak kaydında durur (ayar › pazaryeriStok): aynı değer iki cihazdan iki kez gönderilmez. */
+const PZ_STOK_YAZ=["trendyol","n11","pazarama","idefix","shopify"];
+const PZ_STOK_BEKLE=15*60000;
+const pzStokKayit=()=>(state.ayarEk||{}).pazaryeriStok||{};
+const pzStokOtoAcik=()=>!!(((state.ayarEk||{}).pazaryeriTest||{}).stokOto);
+function pzDenemeHedefler(){return pzDenemeKodlar().map(kod=>{const u=pzKimlikUrun({barkod:kod,stokKodu:kod});return {kod,u,stok:u?Math.max(0,Math.floor(stokMiktar(u))):null}})}
+async function pzBagliAl(){if(pzOto.bagli&&pzOto.firma===firmaId)return pzOto.bagli;
+  try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:firmaId});pzOto.bagli=(data||[]).map(x=>x.pazaryeri).filter(k=>PZ_ADLAR[k])}catch(e){}
+  return pzOto.bagli||["trendyol"]}
+let _pzStokCalisiyor=false;
+async function pzStokEsitle(bagli){
+  if(_pzStokCalisiyor||state.readonly||state.guncelleniyor||!pzStokOtoAcik())return 0;
+  _pzStokCalisiyor=true;const f=firmaId;let n=0;
+  try{const hedef=pzDenemeHedefler().filter(h=>h.u);const simdi=Date.now();
+    const kayit=JSON.parse(JSON.stringify(pzStokKayit()));let degisti=false;const bildir=[];
+    for(const pzAd of bagli.filter(k=>PZ_STOK_YAZ.includes(k))){const K=kayit[pzAd]=kayit[pzAd]||{};
+      // 1) Önceki gönderimlerin sonucu
+      for(const h of hedef){const r=K[h.kod];if(!r||r.durum!=="gonderildi"||simdi-r.zaman<10000)continue;
+        try{const s=await pzCagir({islem:"stokSonuc",pazaryeri:pzAd,id:r.id,kod:h.kod,stok:r.stok});
+          if(s.durum==="tamam"){K[h.kod]={...r,durum:"tamam",mesaj:"",sonuc:simdi};degisti=true}
+          else if(s.durum==="hata"){K[h.kod]={...r,durum:"hata",mesaj:s.mesaj||"reddedildi",tekrar:simdi+PZ_STOK_BEKLE};degisti=true;bildir.push(PZ_ADLAR[pzAd]+" "+h.kod+": "+(s.mesaj||"reddedildi"))}
+          else if(simdi-r.zaman>PZ_STOK_BEKLE){K[h.kod]={...r,durum:"dogrulanamadi",mesaj:s.mesaj||"15 dakikada sonuçlanmadı"};degisti=true}}
+        catch(e){/* bir sonraki turda yeniden sorulur */}}
+      // 2) Program stoğu son gönderilenden farklı olanlar (hata / ürün yok durumunda belli bir süre beklenir)
+      const gonder=hedef.filter(h=>{const r=K[h.kod];if(!r)return true;if(r.durum==="gonderildi")return r.stok!==h.stok;
+        if(r.durum==="hata"||r.durum==="bulunamadi")return r.stok!==h.stok||simdi>(r.tekrar||0);return r.stok!==h.stok});
+      if(!gonder.length)continue;
+      try{const s=await pzCagir({islem:"stokGonder",pazaryeri:pzAd,kalemler:gonder.map(h=>({kod:h.kod,stok:h.stok}))});
+        for(const x of s.sonuclar||[]){const h=gonder.find(y=>y.kod===x.kod);if(!h)continue;
+          K[h.kod]={stok:h.stok,zaman:simdi,durum:x.durum,id:x.id||"",onceki:x.onceki??null,mesaj:x.mesaj||"",tekrar:x.durum==="gonderildi"?0:simdi+(x.durum==="bulunamadi"?6*3600000:PZ_STOK_BEKLE)};
+          if(x.durum==="gonderildi")n++;else if(x.durum==="hata")bildir.push(PZ_ADLAR[pzAd]+" "+h.kod+": "+x.mesaj)}}
+      catch(e){for(const h of gonder)K[h.kod]={stok:h.stok,zaman:simdi,durum:"hata",mesaj:(e.message||String(e)).slice(0,200),tekrar:simdi+PZ_STOK_BEKLE};bildir.push(PZ_ADLAR[pzAd]+": "+(e.message||e))}
+      degisti=true}
+    if(degisti&&f===firmaId)await api.setDoc("ayar","pazaryeriStok",kayit);
+    // Gönderimlerin sonucu ~15 saniye sonra sorulur (dakikalık turu beklemeden)
+    if(n){toast("Deneme ürünleri: "+n+" stok gönderimi yapıldı");setTimeout(pzStokTetikle,12000)}
+    if(bildir.length)toast("Stok gönderilemedi: "+bildir[0]+(bildir.length>1?" (+"+(bildir.length-1)+")":""));
+    return n}
+  finally{_pzStokCalisiyor=false}}
+// Hızlı gönderim: bu cihazda stok ya da ürün kaydı değişince 3 saniye sonra (dakikalık turu beklemeden) gönderilir.
+// Son sipariş turu hatalıysa beklenir (işlenmemiş bir siparişin düşüşü ezilmesin); tur zaten sonunda gönderir.
+let _pzStokZ=null;
+function pzStokTetikle(){if(!pzStokOtoAcik())return;clearTimeout(_pzStokZ);
+  _pzStokZ=setTimeout(async()=>{if(pzOto.calisiyor||pzOto.hata||!pzOtoUygun()){if(pzOto.calisiyor)pzStokTetikle();return}
+    try{await pzStokEsitle(await pzBagliAl())}catch(e){}},3000)}
+// Pazaryerlerindeki stokları yalnızca okur (gönderim yapmaz)
+async function pzStokOku(){const bagli=(await pzBagliAl()).filter(k=>PZ_STOK_YAZ.includes(k));const kodlar=pzDenemeKodlar();
+  pz.stokYuk="Pazaryerlerindeki stoklar okunuyor…";pz.stokTablo={};render();
+  for(const k of bagli){pz.stokYuk=PZ_ADLAR[k]+" okunuyor…";render();
+    try{const r=await pzCagir({islem:"stokBul",pazaryeri:k,kalemler:kodlar.map(kod=>({kod}))});pz.stokTablo[k]=Object.fromEntries((r.sonuclar||[]).map(x=>[x.kod,x]))}
+    catch(e){pz.stokTablo[k]=Object.fromEntries(kodlar.map(kod=>[kod,{durum:"hata",mesaj:e.message||String(e)}]))}}
+  pz.stokYuk="";render()}
+function pzStokHtml(){
+  const kodlar=pzDenemeKodlar();if(!kodlar.length)return "";
+  const bagli=(pzOto.bagli&&pzOto.bagli.length?pzOto.bagli:["trendyol"]).filter(k=>PZ_STOK_YAZ.includes(k));
+  const K=pzStokKayit(),T=pz.stokTablo||{},acik=pzStokOtoAcik(),H=pzDenemeHedefler();
+  const saat=t=>new Date(t).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
+  const hucre=(pzAd,h)=>{const t=(T[pzAd]||{})[h.kod],r=(K[pzAd]||{})[h.kod];let s="";
+    if(t)s+=t.durum==="var"?`<b>${fmtMiktar(t.stok)}</b>`:t.durum==="bulunamadi"?`<span class="muted">ürün yok</span>`:`<span class="neg" title="${esc(t.mesaj||"")}">okunamadı</span>`;
+    if(r){const ik={gonderildi:"⏳",tamam:"✓",hata:"✕",bulunamadi:"–",dogrulanamadi:"?"}[r.durum]||"";
+      s+=`<div class="${r.durum==="hata"?"neg":r.durum==="tamam"?"pos":"muted"}" style="font-size:.75rem" title="${esc(r.mesaj||"")}">${ik} ${r.durum==="bulunamadi"?"ürün yok":"gönderilen "+fmtMiktar(r.stok)} · ${saat(r.zaman)}</div>`}
+    return s||`<span class="muted">—</span>`};
+  return `<div class="panel" style="padding:12px;gap:8px"><div class="section-head"><h3 style="margin:0">Stok eşitleme · bütün pazaryerleri</h3><div class="filters">
+      <button class="small" data-act="pzStokOku" type="button" ${pz.stokYuk?"disabled":""}>📡 Pazaryerlerindeki stokları oku</button>
+      ${firmaRol==="sahip"?`<button class="small ${acik?"":"primary"}" data-act="pzStokOto" type="button">${acik?"Otomatik gönderimi kapat":"Otomatik gönderimi aç"}</button>`:""}</div></div>
+    <div style="font-size:.85rem">${acik?`<b class="pos">Otomatik gönderim açık.</b> Programda deneme ürününün stoğu değişince yeni adet birkaç saniye içinde aşağıdaki pazaryerlerine gönderilir; bir pazaryerinden gelen sipariş ise en geç 1 dakikada işlenip diğerlerine yansır.`:`<b>Otomatik gönderim kapalı.</b> Açınca deneme ürünlerinin program stoğu bağlı pazaryerlerine gönderilir ve stok değiştikçe güncellenir.`} Yalnızca stok adedi gider, fiyat değişmez.</div>
+    ${pz.stokYuk?`<div class="muted">⏳ ${esc(pz.stokYuk)}</div>`:""}
+    <div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Program stoğu</th>${bagli.map(k=>`<th class="num">${esc(PZ_ADLAR[k])}</th>`).join("")}</tr></thead><tbody>
+      ${H.map(h=>`<tr><td><b>${esc(h.kod)}</b></td><td class="num">${h.u?`<b>${fmtMiktar(h.stok)}</b>`:`<span class="muted">eşleşmedi</span>`}</td>${bagli.map(k=>`<td class="num">${hucre(k,h)}</td>`).join("")}</tr>`).join("")}
+    </tbody></table></div>
+    <div class="muted" style="font-size:.78rem">Kalın sayı: pazaryerinde şu an okunan stok. Altındaki satır: programın son gönderdiği adet (⏳ işleniyor · ✓ işlendi · ✕ reddedildi).</div></div>`}
+async function pzStokOtoDegistir(){const ay=(state.ayarEk||{}).pazaryeriTest||{};
+  if(ay.stokOto){await api.setDoc("ayar","pazaryeriTest",{...ay,stokOto:false});toast("Otomatik stok gönderimi kapatıldı");return}
+  const bagli=(await pzBagliAl()).filter(k=>PZ_STOK_YAZ.includes(k));const H=pzDenemeHedefler().filter(h=>h.u);
+  openModal(`<div class="section-head"><h2>Otomatik stok gönderimi açılsın mı?</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div style="font-size:.9rem">Deneme ürünlerinin <b>program stoğu</b> şu pazaryerlerine gönderilecek: <b>${esc(bagli.map(k=>PZ_ADLAR[k]).join(", "))}</b>.</div>
+    <table><tbody>${H.map(h=>`<tr><td>${esc(h.kod)}</td><td class="num"><b>${fmtMiktar(h.stok)}</b></td></tr>`).join("")}</tbody></table>
+    <div class="muted" style="font-size:.85rem">Bu adetler canlı mağazalara yaklaşık 1 dakika içinde gider; sonra program stoğu her değiştiğinde yeni adet birkaç saniye içinde gönderilir. Yalnızca stok adedi gider, fiyat değişmez. Ürünü olmayan pazaryeri atlanır. İstediğiniz an kapatabilirsiniz.</div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="ac">Evet, aç</button></div>`,
+  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="ac")return;
+    b.disabled=true;await api.setDoc("ayar","pazaryeriTest",{...((state.ayarEk||{}).pazaryeriTest||{}),stokOto:true});closeModal();toast("Otomatik stok gönderimi açıldı; ilk gönderim 1 dakika içinde");
+    if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOtoKontrol().then(()=>pzOtoPlanla())}}))}
 async function pzOtoKontrol(){
   if(pzOto.calisiyor||!pzOtoUygun())return;const f=firmaId;pzOto.calisiyor=true;
   try{const ay=state.ayarEk.pazaryeriTest;const GUN=86400000;const simdi=Date.now();
@@ -3227,6 +3313,8 @@ async function pzOtoKontrol(){
         const k=await pzPlanUygula(pzSiparisPlan(null,sip,null,pzAd));n+=k;if(k)ozet.push(PZ_ADLAR[pzAd]+": "+k)}
       catch(e){if(f!==firmaId)throw e;hatalar.push(PZ_ADLAR[pzAd]+": "+(e.message||e))}}
     if(tam)pzOto.tamZaman=simdi;pzOto.son=n;pzOto.toplam+=n;pzOto.hata=hatalar.join(" · ");
+    // Siparişler hatasız işlendiyse deneme ürünlerinin stoğu pazaryerlerine (açıksa)
+    if(!hatalar.length&&f===firmaId)try{await pzStokEsitle(liste)}catch(e){pzOto.hata="Stok gönderimi: "+(e.message||e)}
     if(n)toast(ozet.join(" · ")+" değişiklik programa işlendi")}
   catch(e){if(f===firmaId)pzOto.hata=e.message||String(e)}
   if(f===firmaId)pzOto.zaman=Date.now();pzOto.calisiyor=false;if(view==="pazaryeri")renderSonra()}
@@ -3509,7 +3597,7 @@ async function pazaryeriAyarModal(){
 function vPazaryeri(){
   const pzAd=pz.pazaryeri||"trendyol",ty=pzAd==="trendyol";
   const deneme=ty?`<div class="notice"><b>Deneme modu:</b> Trendyol'a yalnızca deneme ürünlerinin stok ve fiyatı gönderilebilir. Siparişlerden yalnızca deneme ürünlerinin satırları programa işlenir; diğer siparişler yalnızca görüntülenir.</div>`
-    :`<div class="notice"><b>Yalnızca okuma:</b> ${esc(PZ_ADLAR[pzAd])} siparişleri görüntülenir; ${esc(PZ_ADLAR[pzAd])}'e hiçbir şey gönderilmez ve bu siparişler henüz programa işlenmez.</div>`;
+    :`<div class="notice"><b>Deneme modu:</b> ${esc(PZ_ADLAR[pzAd])} siparişlerinden yalnızca deneme ürünlerinin satırları programa işlenir. ${esc(PZ_ADLAR[pzAd])}'e yalnızca deneme ürünlerinin stok adedi gönderilir (otomatik gönderim açıksa; ayarı Trendyol › Deneme ürünleri sekmesinde).</div>`;
   const ust=`<section class="section-head"><h2>Pazaryeri</h2><div class="filters">
       <select id="fPzGun" data-filter="pzGun" aria-label="Dönem"><option value="bugun" ${ui.pzGun==="bugun"?"selected":""}>Bugün</option>${[7,14,30,60,90].map(g=>`<option value="${g}" ${Number(ui.pzGun||14)===g?"selected":""}>Son ${g} gün</option>`).join("")}</select>
       <button class="primary small" data-act="pzGetir" type="button" ${pz.yuk?"disabled":""}>📡 ${esc(PZ_ADLAR[pzAd]+PZ_EK[pzAd])} getir</button></div></section>
@@ -3521,7 +3609,7 @@ function vPazaryeri(){
   const listeAcik=pz.sekme==="siparis"&&!!pz.siparisler;
   if(pz.yuk&&!listeAcik)govde=`<div class="muted">⏳ ${esc(pz.yuk)}</div>`;
   else if(pz.hata&&!listeAcik)govde=`<div class="err">${esc(pz.hata)}</div>`;
-  else if(pz.sekme==="deneme")govde=pzDenemeHtml();
+  else if(pz.sekme==="deneme")govde=pzStokHtml()+pzDenemeHtml();
   else if(pz.sekme==="siparis"){
     const l0=pz.siparisler;govde=pzSiparisPanel();
     if(pz.yuk)govde+=`<div class="muted" style="font-size:.85rem">⏳ ${esc(pz.yuk)}</div>`;else if(pz.hata)govde+=`<div class="err">${esc(pz.hata)}</div>`;
@@ -3936,6 +4024,8 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uKolTemizle"){ui.sKol={};render()}
   else if(a==="pzSekme"){pz.sekme=id;pz.hata="";render();if(id==="deneme"?!(pz.deneme&&pz.deneme.liste):(pz.bag&&(id==="siparis"?!pz.siparisler:!pz.hakedis)))pzGetir()}
   else if(a==="pzDnGonder")pzDenemeGonder(Number(id));
+  else if(a==="pzStokOku")pzStokOku();
+  else if(a==="pzStokOto")pzStokOtoDegistir();
   else if(a==="pzIsle")pzSiparisIsle();
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
@@ -4117,6 +4207,7 @@ function yengecHazirBildir(){yengecHazir=true;try{if(window.opener)window.opener
 async function topluYaz(satirlar0,ilerleme){
   // Aynı kayıt bir pakette iki kez olursa veritabanı tüm paketi reddeder: son hali kalacak şekilde tekilleştir
   _yazSay++;const tek=new Map();for(const s of satirlar0)tek.set(s.col+"|"+s.id,s);const satirlar=[...tek.values()];
+  if(satirlar.some(s=>s.col==="stokHareketleri"||s.col==="urunler"))setTimeout(pzStokTetikle,0);
   for(const s of satirlar)yerelUygula(s.col,s.id,s.veri);renderSonra();
   let n=0;for(let i=0;i<satirlar.length;i+=500){const parca=satirlar.slice(i,i+500).map(s=>({firma_id:firmaId,koleksiyon:s.col,id:s.id,veri:s.veri,guncelleme:new Date().toISOString()}));let dene=0;
     for(;;){const {error}=await sb.from("kayitlar").upsert(parca);if(!error)break;if(++dene>3){veriYenile();throw sbHata(error)}await new Promise(r=>setTimeout(r,1500*dene))}n+=parca.length;ilerleme&&ilerleme(n,satirlar.length)}}
@@ -4239,8 +4330,8 @@ async function veriBaslat(){
     .on("postgres_changes",{event:"DELETE",schema:"public",table:"kayitlar"},p=>{const o=p.old||{};if(o.firma_id===firmaId&&o.koleksiyon)uzakUygula(o.koleksiyon,o.id,null)})
     .subscribe();
   api={newId:()=>idUret(),
-    setDoc:async(col,id,obj)=>{_yazSay++;yerelUygula(col,id,obj);renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
-    del:async(col,id)=>{_yazSay++;yerelUygula(col,id,null);renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
+    setDoc:async(col,id,obj)=>{_yazSay++;yerelUygula(col,id,obj);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
+    del:async(col,id)=>{_yazSay++;yerelUygula(col,id,null);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
     setFirma:async n=>{yerelUygula("ayar","firma",{ad:n});render();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:n}});if(error)throw sbHata(error);if(firmaRol==="sahip")await sb.from("firmalar").update({ad:n}).eq("id",firmaId)}};
   render();
   document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId)veriYenile()});
