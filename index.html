@@ -3490,8 +3490,27 @@ function pzEslesmeHtml(tur){
       <span class="muted" style="font-size:.85rem">${satirlar.length.toLocaleString("tr-TR")} ${marka?"marka":"kategori"} listeleniyor · ${tamSay}/${tumSatir.length} tüm pazaryerlerinde eşleşmiş</span></div>`;
   const ad=marka?"marka":"kategori",hucre=marka?markaHucre:katHucre;
   return bilgi+filtre+`<div class="tscroll"><table><thead><tr><th>Programdaki ${ad}</th>${PZ_ES_PZ.map(p=>`<th ${fPz&&fPz!==p?'style="opacity:.45"':""}>${esc(PZ_ADLAR[p])}</th>`).join("")}<th>Shopify</th></tr></thead><tbody>
-      ${gorunen.map(([x,n])=>`<tr><td><b>${esc(x)}</b><div class="muted" style="font-size:.75rem">${n.toLocaleString("tr-TR")} ürün</div></td>${PZ_ES_PZ.map(p=>`<td>${hucre(x,p)}</td>`).join("")}<td class="muted" style="font-size:.75rem">otomatik</td></tr>`).join("")||`<tr><td colspan="6" class="empty">Filtreye uyan ${ad} yok.</td></tr>`}
+      ${gorunen.map(([x,n])=>`<tr><td><b>${esc(x)}</b><div class="muted" style="font-size:.75rem">${n.toLocaleString("tr-TR")} ürün · <a href="#" data-act="esUrunler" data-k="${esc(x)}" data-p="${marka?"marka":"kategori"}">ürünleri gör</a></div></td>${PZ_ES_PZ.map(p=>`<td>${hucre(x,p)}</td>`).join("")}<td class="muted" style="font-size:.75rem">otomatik</td></tr>`).join("")||`<tr><td colspan="6" class="empty">Filtreye uyan ${ad} yok.</td></tr>`}
     </tbody></table></div>`+sayfalar}
+// Bir kategorinin / markanın içindeki ürünler (eşleştirme yaparken neye karşılık geldiğini görmek için)
+function pzEsUrunlerModal(tur,ad){
+  const alan=tur==="marka"?"marka":"kategori";const hepsi=state.urunler.filter(u=>String(u[alan]||"").trim()===ad).map(u=>({...u,miktar:stokMiktar(u)})).sort((a,b)=>String(a.ad).localeCompare(String(b.ad),"tr"));
+  let ara="",sayfa=1;const BOY=50;
+  openModal(`<div class="section-head"><h2>${esc(ad)} · ${hepsi.length.toLocaleString("tr-TR")} ürün</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="filters"><input id="euAra" type="search" placeholder="Ürün adı, stok kodu ya da barkod" style="flex:1;min-width:200px"><button class="small" data-m="ac" type="button">Ürünler ekranında aç</button></div>
+    <div id="euListe"></div>`,
+  root=>{root.style.maxWidth="900px";const $=s=>root.querySelector(s);
+    const ciz=()=>{const q=_norm(ara);const l=q?hepsi.filter(u=>_norm([u.ad,u.kod,u.barkod].join(" ")).includes(q)):hepsi;const ss=Math.max(1,Math.ceil(l.length/BOY));sayfa=Math.min(sayfa,ss);
+      const g=l.slice((sayfa-1)*BOY,sayfa*BOY);
+      $("#euListe").innerHTML=`<div class="tscroll" style="max-height:60vh;overflow:auto"><table><thead><tr><th>Ürün</th><th>Stok kodu</th><th>Barkod</th><th class="num">Stok</th><th class="num">Satış</th><th>Görsel</th></tr></thead><tbody>
+        ${g.map(u=>`<tr><td><div style="display:flex;gap:8px;align-items:center">${(u.gorseller||[])[0]?`<img src="${esc(u.gorseller[0])}" alt="" loading="lazy" style="width:36px;height:36px;object-fit:cover;border-radius:6px;flex:none">`:""}<a href="#" data-duz="${esc(u.id)}">${esc(u.ad)}</a></div></td><td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td class="num">${fmtMiktar(u.miktar)}</td><td class="num">${money(u.satisFiyat)}</td><td class="muted" style="font-size:.78rem">${(u.gorseller||[]).length||"yok"}</td></tr>`).join("")||`<tr><td colspan="6" class="empty">Ürün yok.</td></tr>`}
+        </tbody></table></div>${ss>1?`<div class="filters" style="justify-content:center;align-items:center"><button class="small" data-sayfa="${sayfa-1}" type="button" ${sayfa<=1?"disabled":""}>‹ Önceki</button><span class="muted" style="font-size:.85rem">Sayfa ${sayfa} / ${ss} · ${l.length.toLocaleString("tr-TR")} ürün</span><button class="small" data-sayfa="${sayfa+1}" type="button" ${sayfa>=ss?"disabled":""}>Sonraki ›</button></div>`:""}`};
+    ciz();
+    root.addEventListener("input",e=>{if(e.target.id==="euAra"){ara=e.target.value;sayfa=1;ciz()}});
+    root.addEventListener("click",e=>{const sp=e.target.closest("[data-sayfa]");if(sp){sayfa=Number(sp.dataset.sayfa)||1;ciz();return}
+      const d=e.target.closest("[data-duz]");if(d){e.preventDefault();const u=state.urunler.find(x=>x.id===d.dataset.duz);if(u){closeModal();urunForm(u)}return}
+      const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();
+      if(b.dataset.m==="ac"){ui.sAra="";ui.sKat=alan==="kategori"?ad:"";ui.sMarka=alan==="marka"?ad:"";closeModal();location.hash="stok";render()}})})}
 async function pzEsKaydet(fn){const e=pzEs();e.kategori=e.kategori||{};e.marka=e.marka||{};fn(e);await api.setDoc("ayar","pzEslesme",e)}
 function pzKatEslesModal(kat,p){
   const mevcut=pzEsKat(kat,p);let liste=null,secim=mevcut?{id:mevcut.id,yol:mevcut.yol}:null,ozellikler=null;
@@ -4326,6 +4345,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uKolTemizle"){ui.sKol={};render()}
   else if(a==="esKat"){e.preventDefault();if(firmaRol!=="sahip"&&state.readonly){toast("Yetkiniz yok");return}pzKatEslesModal(b.dataset.k,b.dataset.p)}
   else if(a==="esMarka"){e.preventDefault();pzMarkaEslesModal(b.dataset.k,b.dataset.p)}
+  else if(a==="esUrunler"){e.preventDefault();pzEsUrunlerModal(b.dataset.p,b.dataset.k)}
   else if(a==="esSayfa"){ui[b.dataset.k+"Sayfa"]=Number(id)||1;render();const m=document.getElementById("main");if(m)m.scrollIntoView({block:"start"})}
   else if(a==="pzSekme"&&(id==="eslesme"||id==="eslesmeMarka")){pz.sekme=id;pz.hata="";render()}
   else if(a==="pzSekme"){pz.sekme=id;pz.hata="";render();if(id==="deneme"?!(pz.deneme&&pz.deneme.liste):(pz.bag&&(id==="siparis"?!pz.siparisler:!pz.hakedis)))pzGetir()}
