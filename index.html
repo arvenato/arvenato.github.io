@@ -3463,11 +3463,11 @@ function pzEslesmeHtml(tur){
   const katHucre=(k,p)=>{const e=pzEsKat(k,p);if(!e)return `<button class="small" data-act="esKat" data-k="${esc(k)}" data-p="${p}" type="button">Eşleştir</button>`;
     const oz=e.ozellik||{},n=Object.values(oz).filter(x=>x&&(x.degerId||x.deger)).length,z=e.zorunluSay??null;
     return `<a href="#" data-act="esKat" data-k="${esc(k)}" data-p="${p}" style="font-size:.8rem" title="${esc(e.yol)}">${esc(String(e.yol).split(" › ").slice(-2).join(" › "))}</a><div class="${z!=null&&n<z?"neg":"muted"}" style="font-size:.72rem">${z!=null?`özellik ${n}/${z}`:""}</div>`};
-  const markaHucre=(m,p)=>{if(p==="n11")return `<span class="muted" style="font-size:.75rem">kategori özelliği</span>`;const e=pzEsMarka(m,p);
-    return e?`<a href="#" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" style="font-size:.8rem">${esc(e.ad)}</a>`:`<button class="small" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" type="button">Eşleştir</button>`};
-  const bilgi=`<div class="notice" style="font-size:.85rem"><b>Ürün açmanın temeli:</b> ${marka?"programdaki her markayı pazaryerlerindeki karşılığıyla bir kez eşleştirin. N11'de marka, kategorinin “Marka” özelliği olarak otomatik gönderilir.":"programdaki her kategoriyi pazaryerlerindeki karşılığıyla bir kez eşleştirin ve kategorinin zorunlu özellikleri için varsayılan değer seçin."} Bu ekran pazaryerlerine hiçbir şey göndermez. Shopify'da ${marka?"marka":"kategori"} serbest metindir, otomatik kullanılır.</div>`;
+  const markaHucre=(m,p)=>{const e=pzEsMarka(m,p);
+    return e?`<a href="#" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" style="font-size:.8rem">${esc(e.ad)}</a>${e.serbest?`<div class="muted" style="font-size:.72rem">serbest yazı</div>`:""}`:`<button class="small" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" type="button">Eşleştir</button>`};
+  const bilgi=`<div class="notice" style="font-size:.85rem"><b>Ürün açmanın temeli:</b> ${marka?"programdaki her markayı pazaryerlerindeki karşılığıyla bir kez eşleştirin. N11'de seçilen marka, ürün açılırken kategorinin “Marka” özelliğine yazılır.":"programdaki her kategoriyi pazaryerlerindeki karşılığıyla bir kez eşleştirin ve kategorinin zorunlu özellikleri için varsayılan değer seçin."} Bu ekran pazaryerlerine hiçbir şey göndermez. Shopify'da ${marka?"marka":"kategori"} serbest metindir, otomatik kullanılır.</div>`;
   // Filtre: pazaryeri (tümü ya da tek) × durum (eşleşmiş / eşleşmemiş / zorunlu özelliği eksik); sayfa başına 50
-  const on=marka?"esM":"esK",pzListe=marka?["trendyol","pazarama","idefix"]:PZ_ES_PZ;
+  const on=marka?"esM":"esK",pzListe=PZ_ES_PZ;
   const fPz=pzListe.includes(ui[on+"Pz"])?ui[on+"Pz"]:"",fDurum=ui[on+"Durum"]||"";
   const katEksik=(k,p)=>{const e=pzEsKat(k,p);if(!e||e.zorunluSay==null)return false;return Object.values(e.ozellik||{}).filter(x=>x&&(x.degerId||x.deger)).length<e.zorunluSay};
   const eslesmis=(ad,p)=>marka?!!pzEsMarka(ad,p):!!pzEsKat(ad,p);
@@ -3538,7 +3538,7 @@ function pzKatEslesModal(kat,p){
       $("#ekSecim").innerHTML=`Seçilen: <b>${esc(secim.yol)}</b>`;$("#ekOz").innerHTML=`<div class="muted">Zorunlu özellikler okunuyor…</div>`;
       try{ozellikler=await pzOzellikler(p,secim.id)}catch(e){$("#ekOz").innerHTML=`<div class="err">${esc(e.message||String(e))}</div>`;return}
       const z=ozellikler.filter(o=>o.zorunlu&&!pzMarkaOz(o)),eski=(mevcut&&mevcut.id===secim.id&&mevcut.ozellik)||{};
-      $("#ekOz").innerHTML=z.length?`<div style="font-size:.85rem"><b>Zorunlu özellikler</b> — varsayılan değer (ürünün kendi bilgisi varsa o kullanılır)${ozellikler.some(o=>o.zorunlu&&pzMarkaOz(o))?" · Marka özelliği markadan otomatik doldurulur":""}</div>`+z.map(o=>{const e=eski[o.id]||{};const dl="dl_"+o.id.replace(/\W/g,"");
+      $("#ekOz").innerHTML=z.length?`<div style="font-size:.85rem"><b>Zorunlu özellikler</b> — varsayılan değer (ürünün kendi bilgisi varsa o kullanılır)${ozellikler.some(o=>o.zorunlu&&pzMarkaOz(o))?" · Marka özelliği ürünün markasından gelir (Markalar sekmesindeki eşleştirme)":""}</div>`+z.map(o=>{const e=eski[o.id]||{};const dl="dl_"+o.id.replace(/\W/g,"");
         return `<div class="field"><label for="oz_${esc(o.id)}">${esc(o.ad)}${o.varyant?" <span class=\"muted\">(varyant)</span>":""}${o.serbest?" <span class=\"muted\">· serbest yazılabilir</span>":""}</label>
           <input id="oz_${esc(o.id)}" data-oz="${esc(o.id)}" list="${dl}" value="${esc(e.deger||"")}" placeholder="${o.degerler.length?"Listeden seçin":"Değer yazın"}"><datalist id="${dl}">${o.degerler.slice(0,3000).map(v=>`<option value="${esc(v.ad)}"></option>`).join("")}</datalist></div>`}).join("")
         :`<div class="muted" style="font-size:.85rem">Bu kategoride (marka dışında) zorunlu özellik yok.</div>`;
@@ -3561,17 +3561,24 @@ function pzMarkaEslesModal(marka,p){
   openModal(`<div class="section-head"><h2>Marka: ${esc(marka)} → ${esc(PZ_ADLAR[p])}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="filters"><input id="emAra" value="${esc(marka)}" style="min-width:240px"><button class="small primary" data-m="ara" type="button">${esc(PZ_ADLAR[p])}'da ara</button></div>
     <div id="emSonuc" style="max-height:260px;overflow:auto;font-size:.88rem">${mevcut?`Şu an: <b>${esc(mevcut.ad)}</b> (${esc(mevcut.id)})`:""}</div>
-    <div class="muted" style="font-size:.8rem">Marka pazaryerinde yoksa o pazaryerinde marka başvurusu gerekir (panelden). Trendyol'da marka adı büyük/küçük harfe duyarlıdır.</div>
+    <div class="muted" style="font-size:.8rem">${p==="n11"?"N11'de marka listesi, kategorinin “Marka” özelliğinden okunur (bu markanın ürünlerinin eşleştirilmiş N11 kategorisi; yoksa bir kırtasiye kategorisi). ":""}Marka pazaryerinde yoksa o pazaryerinde marka başvurusu gerekir (panelden). Trendyol'da marka adı büyük/küçük harfe duyarlıdır.</div>
     <div class="modal-foot">${mevcut?`<button type="button" class="ghost" data-m="kaldir">Eşleştirmeyi kaldır</button>`:""}<button type="button" data-m="close">Kapat</button></div>`,
   root=>{const $=s=>root.querySelector(s);
     const ara=async()=>{$("#emSonuc").innerHTML=`<div class="muted">Aranıyor…</div>`;
-      try{const r=await pzCagir({islem:"markaAra",pazaryeri:p,ad:$("#emAra").value});const l=r.markalar||[];
-        $("#emSonuc").innerHTML=l.length?l.map(x=>`<div><a href="#" data-sec="${esc(x.id)}" data-ad="${esc(x.ad)}">${esc(x.ad)}</a> <span class="muted">(${esc(x.id)})</span></div>`).join(""):`<div class="muted">${esc(r.not||"Bulunamadı; farklı yazımla deneyin.")}</div>`}
+      try{const g={islem:"markaAra",pazaryeri:p,ad:$("#emAra").value};
+        if(p==="n11"){// N11: önce bu markanın ürünlerinin eşleşmiş N11 kategorisi, yoksa herhangi bir eşleşmiş N11 kategorisi
+          const kats=((state.ayarEk||{}).pzEslesme||{}).kategori||{};let kid="";
+          for(const u of state.urunler){if(String(u.marka||"").trim()!==marka)continue;const e=(kats[String(u.kategori||"").trim()]||{}).n11;if(e&&e.id){kid=e.id;break}}
+          if(!kid)for(const k of Object.values(kats)){if(k&&k.n11&&k.n11.id){kid=k.n11.id;break}}
+          if(kid)g.kategoriId=kid}
+        const r=await pzCagir(g);const l=r.markalar||[],yaz=String($("#emAra").value||"").trim();
+        $("#emSonuc").innerHTML=(l.length?l.map(x=>`<div><a href="#" data-sec="${esc(x.id)}" data-ad="${esc(x.ad)}">${esc(x.ad)}</a> <span class="muted">(${esc(x.id)})</span></div>`).join(""):`<div class="muted">${esc(r.not||"Bulunamadı; farklı yazımla deneyin.")}</div>`)
+          +(p==="n11"&&r.serbest&&yaz.length>1&&!l.some(x=>_norm(x.ad)===_norm(yaz))?`<div style="margin-top:8px"><a href="#" data-sec="" data-ad="${esc(yaz)}" data-serbest="1">“${esc(yaz)}” olarak serbest yaz</a> <span class="muted">(N11 bu kategoride listede olmayan markayı kabul ediyor)</span></div>`:"")}
       catch(e){$("#emSonuc").innerHTML=`<div class="err">${esc(e.message||String(e))}</div>`}};
     if(!mevcut)ara();
     root.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="emAra"){e.preventDefault();ara()}});
     root.addEventListener("click",async e=>{const a=e.target.closest("[data-sec]");if(a){e.preventDefault();
-        await pzEsKaydet(es=>{(es.marka[marka]=es.marka[marka]||{})[p]={id:a.dataset.sec,ad:a.dataset.ad,zaman:Date.now()}});closeModal();toast(`${marka} → ${PZ_ADLAR[p]}: ${a.dataset.ad}`);return}
+        await pzEsKaydet(es=>{(es.marka[marka]=es.marka[marka]||{})[p]=Object.assign({id:a.dataset.sec,ad:a.dataset.ad,zaman:Date.now()},a.dataset.serbest?{serbest:true}:{})});closeModal();toast(`${marka} → ${PZ_ADLAR[p]}: ${a.dataset.ad}`);return}
       const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m==="ara")return ara();
       if(b.dataset.m==="kaldir"){await pzEsKaydet(es=>{if(es.marka[marka])delete es.marka[marka][p]});closeModal();toast("Eşleştirme kaldırıldı")}})})}
 function pzKomisyonModal(){
