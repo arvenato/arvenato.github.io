@@ -3960,7 +3960,10 @@ async function cikisYap(){try{if(kanal)sb.removeChannel(kanal);kanal=null;await 
 function idUret(){const a="abcdefghijklmnopqrstuvwxyz0123456789";let s="";for(const x of crypto.getRandomValues(new Uint8Array(20)))s+=a[x%36];return s}
 // Arka plandan gelen yeniden çizim, kullanıcı bir kutuya (yazı, seçim) tıklamışken yapılmaz; kutudan çıkınca yapılır.
 // (Aksi halde açılır liste kapanır, yazılan kutu kaybolur.)
-let _rt=null;function renderSonra(){clearTimeout(_rt);_rt=setTimeout(()=>{if(kullaniciKutuda()){renderSonra();return}render()},120)}
+// Arka plandan gelen yeniden çizim; kullanıcı bir kutuya yazarken ya da ekranda yazı seçmişken (kopyalamak için) ertelenir.
+// Seçim için en fazla 30 sn beklenir; sonra ekran yine de güncellenir.
+let _rt=null,_rtIlk=0;function renderSonra(){clearTimeout(_rt);if(!_rtIlk)_rtIlk=Date.now();_rt=setTimeout(()=>{if(kullaniciKutuda()||(yaziSecili()&&Date.now()-_rtIlk<30000)){renderSonra();return}_rtIlk=0;render()},120)}
+function yaziSecili(){try{const s=window.getSelection();if(!s||s.isCollapsed||!String(s).trim())return false;const m=document.getElementById("main");return !!m&&m.contains(s.anchorNode)}catch(e){return false}}
 function kullaniciKutuda(){const a=document.activeElement;if(!a||a===document.body)return false;
   const m=document.getElementById("main");if(!m||!m.contains(a))return false;
   return a.tagName==="SELECT"||a.tagName==="TEXTAREA"||(a.tagName==="INPUT"&&!/^(checkbox|radio|button|submit)$/i.test(a.type))}
