@@ -1540,8 +1540,8 @@ function vStok(){
     ${gorunen.length?"":`<tr><td colspan="${URUN_KOL.length+(ro?1:2)}" class="empty">Filtreye uyan ürün yok.</td></tr>`}
     ${gorunen.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><b>${esc(u.ad)}</b></td>
       <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${esc(u.marka||"—")}</td><td>${esc(u.kategori||"—")}</td>
-      <td class="num ${u.durum==="yok"?"neg":""}">${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
-      <td class="num">${money(u.alisFiyat)}</td><td class="num">${money(u.satisFiyat)}</td><td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
+      <td class="num ${u.durum==="yok"?"neg":""}" ${ro?"":`data-dbl="stok" data-id="${u.id}" title="Çift tıklayın: stoğu değiştir" style="cursor:cell"`}>${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
+      <td class="num" ${ro?"":`data-dbl="alis" data-id="${u.id}" title="Çift tıklayın: alış fiyatını değiştir" style="cursor:cell"`}>${money(u.alisFiyat)}</td><td class="num" ${ro?"":`data-dbl="satis" data-id="${u.id}" title="Çift tıklayın: satış fiyatını değiştir" style="cursor:cell"`}>${money(u.satisFiyat)}</td><td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
       <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="stokGiris" data-id="${u.id}" type="button">Giriş</button><button class="small" data-act="stokCikis" data-id="${u.id}" type="button">Çıkış</button><button class="small ghost" data-act="stokSayim" data-id="${u.id}" type="button">Sayım</button>`}<button class="small ghost" data-act="stokGecmis" data-id="${u.id}" type="button">Hareketler</button>${state.readonly?"":`<button class="small ghost" data-act="editUrun" data-id="${u.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
     </tbody></table></div>`:`<div class="empty">${"Henüz ürün yok. <b>+ Ürün ekle</b> ile defter, kalem, boya gibi ürünlerinizi ve mevcut stok miktarlarını girin. Sonra mal geldiğinde <b>Giriş</b>, sattığınızda <b>Çıkış</b> yapın."}</div>`}
     ${sayfaSay>1?sayfaCubuk.replace('id="fSBoyut"','id="fSBoyut2"'):""}
@@ -1656,6 +1656,51 @@ async function urunSeciliExcel(){
 async function urunTumExcel(){
   const byId=new Map(state.urunler.map(u=>[u.id,u]));const liste=stokListeSon.map(id=>byId.get(id)).filter(Boolean);
   await urunlerExcel(liste,"urunler-"+today()+".xlsx")}
+/* ---------- Ürünler tablosunda çift tıklamayla stok / fiyat değiştirme ----------
+   Her değişiklik onaylanır. Fiyat yarıdan fazla düşer ya da iki katından fazla artarsa ikinci kez onay istenir.
+   Stok değişikliği "Sayım" hareketi olarak yazılır (geçmiş korunur); fiyat ürün kartına yazılır. */
+document.addEventListener("dblclick",e=>{const td=e.target.closest&&e.target.closest("[data-dbl]");if(!td||state.readonly)return;
+  e.preventDefault();try{window.getSelection().removeAllRanges()}catch(err){}hizliDuzenle(td.dataset.id,td.dataset.dbl)});
+function hizliDuzenle(uid,alan){
+  const u=state.urunler.find(x=>x.id===uid);if(!u)return;
+  const stokMu=alan==="stok",ad={stok:"Stok",alis:"Alış fiyatı",satis:"Satış fiyatı"}[alan];
+  const eski=stokMu?stokMiktar(u):r2(Number(alan==="alis"?u.alisFiyat:u.satisFiyat)||0);
+  const goster=v=>stokMu?fmtMiktar(v)+" "+esc(u.birim||"Adet"):money(v);
+  const deneme=pzDenemeKodlar().some(k=>pzKimlik(k)===pzKimlik(u.kod)||pzKimlik(k)===pzKimlik(u.barkod));
+  let yeni=null,adim=1;
+  const ciz=root=>{const f=root.querySelector("#hdGovde");
+    if(adim===1)f.innerHTML=`<div class="field"><label for="hdDeger">Yeni ${ad.toLocaleLowerCase("tr")}${stokMu?" ("+esc(u.birim||"Adet")+")":" (₺, KDV dahil)"}</label>
+        <input id="hdDeger" type="number" ${stokMu?'step="1"':'step="0.01" min="0"'} inputmode="decimal" value="${esc(String(eski))}"></div>
+      <div class="muted" style="font-size:.85rem">Şu an: <b style="color:var(--fg)">${goster(eski)}</b>${stokMu?" · fark sayım hareketi olarak kaydedilir":""}</div>
+      ${stokMu&&deneme&&pzStokOtoAcik()?`<div class="notice" style="font-size:.85rem">Bu ürün deneme listesinde: yeni stok birkaç saniye içinde bağlı pazaryerlerine de gönderilir.</div>`:""}
+      <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="devam">Devam</button></div>`;
+    else{const fark=r2(yeni-eski),oran=eski>0?yeni/eski:null;
+      const asiri=!stokMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
+      const degisim=stokMu?`${fark>0?"+":""}${fmtMiktar(fark)}`:(oran!=null?`%${(Math.abs(oran-1)*100).toLocaleString("tr-TR",{maximumFractionDigits:1})} ${yeni>=eski?"artış":"düşüş"}`:"");
+      f.innerHTML=`<table><tbody><tr><td>${ad}</td><td class="num">${goster(eski)} → <b>${goster(yeni)}</b></td></tr>${degisim?`<tr><td>Değişim</td><td class="num">${degisim}</td></tr>`:""}</tbody></table>
+        ${adim===3?`<div class="notice" style="border-color:var(--neg,#b42318)"><b>İkinci onay:</b> fiyat ${yeni<eski?"yarısından daha fazla düşüyor":"iki katından fazla artıyor"} (${goster(eski)} → ${goster(yeni)}). Yanlış yazılmadığından emin olun.</div>`
+          :asiri?`<div class="notice"><b>Dikkat:</b> fiyat ${yeni<eski?"yarısından fazla düşüyor":"iki katından fazla artıyor"}; onaydan sonra bir kez daha sorulacak.</div>`:""}
+        <div class="err" id="hdErr" role="alert"></div>
+        <div class="modal-foot"><button type="button" data-m="geri">Geri</button><button type="button" class="primary" data-m="onay">${adim===3?"Evet, eminim — kaydet":asiri?"Onayla":"Evet, kaydet"}</button></div>`}
+    const i=root.querySelector("#hdDeger");if(i){i.focus();i.select()}};
+  openModal(`<div class="section-head"><h2>${esc(u.ad)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div><div id="hdGovde" style="display:flex;flex-direction:column;gap:10px"></div>`,
+    root=>{ciz(root);
+      root.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="hdDeger"){e.preventDefault();root.querySelector('[data-m="devam"]').click()}});
+      root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
+        if(m==="close")return closeModal();
+        if(m==="geri"){adim=1;ciz(root);return}
+        if(m==="devam"){const v=Number(String(root.querySelector("#hdDeger").value).replace(",","."));
+          if(!isFinite(v)||(!stokMu&&v<0)){toast("Geçerli bir sayı girin");return}
+          yeni=stokMu?v:r2(v);if(yeni===eski){closeModal();return}adim=2;ciz(root);return}
+        if(m!=="onay")return;
+        const asiri=!stokMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
+        if(asiri&&adim===2){adim=3;ciz(root);return}
+        b.disabled=true;
+        try{if(stokMu){const guncel=stokMiktar(u),fark=r2(yeni-guncel);
+            if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(u.alisFiyat)||0,aciklama:"Ürünler ekranından düzeltme",hareketId:"",olusturma:Date.now()})}
+          else{const x=state.urunler.find(y=>y.id===uid)||u;const {id:_,...rest}=x;await api.setDoc("urunler",uid,{...rest,[alan==="alis"?"alisFiyat":"satisFiyat"]:yeni})}
+          closeModal();toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni)))}
+        catch(err){b.disabled=false;const er=root.querySelector("#hdErr");if(er)er.textContent=errMsg(err)}})})}
 function stokHareketForm(uid,tip){
   const u=state.urunler.find(x=>x.id===uid);if(!u)return;
   const giris=tip==="Giriş";const mevcut=stokMiktar(u);
@@ -3220,6 +3265,9 @@ const PZ_STOK_YAZ=["trendyol","n11","pazarama","idefix","shopify"];
 const PZ_STOK_BEKLE=15*60000;
 const pzStokKayit=()=>(state.ayarEk||{}).pazaryeriStok||{};
 const pzStokOtoAcik=()=>!!(((state.ayarEk||{}).pazaryeriTest||{}).stokOto);
+// Sunucu turu (Supabase zamanlayıcısı; program kapalıyken de çalışır) durumu: ayar › pazaryeriSunucu
+const pzSunucu=()=>(state.ayarEk||{}).pazaryeriSunucu||null;
+const pzSunucuAktif=()=>{const s=pzSunucu();return !!(s&&Date.now()-(Number(s.son)||0)<150000&&!s.hata)};
 function pzDenemeHedefler(){return pzDenemeKodlar().map(kod=>{const u=pzKimlikUrun({barkod:kod,stokKodu:kod});return {kod,u,stok:u?Math.max(0,Math.floor(stokMiktar(u))):null}})}
 async function pzBagliAl(){if(pzOto.bagli&&pzOto.firma===firmaId)return pzOto.bagli;
   try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:firmaId});pzOto.bagli=(data||[]).map(x=>x.pazaryeri).filter(k=>PZ_ADLAR[k])}catch(e){}
@@ -3281,6 +3329,7 @@ function pzStokHtml(){
       <button class="small" data-act="pzStokOku" type="button" ${pz.stokYuk?"disabled":""}>📡 Pazaryerlerindeki stokları oku</button>
       ${firmaRol==="sahip"?`<button class="small ${acik?"":"primary"}" data-act="pzStokOto" type="button">${acik?"Otomatik gönderimi kapat":"Otomatik gönderimi aç"}</button>`:""}</div></div>
     <div style="font-size:.85rem">${acik?`<b class="pos">Otomatik gönderim açık.</b> Programda deneme ürününün stoğu değişince yeni adet birkaç saniye içinde aşağıdaki pazaryerlerine gönderilir; bir pazaryerinden gelen sipariş ise en geç 1 dakikada işlenip diğerlerine yansır.`:`<b>Otomatik gönderim kapalı.</b> Açınca deneme ürünlerinin program stoğu bağlı pazaryerlerine gönderilir ve stok değiştikçe güncellenir.`} Yalnızca stok adedi gider, fiyat değişmez.</div>
+    ${(s=>s?`<div style="font-size:.82rem" class="${s.hata?"neg":"muted"}">☁️ Sunucu (program kapalıyken de çalışır): son tur ${saat(s.son)}${s.hata?" · hata: "+esc(s.hata):" · sorunsuz"}${s.islenen?" · işlenen "+esc(s.islenen):""}${s.gonderim?" · "+s.gonderim+" gönderim":""}${Date.now()-(Number(s.son)||0)>300000?` · <b class="neg">5 dakikadır çalışmadı</b>`:""}</div>`:`<div class="muted" style="font-size:.82rem">☁️ Sunucu turu henüz çalışmadı; şu an gönderimleri yalnızca açık program yapıyor.</div>`)(pzSunucu())}
     ${pz.stokYuk?`<div class="muted">⏳ ${esc(pz.stokYuk)}</div>`:""}
     <div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Program stoğu</th>${bagli.map(k=>`<th class="num">${esc(PZ_ADLAR[k])}</th>`).join("")}</tr></thead><tbody>
       ${H.map(h=>`<tr><td><b>${esc(h.kod)}</b></td><td class="num">${h.u?`<b>${fmtMiktar(h.stok)}</b>`:`<span class="muted">eşleşmedi</span>`}</td>${bagli.map(k=>`<td class="num">${hucre(k,h)}</td>`).join("")}</tr>`).join("")}
@@ -3314,7 +3363,8 @@ async function pzOtoKontrol(){
       catch(e){if(f!==firmaId)throw e;hatalar.push(PZ_ADLAR[pzAd]+": "+(e.message||e))}}
     if(tam)pzOto.tamZaman=simdi;pzOto.son=n;pzOto.toplam+=n;pzOto.hata=hatalar.join(" · ");
     // Siparişler hatasız işlendiyse deneme ürünlerinin stoğu pazaryerlerine (açıksa)
-    if(!hatalar.length&&f===firmaId)try{await pzStokEsitle(liste)}catch(e){pzOto.hata="Stok gönderimi: "+(e.message||e)}
+    // Sunucu turu son 2,5 dakikada çalıştıysa dakikalık gönderimi o yapar (aynı işi iki kez yapmamak için); anında gönderim (pzStokTetikle) programda kalır
+    if(!hatalar.length&&f===firmaId&&!pzSunucuAktif())try{await pzStokEsitle(liste)}catch(e){pzOto.hata="Stok gönderimi: "+(e.message||e)}
     if(n)toast(ozet.join(" · ")+" değişiklik programa işlendi")}
   catch(e){if(f===firmaId)pzOto.hata=e.message||String(e)}
   if(f===firmaId)pzOto.zaman=Date.now();pzOto.calisiyor=false;if(view==="pazaryeri")renderSonra()}
@@ -4223,18 +4273,9 @@ function yengecPlan(liste,K=AKTARIM_KAYNAK.yengec){
   // Önce kaynak numarasıyla (ör. trendyolId) kesin eşleşmeler, sonra barkod / stok kodu / ad ile eşleşmeler.
   const kullanilan=new Set();const bekleyen=[];
   for(const a of adaylar){const ex=byY[a.v.yengecId];if(ex&&!kullanilan.has(ex.id)){kullanilan.add(ex.id);eslesen.push({ex,v:a.v,fark:r2(a.v.stok-stokMiktar(ex))})}else bekleyen.push(a)}
-  const hangiAnahtar=["barkod","stok kodu","barkod","stok kodu","ürün adı"];
   for(const {v,sk,bk} of bekleyen){
-    const aday=[v.barkod&&byB[v.barkod],byK[v.kod],sk&&byB[sk],bk&&byK[bk],byA[_norm(v.ad)]];
-    const ex=aday.find(x=>x&&!kullanilan.has(x.id)&&!(x[K.alan]&&String(x[K.alan])!==v.yengecId));
-    if(ex){kullanilan.add(ex.id);eslesen.push({ex,v,fark:r2(v.stok-stokMiktar(ex))});continue}
-    // Neden eşleşmedi? Kullanıcının listeyi inceleyebilmesi için kısa açıklama ve varsa benzer program ürünü
-    const ix=aday.findIndex(x=>x);const benzer=ix>=0?aday[ix]:null;
-    if(benzer&&kullanilan.has(benzer.id)){v.neden=`Aynı ${hangiAnahtar[ix]} ${K.ad}'da birden fazla üründe var; programdaki ürün diğeriyle eşleşti`;v.nedenTip="mukerrer"}
-    else if(benzer){v.neden=`Programdaki benzer ürün (${hangiAnahtar[ix]} aynı) başka bir ${K.ad} kaydına bağlı`;v.nedenTip="bagli"}
-    else if(!String(sk||"").trim()&&!String(bk||"").trim()){v.neden=`${K.ad}'da barkod ve stok kodu boş, adı da programdakilerle aynı değil`;v.nedenTip="kodsuz"}
-    else{v.neden="Programda bu barkod, stok kodu veya adla ürün yok";v.nedenTip="yok"}
-    v.benzerAd=benzer?benzer.ad:"";yeni.push(v)}
+    const ex=[v.barkod&&byB[v.barkod],byK[v.kod],sk&&byB[sk],bk&&byK[bk],byA[_norm(v.ad)]].find(x=>x&&!kullanilan.has(x.id)&&!(x[K.alan]&&String(x[K.alan])!==v.yengecId));
+    if(ex){kullanilan.add(ex.id);eslesen.push({ex,v,fark:r2(v.stok-stokMiktar(ex))})}else yeni.push(v)}
   return {yeni,eslesen,stokDegisen:eslesen.filter(x=>x.fark!==0),fiyatDegisen:eslesen.filter(x=>x.v.satisFiyat&&x.v.satisFiyat!==Number(x.ex.satisFiyat))}}
 function yengecAktarModal(liste0,kaynak){
   const K=AKTARIM_KAYNAK[kaynak||"yengec"];
@@ -4251,31 +4292,10 @@ function yengecAktarModal(liste0,kaynak){
       <label style="display:flex;gap:8px;align-items:center"><input id="ygFiyat" type="checkbox" ${p.fiyatDegisen.length?(K.stok?"checked":""):"disabled"}> Satış fiyatlarını ve KDV oranlarını ${K.ad}'daki ile güncelle</label>
     </div>
     ${p.stokDegisen.length?`<div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Programda</th><th class="num">${K.ad}'da</th><th class="num">Fark</th></tr></thead><tbody>${p.stokDegisen.slice(0,8).map(x=>`<tr><td>${esc(x.v.ad)}</td><td class="num">${fmtMiktar(stokMiktar(x.ex))}</td><td class="num">${fmtMiktar(x.v.stok)}</td><td class="num ${x.fark>0?"pos":"neg"}">${x.fark>0?"+":""}${fmtMiktar(x.fark)}</td></tr>`).join("")}</tbody></table></div>${p.stokDegisen.length>8?`<div class="muted" style="font-size:.8rem">ve ${(p.stokDegisen.length-8).toLocaleString("tr-TR")} ürün daha</div>`:""}`:""}
-    ${p.yeni.length?(()=>{const say={};p.yeni.forEach(v=>say[v.nedenTip]=(say[v.nedenTip]||0)+1);
-      const ozet=[["yok","programda karşılığı yok"],["kodsuz","barkod / stok kodu boş"],["mukerrer",K.ad+"'da aynı barkod / kod tekrar ediyor"],["bagli","benzeri başka kayda bağlı"]].filter(([k])=>say[k]).map(([k,a])=>`<b>${say[k].toLocaleString("tr-TR")}</b> ${a}`).join(" · ");
-      return `<details id="ygYeniListe" style="font-size:.88rem"><summary style="cursor:pointer"><b>Yeni görünen ${p.yeni.length.toLocaleString("tr-TR")} ürünün listesi</b> <span class="muted">(${ozet})</span></summary>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-        <div class="muted" style="font-size:.8rem">Bunlar ${K.ad}'dan gelen ama programdaki hiçbir ürünle barkod, stok kodu veya adla eşleşmeyen kayıtlardır. ${K.ad}'a yeni ürün yüklemediyseniz çoğu zaman sebep barkod / stok kodu farkı veya varyantlardır. Eklemek istemiyorsanız yukarıdaki “Yeni ürünleri ekle” işaretini kaldırın.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input id="ygAra" type="search" placeholder="Ad, stok kodu veya barkod ara" style="flex:1;min-width:180px"><button type="button" class="small" data-m="yeniIndir">Excel'e indir (CSV)</button></div>
-        <div class="tscroll" style="max-height:40vh"><table><thead><tr><th>Ürün</th><th>Stok kodu</th><th>Barkod</th><th class="num">Stok</th><th class="num">Fiyat</th><th>Neden yeni?</th></tr></thead><tbody id="ygYeniGovde"></tbody></table></div>
-        <div class="muted" id="ygYeniSay" style="font-size:.8rem"></div>
-      </div></details>`})():""}
     <div class="muted" style="font-size:.8rem">Stok farkları ürünlerin hareket geçmişine “${K.ad} eşitleme” sayımı olarak yazılır. Aktarım tek yönlüdür; programdaki değişiklikler ${K.ad}'a gönderilmez.</div>
     <div class="err" id="ygErr" role="alert"></div><div class="muted" id="ygDurum" role="status" style="font-size:.85rem"></div>
     <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="aktar">Aktar</button></div>`,
-  root=>{
-    // Yeni görünen ürünler listesi: arama ve CSV indirme
-    const govde=root.querySelector("#ygYeniGovde"),ara=root.querySelector("#ygAra"),saySat=root.querySelector("#ygYeniSay");
-    const yeniFiltre=()=>{const q=_norm(ara?ara.value:"");return q?p.yeni.filter(v=>_norm(v.ad+" "+v.kod+" "+v.barkod).includes(q)):p.yeni};
-    const yeniCiz=()=>{if(!govde)return;const l=yeniFiltre(),G=300;
-      govde.innerHTML=l.slice(0,G).map(v=>`<tr><td>${esc(v.ad)}</td><td>${esc(String(v.kod).startsWith(K.onek)?"—":v.kod)}</td><td>${esc(v.barkod||"—")}</td><td class="num">${fmtMiktar(v.stok)}</td><td class="num">${v.satisFiyat?fmt.format(v.satisFiyat):"—"}</td><td style="font-size:.8rem">${esc(v.neden||"")}${v.benzerAd?`<div class="muted">Programdaki: ${esc(v.benzerAd)}</div>`:""}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">Aramaya uyan ürün yok</td></tr>`;
-      saySat.textContent=l.length>G?`İlk ${G} ürün gösteriliyor (toplam ${l.length.toLocaleString("tr-TR")}). Tamamı için aramayı daraltın veya Excel'e indirin.`:`${l.length.toLocaleString("tr-TR")} ürün`};
-    if(govde){yeniCiz();ara.addEventListener("input",yeniCiz)}
-    const yeniIndir=()=>{const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';const n=x=>(Number(x)||0).toFixed(2).replace(".",",");
-      const rows=yeniFiltre().map(v=>[v.ad,String(v.kod).startsWith(K.onek)?"":v.kod,v.barkod,n(v.stok),n(v.satisFiyat),v.kdvOran,v.yengecId,v.neden||"",v.benzerAd||""].map(q).join(";"));
-      const csv="﻿"+[["Ürün","Stok kodu","Barkod","Stok","Satış fiyatı","KDV %",K.ad+" no","Neden yeni?","Programdaki benzer ürün"].map(q).join(";"),...rows].join("\r\n");
-      const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download=(K.alan==="yengecId"?"yengec":"trendyol")+"-yeni-gorunen-urunler-"+today()+".csv";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)};
-    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m==="yeniIndir")return yeniIndir();if(b.dataset.m!=="aktar")return;
+  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="aktar")return;
     const er=root.querySelector("#ygErr"),du=root.querySelector("#ygDurum");const yeniE=root.querySelector("#ygYeni").checked,stokE=root.querySelector("#ygStok").checked,fiyatE=root.querySelector("#ygFiyat").checked;
     const satir=[];const simdi=Date.now();const bugun=today();
     // Toplu aktarımda her ürüne ayrı "eklenme" zamanı: kaynaktaki oluşturma tarihi, yoksa listedeki sırası (Son eklenenler sıralaması için)
@@ -4292,7 +4312,7 @@ function yengecAktarModal(liste0,kaynak){
     try{await topluYaz(satir,(n,t)=>{du.textContent=`Aktarılıyor… ${n.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});
       try{localStorage.setItem(K.alan==="yengecId"?"yengec-son-aktarim":"trendyol-son-aktarim",new Date().toISOString())}catch(err){}
       closeModal();toast(`${K.ad} aktarımı tamamlandı: ${yeniE?p.yeni.length+" yeni ürün, ":""}${stokE?p.stokDegisen.length+" stok güncellendi":""}`.replace(/, $/,""))}
-    catch(err){er.textContent=errMsg(err)+" Tekrar deneyebilirsiniz.";root.querySelectorAll("button,input").forEach(x=>x.disabled=false)}})});
+    catch(err){er.textContent=errMsg(err)+" Tekrar deneyebilirsiniz.";root.querySelectorAll("button,input").forEach(x=>x.disabled=false)}}));
 }
 const YENGEC_YERIMI="javascript:(async()%3D%3E%7Bconst%20APP%3D%22https%3A%2F%2Farvenato.github.io%22%3Btry%7Bif(!%2F(%5E%7C%5C.)yengec%5C.co%24%2F.test(location.hostname))%7Balert(%22%C3%96nce%20Yenge%C3%A7%20panelini%20(app.yengec.co)%20a%C3%A7%C4%B1n%2C%20sonra%20bu%20yer%20imine%20t%C4%B1klay%C4%B1n.%22)%3Breturn%7Dconst%20ax%3Dwindow.%24nuxt%26%26window.%24nuxt.%24axios%3Bconst%20cid%3D(location.pathname.match(%2F%5E%5C%2F(%5Cd%2B)%2F)%7C%7C%5B%5D)%5B1%5D%3Bif(!ax%7C%7C!cid)%7Balert(%22Yenge%C3%A7'te%20firman%C4%B1z%C4%B1%20se%C3%A7ip%20bir%20sayfa%20a%C3%A7%C4%B1n%20(%C3%B6rne%C4%9Fin%20%C3%9Cr%C3%BCnler)%2C%20sonra%20tekrar%20t%C4%B1klay%C4%B1n.%22)%3Breturn%7Dconst%20w%3Dwindow.open(APP%2B%22%2F%23yengec%22%2C%22arvenatoAktar%22)%3Bconst%20d%3Ddocument.createElement(%22div%22)%3Bd.style.cssText%3D%22position%3Afixed%3Bz-index%3A2147483647%3Btop%3A16px%3Bright%3A16px%3Bbackground%3A%2317624d%3Bcolor%3A%23fff%3Bpadding%3A12px%2016px%3Bborder-radius%3A10px%3Bfont%3A600%2014px%20system-ui%2Csans-serif%3Bbox-shadow%3A0%204px%2016px%20rgba(0%2C0%2C0%2C.3)%22%3Bdocument.body.appendChild(d)%3Bconst%20all%3D%5B%5D%3Blet%20cur%3Dnull%2Cn%3D0%3Bdo%7Bd.textContent%3D%22Arvenato%3A%20Yenge%C3%A7%20%C3%BCr%C3%BCnleri%20okunuyor%E2%80%A6%20%22%2Ball.length%3Bconst%20r%3Dawait%20ax.get(%22v1.0%2Fcompany%2F%22%2Bcid%2B%22%2Fproduct%22%2C%7Bparams%3Acur%3F%7Bcursor%3Acur%7D%3A%7B%7D%7D)%3Bfor(const%20p%20of%20r.data.data)if(p.is_active%26%26(p.type%3D%3D%3D%22basic%22%7C%7Cp.type%3D%3D%3D%22variant%22))all.push(%5Bp.id%2Cp.name%2Cp.stock_code%7C%7C%22%22%2Cp.barcode%7C%7C%22%22%2Cp.quantity%3D%3Dnull%3F0%3Ap.quantity%2Cp.price%3D%3Dnull%3F0%3Ap.price%2Cp.tax_rate%3D%3Dnull%3F20%3Ap.tax_rate%5D)%3Bcur%3Dr.data.meta%26%26r.data.meta.pagination%26%26r.data.meta.pagination.next_cursor%3Bn%2B%2B%7Dwhile(cur%26%26n%3C400)%3Bd.textContent%3D%22Arvenato%3A%20%22%2Ball.length%2B%22%20%C3%BCr%C3%BCn%20okundu%2C%20uygulamaya%20g%C3%B6nderiliyor%E2%80%A6%22%3Blet%20bitti%3Dfalse%3Bconst%20gonder%3D()%3D%3E%7Bif(bitti)return%3Btry%7Bw.postMessage(%7Btip%3A%22yengec-urunler%22%2Csurum%3A1%2Cfirma%3Acid%2Curunler%3Aall%7D%2CAPP)%7Dcatch(e)%7B%7D%7D%3Bwindow.addEventListener(%22message%22%2Ce%3D%3E%7Bif(e.origin!%3D%3DAPP)return%3Bif(e.data%3D%3D%3D%22arvenato-hazir%22)gonder()%3Bif(e.data%3D%3D%3D%22arvenato-alindi%22)%7Bbitti%3Dtrue%3Bd.textContent%3D%22Arvenato%3A%20%22%2Ball.length%2B%22%20%C3%BCr%C3%BCn%20g%C3%B6nderildi.%20Aktar%C4%B1m%C4%B1%20a%C3%A7%C4%B1lan%20Arvenato%20penceresinde%20onaylay%C4%B1n.%22%3BsetTimeout(()%3D%3Ed.remove()%2C6000)%7D%7D)%3Bconst%20t%3DsetInterval(()%3D%3E%7Bif(bitti%7C%7Cw.closed)%7BclearInterval(t)%3Bif(!bitti)d.textContent%3D%22Arvenato%20penceresi%20kapand%C4%B1%3B%20tekrar%20deneyin.%22%3Breturn%7Dgonder()%7D%2C1500)%3BsetTimeout(()%3D%3EclearInterval(t)%2C300000)%3B%7Dcatch(e)%7Balert(%22Arvenato%20aktar%C4%B1m%C4%B1%20ba%C5%9Far%C4%B1s%C4%B1z%3A%20%22%2B(e%26%26e.message%7C%7Ce))%7D%7D)()%3B";
 function yengecKurulumModal(){
