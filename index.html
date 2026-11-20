@@ -3301,6 +3301,35 @@ async function pzSiparisleriOku(ilk,zorla,pzAd){pzAd=pzAd||"trendyol";const simd
     return {liste,kismi:true,tamZaman:dep.tamZaman}}
   const liste=await pzAralikOku("siparisler",ilk,simdi,14,"siparisler",ekA,ilerle);const gor=new Set();const tekil=liste.filter(x=>x.paketId&&!gor.has(x.paketId)&&gor.add(x.paketId));
   await pzDepo.koy(anahtar,{ilk,tamZaman:simdi,zaman:simdi,liste:tekil});return {liste:tekil,kismi:false,tamZaman:simdi}}
+/* ---------- Sabit liste + canlı yenileme ----------
+   Pazaryeri sayfası açılınca bu cihazda kayıtlı son liste hemen gösterilir, ardından arka planda yenilenir.
+   Sayfa açık ve görünürken seçili pazaryerinin son 3 günü her dakika okunur; yeni siparişler eklenir,
+   durumu değişenler güncellenir ve bu oturumda yeni gelenler listede "Yeni" olarak işaretlenir. */
+const pzDepoAnahtari=pzAd=>pzAd==="trendyol"?"siparis-"+firmaId:"siparis-"+pzAd+"-"+firmaId;
+const pzIlk=()=>ui.pzGun==="bugun"?new Date().setHours(0,0,0,0):Date.now()-Math.min(90,Math.max(1,Number(ui.pzGun)||14))*86400000;
+const pzCanli={zaman:0,hata:"",calisiyor:false,aciliyor:false,yeniler:new Set()};
+async function pzOtoAc(){
+  const pzAd=pz.pazaryeri;if(pzCanli.aciliyor||pz.siparisler||pz.yuk||pz.hata||pz.sekme!=="siparis"||!sb||!oturum||!firmaId)return;
+  pzCanli.aciliyor=true;
+  try{const dep=await pzDepo.al(pzDepoAnahtari(pzAd));
+    if(dep&&pz.pazaryeri===pzAd&&!pz.siparisler){const ilk=pzIlk();pz.siparisler=dep.liste.filter(x=>Number(x.siparisTarihi)>=ilk).sort((a,b)=>b.siparisTarihi-a.siparisTarihi);pz.okuma={kismi:true,tamZaman:dep.tamZaman,sure:0};render()}}
+  finally{pzCanli.aciliyor=false}
+  if(pz.pazaryeri===pzAd&&!pz.yuk)pzGetir()}
+async function pzCanliYenile(){
+  if(pzCanli.calisiyor||view!=="pazaryeri"||pz.sekme!=="siparis"||pz.yuk||!pz.siparisler||document.visibilityState!=="visible"||!sb||!oturum||!firmaId)return;
+  const pzAd=pz.pazaryeri,f=firmaId;pzCanli.calisiyor=true;
+  try{const GUN=86400000,simdi=Date.now();
+    const yeni=await pzAralikOku("siparisler",simdi-3*GUN,simdi,14,"siparisler",{pazaryeri:pzAd});
+    if(pz.pazaryeri!==pzAd||firmaId!==f||!pz.siparisler)return;
+    const m=new Map(pz.siparisler.map(x=>[x.paketId,x]));let n=0;
+    for(const x of yeni){if(!x.paketId)continue;if(!m.has(x.paketId)){n++;pzCanli.yeniler.add(x.paketId)}m.set(x.paketId,x)}
+    const ilk=pzIlk();pz.siparisler=[...m.values()].filter(x=>Number(x.siparisTarihi)>=ilk).sort((a,b)=>b.siparisTarihi-a.siparisTarihi);
+    // Cihazdaki kayıtlı listeyi de güncel tut
+    const k=pzDepoAnahtari(pzAd);const dep=await pzDepo.al(k);
+    if(dep){const dm=new Map(dep.liste.map(x=>[x.paketId,x]));for(const x of yeni)if(x.paketId)dm.set(x.paketId,x);await pzDepo.koy(k,Object.assign({},dep,{zaman:simdi,liste:[...dm.values()]}))}
+    pzCanli.zaman=simdi;pzCanli.hata="";if(n)toast(n+" yeni "+PZ_ADLAR[pzAd]+" siparişi geldi")}
+  catch(e){pzCanli.hata=e.message||String(e)}
+  finally{pzCanli.calisiyor=false;if(view==="pazaryeri")renderSonra()}}
 async function pzGetir(zorla){
   if(pz.sekme==="deneme")return pzDenemeGetir();
   if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
@@ -3468,21 +3497,25 @@ function vPazaryeri(){
   const sekmeler=`<div class="filters"><button class="small ${pz.sekme==="siparis"?"primary":""}" data-act="pzSekme" data-id="siparis" type="button">Siparişler</button>${ty?`<button class="small ${pz.sekme==="hakedis"?"primary":""}" data-act="pzSekme" data-id="hakedis" type="button">Hakediş / komisyon</button><button class="small ${pz.sekme==="deneme"?"primary":""}" data-act="pzSekme" data-id="deneme" type="button">🧪 Deneme ürünleri · stok/fiyat</button>`:""}
     ${pz.bag?`<span class="muted" style="font-size:.85rem">${ty?"Satıcı":"Hesap"} ${esc(pz.bag.pazaryerleri[0].saticiId)} · bağlantı tamam${pz.zaman?" · "+new Date(pz.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}</span>`:""}</div>`;
   let govde="";
-  if(pz.yuk)govde=`<div class="muted">⏳ ${esc(pz.yuk)}</div>`;
-  else if(pz.hata)govde=`<div class="err">${esc(pz.hata)}</div>`;
+  // Yenilenirken mevcut sipariş listesi ekranda kalır; yalnızca üstte "yenileniyor" yazar
+  const listeAcik=pz.sekme==="siparis"&&!!pz.siparisler;
+  if(pz.yuk&&!listeAcik)govde=`<div class="muted">⏳ ${esc(pz.yuk)}</div>`;
+  else if(pz.hata&&!listeAcik)govde=`<div class="err">${esc(pz.hata)}</div>`;
   else if(pz.sekme==="deneme")govde=pzDenemeHtml();
   else if(pz.sekme==="siparis"){
     const l0=pz.siparisler;govde=ty?pzSiparisPanel():"";
-    if(!l0)govde+=`<div class="empty">Siparişleri görmek için <b>📡 Trendyol'dan getir</b>'e basın.</div>`;
+    if(pz.yuk)govde+=`<div class="muted" style="font-size:.85rem">⏳ ${esc(pz.yuk)}</div>`;else if(pz.hata)govde+=`<div class="err">${esc(pz.hata)}</div>`;
+    if(!l0){govde+=`<div class="empty">Siparişler yükleniyor…</div>`;setTimeout(pzOtoAc,0)}
     else{const ara=_norm(ui.pzAra||"");const l=l0.filter(s=>(!ui.pzDurum||s.durum===ui.pzDurum)&&(!ara||_norm([s.siparisNo,s.musteri,s.faturaAd,...s.satirlar.map(x=>x.ad+" "+x.barkod)].join(" ")).includes(ara)));
       const ciro=l.filter(s=>!/Cancelled|Returned|UnSupplied/.test(s.durum)).reduce((t,s)=>t+s.toplam,0);
       const durumlar=[...new Set(l0.map(s=>s.durum))];
       govde+=`<section class="kpis">${kpi("Sipariş",String(l.length),l0.length!==l.length?"filtrelenmiş":"seçilen dönem")}${kpi("Ciro (iptal/iade hariç)",money(r2(ciro)),"müşterinin ödediği")}${kpi("Teslim edilen",String(l.filter(s=>s.durum==="Delivered").length),"fatura kesilecek")}${kpi("İptal / iade",String(l.filter(s=>/Cancelled|Returned/.test(s.durum)).length),"")}</section>
+      <div style="font-size:.82rem">🔄 <b>Canlı:</b> sayfa açıkken her dakika yenileniyor${pzCanli.zaman?" · son kontrol "+new Date(pzCanli.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}${pzCanli.yeniler.size?` · bu oturumda <b>${pzCanli.yeniler.size}</b> yeni sipariş`:""}${pzCanli.hata?` <span class="neg">· ${esc(pzCanli.hata)}</span>`:""}</div>
       ${pz.okuma?`<div class="muted" style="font-size:.8rem">${pz.okuma.kismi?`Kayıtlı liste kullanıldı, son 21 gün ${esc(PZ_ADLAR[pz.pazaryeri]+PZ_EK[pz.pazaryeri])} yenilendi`:`Tamamı ${esc(PZ_ADLAR[pz.pazaryeri]+PZ_EK[pz.pazaryeri])} okundu`} (${(pz.okuma.sure/1000).toFixed(1)} sn) · son tam okuma ${new Date(pz.okuma.tamZaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})} <button class="small ghost" data-act="pzTamYenile" type="button">↻ Tamamını yeniden oku</button></div>`:""}
       <div class="filters"><select id="fPzDurum" data-filter="pzDurum" aria-label="Durum"><option value="">Tüm durumlar</option>${durumlar.map(d=>`<option value="${esc(d)}" ${ui.pzDurum===d?"selected":""}>${esc(PZ_DURUM[d]||d)}</option>`).join("")}</select>
         <input id="fPzAra" type="search" data-filter="pzAra" value="${esc(ui.pzAra||"")}" placeholder="Sipariş no, müşteri, ürün, barkod…" style="flex:1;min-width:180px"></div>
       ${l.length?`<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Sipariş no</th><th>Müşteri</th><th>Ürünler</th><th>Durum</th><th class="num">Tutar</th></tr></thead><tbody>
-        ${l.slice(0,500).map(s=>`<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b></td>
+        ${l.slice(0,500).map(s=>`<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b>${pzCanli.yeniler.has(s.paketId)?` <span class="chip satis">Yeni</span>`:""}</td>
           <td>${esc(s.faturaAd||s.musteri)}${s.vergiNo?`<div class="muted" style="font-size:.78rem">VKN ${esc(s.vergiNo)}${s.firma?" · "+esc(s.firma):""}</div>`:""}<div class="muted" style="font-size:.78rem">${esc([s.ilce,s.il].filter(Boolean).join(" / "))}</div></td>
           <td style="font-size:.85rem">${s.satirlar.map(x=>`${esc(x.adet)} × ${esc(x.ad)} <span class="muted">(${money(x.birimFiyat)}${x.kdvOran?" · %"+x.kdvOran:""})</span>${x.barkod?tdKucuk(x.barkod):""}`).join("<br>")}</td>
           <td><span class="chip ${s.durum==="Delivered"?"satis":/Cancelled|Returned|UnSupplied|UnDelivered/.test(s.durum)?"alis":""}">${esc(PZ_DURUM[s.durum]||s.durum)}</span>${s.teslimTarihi?`<div class="muted" style="font-size:.75rem">${pzTarih(s.teslimTarihi)}</div>`:""}${s.durum==="Delivered"&&ty?`<div><button class="small ghost" data-act="pzFatura" data-id="${esc(s.paketId)}" type="button" title="e-Fatura taslağı (gönderim yalnızca TEST hesabıyla)" style="padding:2px 6px;font-size:.75rem">🧾 ${pzFatKayit(s.paketId)?"Test ✓":"Fatura"}</button></div>`:""}</td>
@@ -3886,7 +3919,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzIsle")pzSiparisIsle();
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
-  else if(a==="pzSec"){if(PZ_ADLAR[id]&&pz.pazaryeri!==id){Object.assign(pz,{pazaryeri:id,sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";render();pzGetir()}}
+  else if(a==="pzSec"){if(PZ_ADLAR[id]&&pz.pazaryeri!==id){Object.assign(pz,{pazaryeri:id,sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";render()}}
   else if(a==="pzTamYenile"){if(!pz.yuk)pzGetir(true)}
   else if(a==="pzFatura")pzFaturaModal(id);
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
@@ -4139,6 +4172,7 @@ async function veriBaslat(){
   yengecHazirBildir();
   setTimeout(()=>efatSenk(false),4000);
   if(!window._efatZamanlayici)window._efatZamanlayici=setInterval(()=>efatSenk(false),15*60*1000);
+  if(!window._pzCanliZamanlayici)window._pzCanliZamanlayici=setInterval(()=>pzCanliYenile(),60000);
 }
 /* Yedek */
 async function yedekAl(){const k={};let n=0;for(const [c,sk] of Object.entries(KOLEKSIYONLAR)){k[c]=state[sk]||[];n+=k[c].length}
