@@ -3090,20 +3090,21 @@ async function pzFaturaModal(paketId){
     <div id="pfKopru" class="muted" style="font-size:.85rem">Köprü kontrol ediliyor…</div><div class="err" id="pfErr"></div>
     <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" class="primary" data-m="gonder" disabled>Test ortamına gönder</button></div>`,
   async root=>{root.style.maxWidth="860px";const kb=root.querySelector("#pfKopru"),gb=root.querySelector("[data-m=gonder]"),er=root.querySelector("#pfErr");let durum=null;
-    const p=efatProfil();
+    // Deneme faturası firmanın ayrı TEST hesabından gider (köprüde "<profil>-test"); canlı hesaba hiç dokunulmaz
+    const p=efatProfil();const tp=p?p+"-test":null;
     if(!p)kb.innerHTML=`Bu firmanın e-Faturam hesabı seçilmemiş (<b>Hesabım › Pazaryeri ve e-Fatura ayarları</b>).`;
-    else{try{durum=await efkIstek("/durum",{},3000)}catch(e){}
+    else{try{durum=await efkIstek("/durum",{profil:tp},3000)}catch(e){}
       if(!durum)kb.textContent="e-Fatura köprüsüne bu cihazdan ulaşılamadı (köprü dükkan bilgisayarında çalışır).";
-      else if(durum.profil!==p||!durum.kurulu)kb.innerHTML=`Köprüde bu firmanın hesabı kurulu değil (<b>${p==="seyfi"?"KURULUM-SEYFI.cmd":"KURULUM-ARVENATO.cmd"}</b>).`;
-      else if(durum.ortam==="canli")kb.innerHTML=`Köprü <b>CANLI</b> ortamda kurulu. Deneme aşamasında canlıya gönderim kapalı; test için köprü kurulumunda <b>test ortamı</b> seçilmeli.`;
-      else{kb.innerHTML=`Köprü <b>test ortamında</b> (${esc(durum.eposta||"")}). Gönderilen fatura gerçek değildir.`;gb.disabled=!govde||!!eksik.length;if(eksik.length)kb.innerHTML+=` <span class="neg">Eksik bilgiler tamamlanmadan gönderilemez.</span>`}}
-    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="gonder"||!durum||durum.ortam==="canli")return;
+      else if(durum.profil!==tp||!durum.kurulu)kb.innerHTML=`Köprüde bu firmanın <b>TEST</b> hesabı kurulu değil. Köprü klasöründe <b>${p==="seyfi"?"KURULUM-SEYFI-TEST.cmd":"(bu firma için test kurulumu henüz yok)"}</b> çalıştırılmalı${durum.surum&&durum.surum<"1.6"?" (köprü 1.6 gerekli; şu an "+esc(durum.surum)+")":""}.`;
+      else if(durum.ortam!=="test")kb.innerHTML=`Test hesabı canlı ortama ayarlı görünüyor; gönderim kapalı.`;
+      else{kb.innerHTML=`Köprüdeki <b>TEST</b> hesabı kullanılacak (${esc(durum.eposta||"")}). Gönderilen fatura gerçek değildir.`;gb.disabled=!govde||!!eksik.length;if(eksik.length)kb.innerHTML+=` <span class="neg">Eksik bilgiler tamamlanmadan gönderilemez.</span>`}}
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="gonder"||!durum||durum.ortam!=="test"||durum.profil!==tp)return;
       er.textContent="";b.disabled=true;
       try{let tip=f.tip;b.textContent="Mükellef sorgulanıyor…";
-        if(f.alici.vkn!=="11111111111"){let mk=null;try{mk=await efkIstek("/mukellef",{vkn:f.alici.vkn},15000)}catch(_){}
+        if(f.alici.vkn!=="11111111111"){let mk=null;try{mk=await efkIstek("/mukellef",{vkn:f.alici.vkn,profil:tp},15000)}catch(_){}
           if(Array.isArray(mk))tip=mk.some(x=>!x.deletedAt&&(x.aliasType||"INVOICE")==="INVOICE")?"EFATURA":"EARSIV"}else tip="EARSIV";
         const g=pzFaturaGovde(Object.assign({},f,{tip}));b.textContent="Gönderiliyor…";
-        const r=await efkIstek("/kes",{tip,ref:"TY-"+s.siparisNo,govde:JSON.stringify(g)},90000);const y=r.yanit||{};
+        const r=await efkIstek("/kes",{tip,ref:"TY-"+s.siparisNo,govde:JSON.stringify(g),profil:tp},90000);const y=r.yanit||{};
         if(r.ortam==="canli")throw new Error("Köprü canlı ortamda yanıt verdi; kayıt yapılmadı. Lütfen köprü ayarını kontrol edin.");
         if(!(r.kod>=200&&r.kod<300)||!y.invoiceId)throw new Error("Trendyol faturayı kabul etmedi ("+r.kod+"): "+pzFaturaHatasi(y));
         await api.setDoc("ayar","tyfat-"+paketId,{siparisNo:s.siparisNo,tip,invoiceId:y.invoiceId,uuid:y.invoiceUuid||"",ortam:r.ortam||"test",zaman:Date.now(),toplam:g.invoiceTotal.payableAmount/100});
@@ -3450,7 +3451,7 @@ function vPazaryeri(){
         ${l.slice(0,500).map(s=>`<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b></td>
           <td>${esc(s.faturaAd||s.musteri)}${s.vergiNo?`<div class="muted" style="font-size:.78rem">VKN ${esc(s.vergiNo)}${s.firma?" · "+esc(s.firma):""}</div>`:""}<div class="muted" style="font-size:.78rem">${esc([s.ilce,s.il].filter(Boolean).join(" / "))}</div></td>
           <td style="font-size:.85rem">${s.satirlar.map(x=>`${esc(x.adet)} × ${esc(x.ad)} <span class="muted">(${money(x.birimFiyat)}${x.kdvOran?" · %"+x.kdvOran:""})</span>${x.barkod?tdKucuk(x.barkod):""}`).join("<br>")}</td>
-          <td><span class="chip ${s.durum==="Delivered"?"satis":/Cancelled|Returned|UnSupplied|UnDelivered/.test(s.durum)?"alis":""}">${esc(PZ_DURUM[s.durum]||s.durum)}</span>${s.teslimTarihi?`<div class="muted" style="font-size:.75rem">${pzTarih(s.teslimTarihi)}</div>`:""}</td>
+          <td><span class="chip ${s.durum==="Delivered"?"satis":/Cancelled|Returned|UnSupplied|UnDelivered/.test(s.durum)?"alis":""}">${esc(PZ_DURUM[s.durum]||s.durum)}</span>${s.teslimTarihi?`<div class="muted" style="font-size:.75rem">${pzTarih(s.teslimTarihi)}</div>`:""}${s.durum==="Delivered"?`<div><button class="small ghost" data-act="pzFatura" data-id="${esc(s.paketId)}" type="button" title="e-Fatura taslağı (gönderim yalnızca TEST hesabıyla)" style="padding:2px 6px;font-size:.75rem">🧾 ${pzFatKayit(s.paketId)?"Test ✓":"Fatura"}</button></div>`:""}</td>
           <td class="num"><b>${money(s.toplam)}</b>${s.indirim?`<div class="muted" style="font-size:.75rem">indirim ${money(s.indirim)}</div>`:""}</td></tr>`).join("")}
       </tbody></table></div>${l.length>500?`<div class="muted" style="font-size:.85rem">İlk 500 sipariş gösteriliyor.</div>`:""}`:`<div class="empty">Bu filtrede sipariş yok.</div>`}`}}
   else{
