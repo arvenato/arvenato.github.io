@@ -2964,8 +2964,14 @@ const PZ_KOMISYON_ACIK=false;
 function pzIslemTuru(k){const t=String((k&&k.transactionType)||"").trim().toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/ş/g,"s").replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ü/g,"u").replace(/ö/g,"o").replace(/[\s_-]+/g,"");
   if(t==="sale"||t==="satis")return "satis";if(t==="return"||t==="iade")return "iade";
   if(/^(discount|coupon|indirim|kupon)$/.test(t))return "indirim";if(/^(discountcancel|couponcancel|indirimiptal|kuponiptal|indirimiptali|kuponiptali)$/.test(t))return "indirimIptal";return "diger"}
-function pzKayitKesinti(k){const c=Number(k.credit)||0,d=Number(k.debt)||0;const sr=k.sellerRevenue;
-  if(sr!=null&&sr!==""&&isFinite(Number(sr)))return c-d-Number(sr);const kom=Number(k.commissionAmount)||0;return pzIslemTuru(k)==="iade"?-kom:kom}
+// Trendyol komisyonu ve satıcı hakedişini her kayıtta ARTI yazar; yönü alacak (satış, iptal) / borç (indirim, kupon, iade) belirler.
+// Yön: alacak > borç ise +1, değilse −1 (ikisi de 0 ise işlem türüne göre).
+function pzKayitYon(k){const a=(Number(k.credit)||0)-(Number(k.debt)||0);if(a>0)return 1;if(a<0)return -1;return /^(iade|indirim)$/.test(pzIslemTuru(k))?-1:1}
+// Bu kaydın Trendyol kesintisine katkısı (satışta +komisyon, indirim/iadede −komisyon: Trendyol o kısmın komisyonunu geri verir)
+function pzKayitKesinti(k){const y=pzKayitYon(k);const kom=Number(k.commissionAmount);if(isFinite(kom)&&k.commissionAmount!=null&&k.commissionAmount!=="")return y*Math.abs(kom);
+  const tutar=Math.abs((Number(k.credit)||0)-(Number(k.debt)||0)),sr=Number(k.sellerRevenue);return isFinite(sr)?y*(tutar-Math.abs(sr)):0}
+// Bu kaydın satıcıya ödenecek tutara katkısı (işaretli satıcı hakedişi)
+function pzKayitHakedis(k){const sr=Number(k.sellerRevenue);return isFinite(sr)?pzKayitYon(k)*Math.abs(sr):0}
 function pzHakedisHarita(kayitlar){const m={};for(const k of kayitlar||[]){const no=String(k.orderNumber||"");if(!no)continue;
   const t=m[no]=m[no]||{kesinti:0,tarih:0,kayit:0};t.kesinti+=pzKayitKesinti(k);t.kayit++;if(pzIslemTuru(k)==="satis")t.tarih=Math.max(t.tarih,Number(k.transactionDate)||0)}
   for(const t of Object.values(m))t.kesinti=r2(t.kesinti);return m}
@@ -3210,17 +3216,23 @@ async function pzKuruDeneme(){
     try{if(!l.length){g.innerHTML=`<div class="empty">Bu dönemde teslim edilmiş sipariş yok. Dönemi büyütüp (ör. Son 90 gün) tekrar getirin.</div>`;return}
       const GUN=86400000;const ilk=l.reduce((m,s)=>Math.min(m,Number(s.siparisTarihi)||Date.now()),Date.now())-GUN;
       const hk=await pzHakedisOku(ilk,n=>{g.innerHTML=`<div class="muted">⏳ Hakediş kayıtları okunuyor… (${n.toLocaleString("tr-TR")})</div>`});
-      const ty={};for(const k of hk){const no=String(k.orderNumber||"");if(!no)continue;const t=ty[no]=ty[no]||{satis:0,indirim:0,komisyon:0,kayit:0};t.kayit++;
-        const tip=pzIslemTuru(k);if(tip==="satis")t.satis+=Number(k.credit)||0;if(tip==="indirim")t.indirim+=Number(k.debt)||0;if(tip==="indirimIptal")t.indirim-=Number(k.credit)||0;t.komisyon+=pzKayitKesinti(k)}
+      const ty={};for(const k of hk){const no=String(k.orderNumber||"");if(!no)continue;const t=ty[no]=ty[no]||{satis:0,indirim:0,iade:0,komisyon:0,hakedis:0,kayit:0};t.kayit++;
+        const tip=pzIslemTuru(k);if(tip==="satis")t.satis+=Number(k.credit)||0;if(tip==="indirim")t.indirim+=Number(k.debt)||0;if(tip==="indirimIptal")t.indirim-=Number(k.credit)||0;if(tip==="iade")t.iade+=Number(k.debt)||0;
+        t.komisyon+=pzKayitKesinti(k);t.hakedis+=pzKayitHakedis(k)}
       // Program tarafı: sipariş numarasına göre (bir siparişte birden fazla paket olabilir)
       const pr={};let kdvYok=0,satirSay=0;const oranlar={};
       for(const s of l){const sat=(s.satirlar||[]).map(x=>({x,u:pzKimlikUrun(x)}));const G=pzSatisGruplari(s,sat);kdvYok+=G.kdvYok;satirSay+=sat.length;
         for(const [kd,v] of Object.entries(G.gr))oranlar[kd]=(oranlar[kd]||0)+v;
         const p=pr[s.siparisNo]=pr[s.siparisNo]||{s,toplam:0,brut:0,indirim:0};p.toplam+=G.toplam;p.brut+=Number(s.brut)||0;p.indirim+=Number(s.indirim)||0}
-      const satirlar=Object.entries(pr).map(([no,p])=>{const t=ty[no];const tyNet=t?r2(t.satis-t.indirim):null;return {no,p,t,tyNet,fark:t?r2(p.toplam-tyNet):null}});
-      const tutan=satirlar.filter(x=>x.t&&Math.abs(x.fark)<=0.05),farkli=satirlar.filter(x=>x.t&&Math.abs(x.fark)>0.05),yok=satirlar.filter(x=>!x.t);
-      const progTop=r2(satirlar.reduce((a,x)=>a+x.p.toplam,0)),tyTop=r2(satirlar.filter(x=>x.t).reduce((a,x)=>a+x.tyNet,0));
-      const sira=[...farkli,...yok,...tutan];
+      // İade edilen siparişler ayrı sayılır (iade olunca program satışı zaten geri alır; Trendyol'da indirim iptalleri de oluşur)
+      // Kesinti tutarlılığı: program satışı − Trendyol kesintisi = Trendyol'un ödeyeceği (satıcı hakedişi toplamı)
+      const satirlar=Object.entries(pr).map(([no,p])=>{const t=ty[no];const tyNet=t?r2(t.satis-t.indirim):null;const iadeli=!!t&&t.iade>0.009;
+        return {no,p,t,tyNet,iadeli,fark:t?r2(p.toplam-tyNet):null,kesFark:t?r2(p.toplam-t.komisyon-t.hakedis):null}});
+      const iadeli=satirlar.filter(x=>x.iadeli),acik=satirlar.filter(x=>x.t&&!x.iadeli);
+      const tutan=acik.filter(x=>Math.abs(x.fark)<=0.05),farkli=acik.filter(x=>Math.abs(x.fark)>0.05),yok=satirlar.filter(x=>!x.t);
+      const kesTutan=tutan.filter(x=>Math.abs(x.kesFark)<=0.05);
+      const progTop=r2(acik.reduce((a,x)=>a+x.p.toplam,0)),tyTop=r2(acik.reduce((a,x)=>a+x.tyNet,0)),kesTop=r2(acik.reduce((a,x)=>a+x.t.komisyon,0)),hkTop=r2(acik.reduce((a,x)=>a+x.t.hakedis,0));
+      const sira=[...farkli,...tutan.filter(x=>Math.abs(x.kesFark)>0.05),...yok,...iadeli,...tutan.filter(x=>Math.abs(x.kesFark)<=0.05)];
       // Tanı: Trendyol'un gönderdiği kayıt türleri ve alan toplamları (kişisel bilgi içermez)
       const tur={};const sayiAl=v=>Number(v)||0;for(const k of hk){const t=String(k.transactionType||"(boş)");const o=tur[t]=tur[t]||{n:0,c:0,d:0,kom:0,sr:0,srYok:0,tanim:pzIslemTuru(k)};o.n++;o.c+=sayiAl(k.credit);o.d+=sayiAl(k.debt);o.kom+=sayiAl(k.commissionAmount);if(k.sellerRevenue==null||k.sellerRevenue==="")o.srYok++;else o.sr+=sayiAl(k.sellerRevenue)}
       const ornekNo=sira.length?sira[0].no:"";const ornek=hk.filter(k=>String(k.orderNumber||"")===ornekNo);
@@ -3231,12 +3243,13 @@ async function pzKuruDeneme(){
         ${ornek.length?`<div style="margin-top:6px"><b>Örnek sipariş ${esc(ornekNo)}</b> kayıtları:</div><div class="tscroll"><table><thead><tr><th>Tür</th><th>Açıklama</th><th class="num">Alacak</th><th class="num">Borç</th><th class="num">Komisyon</th><th class="num">Satıcı hakedişi</th></tr></thead><tbody>
           ${ornek.map(k=>`<tr><td>${esc(k.transactionType||"")}</td><td>${esc(String(k.description||"").slice(0,80))}</td><td class="num">${esc(String(k.credit??""))}</td><td class="num">${esc(String(k.debt??""))}</td><td class="num">${esc(String(k.commissionAmount??""))}</td><td class="num">${esc(String(k.sellerRevenue??""))}</td></tr>`).join("")}</tbody></table></div>`:""}
         <div class="muted">Kayıt alanları: ${esc(alanlar)}</div></details>`;
-      g.innerHTML=`<section class="kpis">${kpi("Birebir tutan",tutan.length+" / "+satirlar.length,"sipariş (±5 kuruş)")}${kpi("Farklı çıkan",String(farkli.length),"aşağıda ilk sırada")}${kpi("Hakedişte bulunamayan",String(yok.length),"Trendyol henüz kayıt oluşturmamış olabilir")}${kpi("KDV oranı gelmeyen satır",kdvYok+" / "+satirSay,"ürün kartındaki oran ya da %20 kullanılır")}</section>
-        <div class="muted" style="font-size:.85rem">Programın yazacağı toplam satış: <b>${money(progTop)}</b> · Trendyol hakediş (satış − indirim/kupon): <b>${money(tyTop)}</b> (yalnızca hakedişi bulunan siparişler) · Trendyol kesintisi (komisyon vb.): <b>${money(r2(satirlar.filter(x=>x.t).reduce((a,x)=>a+x.t.komisyon,0)))}</b> · KDV dağılımı: ${Object.entries(oranlar).map(([k,v])=>"%"+k+" "+money(r2(v))).join(", ")||"—"}</div>
-        <div class="tscroll" style="max-height:50vh"><table><thead><tr><th>Sipariş</th><th>Teslim</th><th class="num">Program satışı</th><th class="num">Trendyol satış</th><th class="num">İndirim / kupon</th><th class="num">Fark</th><th class="num">Trendyol kesintisi</th></tr></thead><tbody>
-        ${sira.slice(0,500).map(x=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(x.no)}</b></td><td class="date">${pzTarih(x.p.s.teslimTarihi||x.p.s.sonDegisim).slice(0,10)}</td><td class="num">${money(r2(x.p.toplam))}</td>
+      g.innerHTML=`<section class="kpis">${kpi("Satışı birebir tutan",tutan.length+" / "+acik.length,"iade edilmemiş sipariş (±5 kuruş)")}${kpi("Satışı farklı çıkan",String(farkli.length),"aşağıda ilk sırada")}${kpi("Kesintisi tutan",kesTutan.length+" / "+tutan.length,"satış − kesinti = Trendyol'un ödeyeceği")}${kpi("İade edilmiş",String(iadeli.length),"ayrı sayıldı")}${kpi("Hakedişte bulunamayan",String(yok.length),"Trendyol henüz kayıt oluşturmamış olabilir")}${kpi("KDV oranı gelmeyen satır",kdvYok+" / "+satirSay,"ürün kartındaki oran ya da %20 kullanılır")}</section>
+        <div class="muted" style="font-size:.85rem">İade edilmemiş siparişlerde — program satışı: <b>${money(progTop)}</b> · Trendyol (satış − indirim/kupon): <b>${money(tyTop)}</b> · Trendyol kesintisi: <b>${money(kesTop)}</b> · Trendyol'un ödeyeceği: <b>${money(hkTop)}</b> · KDV dağılımı (tümü): ${Object.entries(oranlar).map(([k,v])=>"%"+k+" "+money(r2(v))).join(", ")||"—"}</div>
+        <div class="tscroll" style="max-height:50vh"><table><thead><tr><th>Sipariş</th><th>Teslim</th><th class="num">Program satışı</th><th class="num">Trendyol satış</th><th class="num">İndirim / kupon</th><th class="num">Fark</th><th class="num">Trendyol kesintisi</th><th class="num">Trendyol'un ödeyeceği</th><th class="num">Kesinti farkı</th></tr></thead><tbody>
+        ${sira.slice(0,500).map(x=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(x.no)}</b>${x.iadeli?` <span class="chip alis">iade</span>`:""}</td><td class="date">${pzTarih(x.p.s.teslimTarihi||x.p.s.sonDegisim).slice(0,10)}</td><td class="num">${money(r2(x.p.toplam))}</td>
           <td class="num">${x.t?money(r2(x.t.satis)):`<span class="muted">—</span>`}</td><td class="num">${x.t&&x.t.indirim?money(r2(x.t.indirim)):""}</td>
-          <td class="num ${x.t?(Math.abs(x.fark)<=0.05?"pos":"neg"):""}">${x.t?(Math.abs(x.fark)<=0.05?"✓":money(x.fark)):""}</td><td class="num">${x.t&&x.t.komisyon?money(r2(x.t.komisyon)):""}</td></tr>`).join("")}
+          <td class="num ${x.t&&!x.iadeli?(Math.abs(x.fark)<=0.05?"pos":"neg"):""}">${x.t&&!x.iadeli?(Math.abs(x.fark)<=0.05?"✓":money(x.fark)):""}</td><td class="num">${x.t?money(r2(x.t.komisyon)):""}</td><td class="num">${x.t?money(r2(x.t.hakedis)):""}</td>
+          <td class="num ${x.t&&!x.iadeli?(Math.abs(x.kesFark)<=0.05?"pos":"neg"):""}">${x.t&&!x.iadeli?(Math.abs(x.kesFark)<=0.05?"✓":money(x.kesFark)):""}</td></tr>`).join("")}
         </tbody></table></div>${tani}`}
     catch(e){g.innerHTML=`<div class="err">${esc(e.message||String(e))}</div>`}});
 }
