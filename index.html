@@ -1678,7 +1678,7 @@ function hizliDuzenle(uid,alan){
       const asiri=!stokMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
       const degisim=stokMu?`${fark>0?"+":""}${fmtMiktar(fark)}`:(oran!=null?`%${(Math.abs(oran-1)*100).toLocaleString("tr-TR",{maximumFractionDigits:1})} ${yeni>=eski?"artış":"düşüş"}`:"");
       f.innerHTML=`<table><tbody><tr><td>${ad}</td><td class="num">${goster(eski)} → <b>${goster(yeni)}</b></td></tr>${degisim?`<tr><td>Değişim</td><td class="num">${degisim}</td></tr>`:""}</tbody></table>
-        ${alan==="satis"&&pzFiyatGider(u)?`<div class="notice" style="font-size:.85rem"><b>Pazaryerlerine de gidecek:</b> bu ürün deneme listesinde; yeni satış fiyatı bağlı bütün pazaryerlerine gönderilir (pazaryerindeki liste/üstü çizili fiyat, yeni fiyattan yüksekse korunur).</div>`:""}
+        ${alan==="satis"&&pzFiyatGider(u)?`<div class="notice" style="font-size:.85rem"><b>Pazaryerlerine de gidecek:</b> bu ürün deneme listesinde; yeni fiyat bağlı bütün pazaryerlerine gönderilir; üstü çizili (piyasa) fiyat da satış fiyatı da bu fiyat olur.</div>`:""}
         ${adim===3?`<div class="notice" style="border-color:var(--neg,#b42318)"><b>İkinci onay:</b> fiyat ${yeni<eski?"yarısından daha fazla düşüyor":"iki katından fazla artıyor"} (${goster(eski)} → ${goster(yeni)}). Yanlış yazılmadığından emin olun.</div>`
           :asiri?`<div class="notice"><b>Dikkat:</b> fiyat ${yeni<eski?"yarısından fazla düşüyor":"iki katından fazla artıyor"}; onaydan sonra bir kez daha sorulacak.</div>`:""}
         <div class="err" id="hdErr" role="alert"></div>
