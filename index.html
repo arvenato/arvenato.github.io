@@ -1530,6 +1530,7 @@ function vStok(){
       <b>${urunSecim.size.toLocaleString("tr-TR")} ürün seçildi</b><span style="flex:1"></span>
       <button class="small" data-act="uToplu" data-id="kategori" type="button">Kategori</button><button class="small" data-act="uToplu" data-id="marka" type="button">Marka</button>
       <button class="small" data-act="uToplu" data-id="kdv" type="button">KDV</button><button class="small" data-act="uToplu" data-id="birim" type="button">Birim</button>
+      <button class="small" data-act="uToplu" data-id="stok" type="button">Stok (ekle / çıkar / eşitle)</button>
       <button class="small" data-act="uToplu" data-id="satis" type="button">Satış fiyatı</button><button class="small" data-act="uToplu" data-id="alis" type="button">Alış fiyatı</button>
       <button class="small" data-act="uToplu" data-id="kritik" type="button">Kritik seviye</button><button class="small" data-act="uToplu" data-id="barkod" type="button" title="Barkodu boş olup stok kodu barkod gibi (8–14 rakam) olan ürünlerde stok kodunu Barkod alanına da yazar">Barkodu stok kodundan al</button><button class="small" data-act="uExcel" type="button">Excel'e aktar</button>
       <button class="small danger" data-act="uToplu" data-id="sil" type="button">Sil</button><button class="small ghost" data-act="uSecimKaldir" type="button">Seçimi kaldır</button></div>`:""}
@@ -1587,7 +1588,8 @@ function urunTopluForm(tip){
   const sec=state.urunler.filter(u=>urunSecim.has(u.id));if(!sec.length)return;const n=sec.length.toLocaleString("tr-TR");
   const kats=[...new Set(state.urunler.map(x=>x.kategori).filter(Boolean))],markalar=[...new Set(state.urunler.map(x=>x.marka).filter(Boolean))];
   const fiyat=tip==="satis"||tip==="alis";const alan=tip==="satis"?"satisFiyat":tip==="alis"?"alisFiyat":"";
-  const baslik={kategori:"Kategori ata",marka:"Marka ata",kdv:"KDV oranı",birim:"Birim",satis:"Satış fiyatı güncelle",alis:"Alış fiyatı güncelle",kritik:"Kritik stok seviyesi",sil:"Ürünleri sil",barkod:"Barkodu stok kodundan al"}[tip];
+  const baslik={kategori:"Kategori ata",marka:"Marka ata",kdv:"KDV oranı",birim:"Birim",satis:"Satış fiyatı güncelle",alis:"Alış fiyatı güncelle",kritik:"Kritik stok seviyesi",sil:"Ürünleri sil",barkod:"Barkodu stok kodundan al",stok:"Toplu stok"}[tip];
+  const stokTip=tip==="stok";let onayAdim=0;
   const hareketli=tip==="sil"?sec.filter(u=>state.stokHareketleri.some(s=>s.urunId===u.id)):[];
   const barkodAday=tip==="barkod"?sec.filter(u=>!String(u.barkod||"").trim()&&/^\d{8,14}$/.test(String(u.kod||"").trim())):[];
   let govde="";
@@ -1600,6 +1602,9 @@ function urunTopluForm(tip){
   else if(fiyat)govde=`<div class="grid2"><div class="field"><label for="tpYol">Nasıl</label><select id="tpYol"><option value="yuzde">Yüzde artır / azalt</option><option value="tutar">Tutar ekle / çıkar (₺)</option><option value="sabit">Hepsine aynı fiyat (₺)</option></select></div>
       <div class="field"><label for="tpDeger">Değer</label><input id="tpDeger" type="number" step="0.01" inputmode="decimal" placeholder="Örn. 10 (azaltmak için −10)"></div></div>
       <label style="display:flex;gap:8px;align-items:center;font-size:.88rem"><input id="tpYuvarla" type="checkbox"> Kuruşları yuvarla (tam liraya)</label>`;
+  else if(stokTip)govde=`<div class="grid2"><div class="field"><label for="tpYol">Nasıl</label><select id="tpYol"><option value="ekle">Ekle (giriş)</option><option value="cikar">Çıkar (çıkış, satış kaydı açılmaz)</option><option value="esitle">Hepsini şu adede eşitle (sayım)</option></select></div>
+      <div class="field"><label for="tpDeger">Adet</label><input id="tpDeger" type="number" min="0" step="1" inputmode="numeric" placeholder="Örn. 5"></div></div>
+      <div class="field"><label for="tpAcik">Açıklama (isteğe bağlı)</label><input id="tpAcik" placeholder="Örn. depo sayımı, tedarikçiden gelen mal"></div>`;
   else if(tip==="sil")govde=`<div class="notice"><b>${n} ürün silinecek. Bu işlem geri alınamaz.</b> ${hareketli.length?`Bunlardan <b>${hareketli.length.toLocaleString("tr-TR")}</b> tanesinin stok hareketi (satış, giriş, sayım vb.) var; aşağıdaki kutu işaretlenmezse bunlar <b>silinmez</b>.`:""}</div>
     ${hareketli.length?`<label style="display:flex;gap:8px;align-items:flex-start;font-size:.88rem"><input id="tpHareket" type="checkbox" style="margin-top:3px"> Stok hareketi olan ${hareketli.length.toLocaleString("tr-TR")} ürünü de, <b>stok hareketleriyle birlikte</b> sil (deneme verilerini temizlemek için). Satış, gelir ve fatura kayıtları silinmez.</label>`:""}`;
   openModal(`<div class="section-head"><h2>${baslik} · ${n} ürün</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>${govde}
@@ -1608,14 +1613,39 @@ function urunTopluForm(tip){
   root=>{
     const g=id=>{const el=root.querySelector("#"+id);return el?el.value.trim():""};
     const yeniFiyat=(eski)=>{const d=Number(g("tpDeger"));const yol=g("tpYol");let f=yol==="yuzde"?eski*(1+d/100):yol==="tutar"?eski+d:d;if(root.querySelector("#tpYuvarla")&&root.querySelector("#tpYuvarla").checked)f=Math.round(f);return r2(Math.max(0,f))};
-    const ornek=()=>{if(!fiyat)return;const el=root.querySelector("#tpOrnek");if(g("tpDeger")===""){el.textContent="";return}const u=sec[0];const e=Number(u[alan])||0;el.textContent=`Örnek: ${u.ad} · ${money(e)} → ${money(yeniFiyat(e))}`};
+    // Toplu stok: her ürünün yeni stoğu ve yazılacak hareket
+    const stokPlan=()=>{const d=Math.round(Number(g("tpDeger"))),yol=g("tpYol");
+      return sec.map(u=>{const m=stokMiktar(u);const fark=yol==="ekle"?d:yol==="cikar"?-d:r2(d-m);return {u,m,fark,yeni:r2(m+fark),tip:yol==="ekle"?"Giriş":yol==="cikar"?"Çıkış":"Sayım"}}).filter(x=>x.fark)};
+    // Toplu fiyat: aşırı değişim (yarıdan fazla düşüş / iki kattan fazla artış) olan ürünler
+    const fiyatPlan=()=>sec.map(u=>{const e=Number(u[alan])||0,y=yeniFiyat(e);return {u,e,y,asiri:e>0&&(y<e*0.5||y>e*2)}}).filter(x=>x.y!==x.e);
+    const denemeSay=l=>l.filter(x=>pzFiyatGider(x.u)||(pzStokOtoAcik()&&pzDenemeKodlar().some(k=>pzKimlik(k)===pzKimlik(x.u.kod)||pzKimlik(k)===pzKimlik(x.u.barkod)))).length;
+    const ornek=()=>{onayAdim=0;const bt=root.querySelector('[data-m="uygula"]');if(bt&&tip!=="sil")bt.textContent="Uygula";
+      if(!fiyat&&!stokTip)return;const el=root.querySelector("#tpOrnek");if(g("tpDeger")===""){el.textContent="";return}const u=sec[0];
+      if(stokTip){const p=stokPlan().find(x=>x.u.id===u.id);el.textContent=`Örnek: ${u.ad} · ${fmtMiktar(stokMiktar(u))} → ${fmtMiktar(p?p.yeni:stokMiktar(u))}`;return}
+      const e=Number(u[alan])||0;el.textContent=`Örnek: ${u.ad} · ${money(e)} → ${money(yeniFiyat(e))}`};
     root.addEventListener("input",ornek);root.addEventListener("change",ornek);
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="uygula")return;
-      const er=root.querySelector("#tpErr"),du=root.querySelector("#tpDurum");const d=g("tpDeger");
+      const er=root.querySelector("#tpErr"),du=root.querySelector("#tpDurum");const d=g("tpDeger");er.textContent="";
       if(tip!=="sil"&&tip!=="barkod"&&d===""&&tip!=="kategori"&&tip!=="marka"){er.textContent="Bir değer girin.";return}
-      if(fiyat&&!isFinite(Number(d))){er.textContent="Geçerli bir sayı girin.";return}
+      if((fiyat||stokTip)&&!isFinite(Number(d))){er.textContent="Geçerli bir sayı girin.";return}
+      if(stokTip&&(Number(d)<0||!Number.isInteger(Number(d)))){er.textContent="Adet 0 ya da daha büyük tam sayı olmalı.";return}
+      // Onay: önce özet ("Evet, uygula"); fiyatta aşırı değişim varsa ikinci kez ("Evet, eminim")
+      const ozetEl=root.querySelector("#tpOrnek");
+      if(stokTip&&onayAdim===0){const p=stokPlan();if(!p.length){er.textContent="Değişecek stok yok.";return}
+        const top=p.reduce((t,x)=>t+x.fark,0),eksi=p.filter(x=>x.yeni<0).length,dn=denemeSay(p);
+        ozetEl.innerHTML=`<div class="notice"><b>${p.length.toLocaleString("tr-TR")} üründe stok değişecek</b> (toplam ${top>0?"+":""}${fmtMiktar(top)}).${eksi?` <b class="neg">${eksi} ürünün stoğu eksiye düşecek.</b>`:""}${dn?` <b>${dn} deneme ürünü</b> pazaryerlerine de gönderilecek.`:""}</div>`;
+        onayAdim=1;b.textContent="Evet, uygula";return}
+      if(fiyat&&onayAdim<2){const p=fiyatPlan();if(!p.length){er.textContent="Değişecek fiyat yok.";return}const a=p.filter(x=>x.asiri),dn=tip==="satis"?p.filter(x=>pzFiyatGider(x.u)).length:0;
+        if(onayAdim===0){ozetEl.innerHTML=`<div class="notice"><b>${p.length.toLocaleString("tr-TR")} üründe ${tip==="satis"?"satış":"alış"} fiyatı değişecek.</b>${dn?` <b>${dn} deneme ürünü</b> pazaryerlerine de gönderilecek (üstü çizili fiyat da aynı olur).`:""}${a.length?` <b>${a.length}</b> üründe fiyat yarıdan fazla düşüyor ya da iki katından fazla artıyor; onaydan sonra bir kez daha sorulacak.`:""}</div>`;
+          onayAdim=a.length?1:2;b.textContent=a.length?"Onayla":"Evet, uygula";return}
+        if(onayAdim===1){ozetEl.innerHTML=`<div class="notice" style="border-color:var(--neg,#b42318)"><b>İkinci onay:</b> ${a.length} üründe büyük fiyat değişimi var, örn. ${a.slice(0,3).map(x=>esc(x.u.ad)+" "+money(x.e)+" → "+money(x.y)).join(" · ")}${a.length>3?" …":""}. Yanlış yazılmadığından emin olun.</div>`;
+          onayAdim=2;b.textContent="Evet, eminim — uygula";return}}
+      if(stokTip&&onayAdim!==1)return;
       root.querySelectorAll("button,input,select").forEach(x=>x.disabled=true);
       try{
+        if(stokTip){const p=stokPlan(),acik=g("tpAcik")||"Toplu stok işlemi",simdi=Date.now();
+          await topluYaz(p.map((x,i)=>({col:"stokHareketleri",id:idUret(),veri:{urunId:x.u.id,tarih:today(),tip:x.tip,miktar:x.fark,birimFiyat:Number(x.u.alisFiyat)||0,aciklama:acik,hareketId:"",olusturma:simdi+i}})),(x,t)=>{du.textContent=`Kaydediliyor… ${x.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});
+          closeModal();toast(`${p.length.toLocaleString("tr-TR")} üründe stok güncellendi`);return}
         if(tip==="sil"){const hepsi=!!(root.querySelector("#tpHareket")&&root.querySelector("#tpHareket").checked);
           const silinecek=hepsi?sec:sec.filter(u=>!hareketli.includes(u));
           if(!silinecek.length){er.textContent="Silinecek ürün yok. Stok hareketi olanları da silmek için kutuyu işaretleyin.";root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false);return}
@@ -1632,8 +1662,11 @@ function urunTopluForm(tip){
           if(tip==="kategori")y.kategori=d;else if(tip==="marka")y.marka=d;else if(tip==="kdv")y.kdvOran=Number(d);else if(tip==="birim")y.birim=d;else if(tip==="kritik")y.kritik=r2(d);
           else if(fiyat)y[alan]=yeniFiyat(Number(u[alan])||0);
           return {col:"urunler",id,veri:y}});
+        const fp=fiyat?fiyatPlan():[];
         await topluYaz(satir,(x,t)=>{du.textContent=`Kaydediliyor… ${x.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});
-        closeModal();toast(`${satir.length.toLocaleString("tr-TR")} üründe “${baslik}” uygulandı`)}
+        closeModal();toast(`${satir.length.toLocaleString("tr-TR")} üründe “${baslik}” uygulandı`);
+        // Deneme ürünlerinin yeni satış fiyatı pazaryerlerine (sırayla; aşırı değişim ikinci onayla zaten onaylandı)
+        if(tip==="satis")for(const x of fp.filter(x=>pzFiyatGider(x.u))){try{await pzFiyatGonder(x.u,x.y,x.asiri)}catch(err){toast("Fiyat pazaryerlerine gönderilemedi ("+x.u.kod+"): "+(err.message||err))}}}
       catch(err){er.textContent=errMsg(err);root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false)}})});
 }
 // Ürünleri Excel (.xlsx) dosyasına yazar; ekrandaki sıralama korunur
