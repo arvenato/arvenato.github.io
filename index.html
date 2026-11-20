@@ -2969,10 +2969,12 @@ function pzKayitKesinti(k){const c=Number(k.credit)||0,d=Number(k.debt)||0;const
 function pzHakedisHarita(kayitlar){const m={};for(const k of kayitlar||[]){const no=String(k.orderNumber||"");if(!no)continue;
   const t=m[no]=m[no]||{kesinti:0,tarih:0,kayit:0};t.kesinti+=pzKayitKesinti(k);t.kayit++;if(pzIslemTuru(k)==="satis")t.tarih=Math.max(t.tarih,Number(k.transactionDate)||0)}
   for(const t of Object.values(m))t.kesinti=r2(t.kesinti);return m}
-async function pzHakedisOku(ilk,ilerleme){const simdi=Date.now(),GUN=86400000;const tum=[];
-  for(let bit=simdi;bit>ilk;bit-=15*GUN){const bas=Math.max(ilk,bit-15*GUN);
-    for(let s=0;s<50;s++){if(ilerleme)ilerleme(tum.length);const r=await pzCagir({islem:"hakedis",baslangic:bas,bitis:bit,sayfa:s,tur:"satis"});tum.push(...(r.kayitlar||[]));if(s+1>=(r.toplamSayfa||1))break}}
-  return tum}
+// Satış hakediş kayıtları (aynı anda 6 istek). Aynı oturumda 30 dakika içinde aynı ya da daha kısa dönem istenirse yeniden okunmaz.
+let pzHkOnbellek=null;
+async function pzHakedisOku(ilk,ilerleme){const simdi=Date.now();const o=pzHkOnbellek;
+  if(o&&o.firma===firmaId&&o.ilk<=ilk&&simdi-o.zaman<30*60000)return o.liste.filter(k=>!(Number(k.transactionDate)<ilk));
+  let n=0;const liste=await pzAralikOku("hakedis",ilk,simdi,15,"kayitlar",{tur:"satis"},k=>{n+=k;ilerleme&&ilerleme(n)});
+  pzHkOnbellek={firma:firmaId,ilk,zaman:simdi,liste};return liste}
 function pzSiparisPlan(basOzel,listeOzel,hkOzel){
   const kods=pzDenemeKimlikler();const bas=basOzel||pzSiparisBas().zaman;const cari=pzTyCari();const cariId=cari?cari.id:"ty-cari";
   const hk=hkOzel||pzOto.hk||null;const komGoruldu=new Set();
@@ -3206,9 +3208,8 @@ async function pzKuruDeneme(){
   async root=>{root.style.maxWidth="980px";root.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(b&&b.dataset.m==="close")closeModal()});
     const g=root.querySelector("#kdGovde");
     try{if(!l.length){g.innerHTML=`<div class="empty">Bu dönemde teslim edilmiş sipariş yok. Dönemi büyütüp (ör. Son 90 gün) tekrar getirin.</div>`;return}
-      const GUN=86400000;const ilk=Math.min(...l.map(s=>Number(s.siparisTarihi)||Date.now()))-GUN;const simdi=Date.now();const hk=[];
-      for(let bit=simdi;bit>ilk;bit-=15*GUN){const bas=Math.max(ilk,bit-15*GUN);
-        for(let s=0;s<50;s++){g.innerHTML=`<div class="muted">⏳ Hakediş kayıtları okunuyor… (${hk.length})</div>`;const r=await pzCagir({islem:"hakedis",baslangic:bas,bitis:bit,sayfa:s,tur:"satis"});hk.push(...(r.kayitlar||[]));if(s+1>=(r.toplamSayfa||1))break}}
+      const GUN=86400000;const ilk=l.reduce((m,s)=>Math.min(m,Number(s.siparisTarihi)||Date.now()),Date.now())-GUN;
+      const hk=await pzHakedisOku(ilk,n=>{g.innerHTML=`<div class="muted">⏳ Hakediş kayıtları okunuyor… (${n.toLocaleString("tr-TR")})</div>`});
       const ty={};for(const k of hk){const no=String(k.orderNumber||"");if(!no)continue;const t=ty[no]=ty[no]||{satis:0,indirim:0,komisyon:0,kayit:0};t.kayit++;
         const tip=pzIslemTuru(k);if(tip==="satis")t.satis+=Number(k.credit)||0;if(tip==="indirim")t.indirim+=Number(k.debt)||0;if(tip==="indirimIptal")t.indirim-=Number(k.credit)||0;t.komisyon+=pzKayitKesinti(k)}
       // Program tarafı: sipariş numarasına göre (bir siparişte birden fazla paket olabilir)
@@ -3239,7 +3240,36 @@ async function pzKuruDeneme(){
         </tbody></table></div>${tani}`}
     catch(e){g.innerHTML=`<div class="err">${esc(e.message||String(e))}</div>`}});
 }
-async function pzGetir(){
+/* ---------- Hızlı okuma: aynı anda birkaç istek + cihazda saklama ----------
+   Trendyol'dan okuma sayfa sayfa yapılır; sayfalar sırayla değil aynı anda en fazla 6'şar istenir.
+   Okunan siparişler bu cihazda (IndexedDB) firmaya göre saklanır; sonraki okumada yalnızca son 21 gün yenilenir,
+   6 saatte bir (ya da istenince) tamamı yeniden okunur. */
+const pzSinir=n=>{let aktif=0;const kuyruk=[];const sonraki=()=>{if(aktif>=n||!kuyruk.length)return;aktif++;const {f,ok,red}=kuyruk.shift();f().then(ok,red).finally(()=>{aktif--;sonraki()})};return f=>new Promise((ok,red)=>{kuyruk.push({f,ok,red});sonraki()})};
+async function pzTekrarla(f,kez){for(let i=0;;i++){try{return await f()}catch(e){if(i>=(kez||2)||/yetki|bağlı değil|kurulmamış|401|403/i.test(e.message||""))throw e;await new Promise(r=>setTimeout(r,1500*(i+1)))}}}
+// Bir tarih aralığının bütün sayfalarını okur: önce ilk sayfa (toplam sayfa sayısı öğrenilir), sonra kalanlar aynı anda
+async function pzSayfaliOku(sinir,cagir,alan,ilerle,enFazla){const r0=await sinir(()=>pzTekrarla(()=>cagir(0)));const ilk=r0[alan]||[];ilerle&&ilerle(ilk.length);
+  const top=Math.min(enFazla||50,r0.toplamSayfa||1);const kalan=await Promise.all(Array.from({length:Math.max(0,top-1)},(_,i)=>sinir(()=>pzTekrarla(()=>cagir(i+1))).then(r=>{const x=r[alan]||[];ilerle&&ilerle(x.length);return x})));
+  return ilk.concat(...kalan)}
+function pzPencereler(ilk,son,gunAdim){const GUN=86400000,out=[];for(let bit=son;bit>ilk;bit-=gunAdim*GUN)out.push([Math.max(ilk,bit-gunAdim*GUN),bit]);return out}
+async function pzAralikOku(islem,ilk,son,gunAdim,alan,ek,ilerle,enFazla){const sinir=pzSinir(6);
+  const l=await Promise.all(pzPencereler(ilk,son,gunAdim).map(([bas,bit])=>pzSayfaliOku(sinir,s=>pzCagir(Object.assign({islem,baslangic:bas,bitis:bit,sayfa:s},ek||{})),alan,ilerle,enFazla)));return [].concat(...l)}
+const pzDepo=(()=>{let p=null;const ac=()=>p||(p=new Promise((ok,red)=>{const r=indexedDB.open("arvenato-pz",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>ok(r.result);r.onerror=()=>red(r.error)}));
+  return {al:async k=>{try{const db=await ac();return await new Promise((ok,red)=>{const q=db.transaction("kv").objectStore("kv").get(k);q.onsuccess=()=>ok(q.result||null);q.onerror=()=>red(q.error)})}catch(e){return null}},
+    koy:async(k,v)=>{try{const db=await ac();await new Promise((ok,red)=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").put(v,k);t.oncomplete=()=>ok();t.onerror=()=>red(t.error)})}catch(e){}},
+    sil:async k=>{try{const db=await ac();await new Promise(ok=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").delete(k);t.oncomplete=()=>ok();t.onerror=()=>ok()})}catch(e){}}}})();
+const PZ_TAM_YENILE=6*3600000;
+async function pzSiparisleriOku(ilk,zorla){const simdi=Date.now(),GUN=86400000;const anahtar="siparis-"+firmaId;let n=0;
+  const ilerle=k=>{n+=k;pz.yuk=`Siparişler okunuyor… (${n.toLocaleString("tr-TR")})`;renderSonra()};
+  const dep=zorla?null:await pzDepo.al(anahtar);
+  // Saklanan liste yeterince yeni ve istenen dönemi kapsıyorsa yalnızca son 21 gün yeniden okunur
+  if(dep&&dep.ilk<=ilk&&simdi-dep.tamZaman<PZ_TAM_YENILE){
+    const yeni=await pzAralikOku("siparisler",Math.max(ilk,simdi-21*GUN),simdi,14,"siparisler",null,ilerle);
+    const m=new Map(dep.liste.map(x=>[x.paketId,x]));for(const x of yeni)if(x.paketId)m.set(x.paketId,x);
+    const liste=[...m.values()].filter(x=>Number(x.siparisTarihi)>=dep.ilk-GUN);await pzDepo.koy(anahtar,{ilk:dep.ilk,tamZaman:dep.tamZaman,zaman:simdi,liste});
+    return {liste,kismi:true,tamZaman:dep.tamZaman}}
+  const liste=await pzAralikOku("siparisler",ilk,simdi,14,"siparisler",null,ilerle);const gor=new Set();const tekil=liste.filter(x=>x.paketId&&!gor.has(x.paketId)&&gor.add(x.paketId));
+  await pzDepo.koy(anahtar,{ilk,tamZaman:simdi,zaman:simdi,liste:tekil});return {liste:tekil,kismi:false,tamZaman:simdi}}
+async function pzGetir(zorla){
   if(pz.sekme==="deneme")return pzDenemeGetir();
   if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
   const bugun=ui.pzGun==="bugun";const gun=bugun?1:Math.min(90,Math.max(1,Number(ui.pzGun)||14));const simdi=Date.now(),GUN=86400000;
@@ -3247,14 +3277,13 @@ async function pzGetir(){
   pz.hata="";pz.yuk="Trendyol'a bağlanılıyor…";render();
   try{
     pz.bag=await pzCagir({islem:"durum"});
-    if(pz.sekme==="siparis"){const tum=[];
-      for(let bit=simdi;bit>ilk;bit-=14*GUN){const bas=Math.max(ilk,bit-14*GUN);
-        for(let s=0;s<50;s++){pz.yuk=`Siparişler okunuyor… (${tum.length})`;render();const r=await pzCagir({islem:"siparisler",baslangic:bas,bitis:bit,sayfa:s});tum.push(...(r.siparisler||[]));if(s+1>=(r.toplamSayfa||1))break}}
-      const gor=new Set();pz.siparisler=tum.filter(x=>!gor.has(x.paketId)&&gor.add(x.paketId)&&(!bugun||x.siparisTarihi>=ilk)).sort((a,b)=>b.siparisTarihi-a.siparisTarihi)}
-    else{const tum=[];
-      for(let bit=simdi;bit>ilk;bit-=15*GUN){const bas=Math.max(ilk,bit-15*GUN);
-        for(const tur of ["satis","diger"])for(let s=0;s<50;s++){pz.yuk=`Hakediş kayıtları okunuyor… (${tum.length})`;render();const r=await pzCagir({islem:"hakedis",baslangic:bas,bitis:bit,sayfa:s,tur});tum.push(...(r.kayitlar||[]));if(s+1>=(r.toplamSayfa||1))break}}
-      pz.hakedis=tum.sort((a,b)=>(b.transactionDate||0)-(a.transactionDate||0))}
+    if(pz.sekme==="siparis"){const t0=Date.now();
+      const R=await pzSiparisleriOku(bugun?simdi-GUN:ilk,zorla);
+      pz.siparisler=R.liste.filter(x=>Number(x.siparisTarihi)>=ilk).sort((a,b)=>b.siparisTarihi-a.siparisTarihi);
+      pz.okuma={kismi:R.kismi,tamZaman:R.tamZaman,sure:Date.now()-t0}}
+    else{let n=0;const ilerle=k=>{n+=k;pz.yuk=`Hakediş kayıtları okunuyor… (${n.toLocaleString("tr-TR")})`;renderSonra()};
+      const [a,b]=await Promise.all(["satis","diger"].map(tur=>pzAralikOku("hakedis",ilk,simdi,15,"kayitlar",{tur},ilerle)));
+      pz.hakedis=a.concat(b).sort((x,y)=>(y.transactionDate||0)-(x.transactionDate||0))}
     pz.zaman=Date.now();
   }catch(e){pz.hata=e.message||String(e)}
   pz.yuk="";render();
@@ -3392,6 +3421,7 @@ function vPazaryeri(){
       const ciro=l.filter(s=>!/Cancelled|Returned|UnSupplied/.test(s.durum)).reduce((t,s)=>t+s.toplam,0);
       const durumlar=[...new Set(l0.map(s=>s.durum))];
       govde+=`<section class="kpis">${kpi("Sipariş",String(l.length),l0.length!==l.length?"filtrelenmiş":"seçilen dönem")}${kpi("Ciro (iptal/iade hariç)",money(r2(ciro)),"müşterinin ödediği")}${kpi("Teslim edilen",String(l.filter(s=>s.durum==="Delivered").length),"fatura kesilecek")}${kpi("İptal / iade",String(l.filter(s=>/Cancelled|Returned/.test(s.durum)).length),"")}</section>
+      ${pz.okuma?`<div class="muted" style="font-size:.8rem">${pz.okuma.kismi?`Kayıtlı liste kullanıldı, son 21 gün Trendyol'dan yenilendi`:`Tamamı Trendyol'dan okundu`} (${(pz.okuma.sure/1000).toFixed(1)} sn) · son tam okuma ${new Date(pz.okuma.tamZaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})} <button class="small ghost" data-act="pzTamYenile" type="button">↻ Tamamını yeniden oku</button></div>`:""}
       <div class="filters"><select id="fPzDurum" data-filter="pzDurum" aria-label="Durum"><option value="">Tüm durumlar</option>${durumlar.map(d=>`<option value="${esc(d)}" ${ui.pzDurum===d?"selected":""}>${esc(PZ_DURUM[d]||d)}</option>`).join("")}</select>
         <input id="fPzAra" type="search" data-filter="pzAra" value="${esc(ui.pzAra||"")}" placeholder="Sipariş no, müşteri, ürün, barkod…" style="flex:1;min-width:180px"></div>
       ${l.length?`<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Sipariş no</th><th>Müşteri</th><th>Ürünler</th><th>Durum</th><th class="num">Tutar</th></tr></thead><tbody>
@@ -3799,6 +3829,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzIsle")pzSiparisIsle();
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
+  else if(a==="pzTamYenile"){if(!pz.yuk)pzGetir(true)}
   else if(a==="pzFatura")pzFaturaModal(id);
   else if(a==="makbuz"){const h=state.hareketler.find(x=>x.id===id);if(h)makbuzModal(h)}
   else if(a==="fTemizle"){ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
