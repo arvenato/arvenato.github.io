@@ -2854,8 +2854,15 @@ function tdCanliHtml(){
 const PZ_FONK="arvenato-pazaryeri";
 const pz={pazaryeri:"trendyol",sekme:"siparis",yuk:"",hata:"",siparisler:null,hakedis:null,bag:null,zaman:0,deneme:null};
 // Bağlanan pazaryerleri (Trendyol dışındakiler şimdilik yalnızca sipariş OKUR). "den" = "...'dan getir" eki.
-const PZ_ADLAR={trendyol:"Trendyol",n11:"N11"};const PZ_EK={trendyol:"'dan",n11:"'den"};
-const PZ_DURUM={Unpacked:"Paket bölündü",Awaiting:"Ödeme bekleniyor",Created:"Yeni",Picking:"Hazırlanıyor",Invoiced:"Faturalandı",Shipped:"Kargoda",AtCollectionPoint:"Teslimat noktasında",Delivered:"Teslim edildi",UnDelivered:"Teslim edilemedi",Cancelled:"İptal",Returned:"İade",UnSupplied:"Tedarik edilemedi"};
+const PZ_ADLAR={trendyol:"Trendyol",n11:"N11",pazarama:"Pazarama",idefix:"İdefix",shopify:"Shopify"};const PZ_EK={trendyol:"'dan",n11:"'den",pazarama:"'dan",idefix:"'ten",shopify:"'dan"};
+// Okuma bağlantısı olan pazaryerlerinin ayar formu (bilgiler pazaryeri_hesap tablosuna yalnızca yazılır)
+const PZ_FORMLAR=[
+  {k:"n11",yardim:"N11 mağaza paneli (so.n11.com) › sağ üstte <b>Hesabım › API Hesapları</b>.",alanlar:[{a:"appKey",l:"API Anahtarı"},{a:"appSecret",l:"API Şifresi",gizli:1}],ozet:b=>"Anahtar "+_maske(b.appKey)},
+  {k:"pazarama",yardim:"Pazarama satıcı paneli (isortagim.pazarama.com) › <b>Hesap Bilgileri › Entegrasyon Bilgileri</b>. API Key (Client ID) ve API Secret yalnızca bir kez gösterilir; kaybolursa yenisi üretilir.",alanlar:[{a:"apiKey",l:"API Key (Client ID)"},{a:"apiSecret",l:"API Secret",gizli:1}],ozet:b=>"Key "+_maske(b.apiKey)},
+  {k:"idefix",yardim:"İdefix satıcı paneli › <b>Hesap Bilgilerim › Entegrasyon Bilgileri</b> › Yeni API Oluştur (bilgiler e-postanıza gelir).",alanlar:[{a:"saticiId",l:"Satıcı ID (Vendor ID)"},{a:"apiKey",l:"API Key"},{a:"apiSecret",l:"API Secret",gizli:1}],ozet:b=>"Satıcı "+_maske(b.saticiId)},
+  {k:"shopify",yardim:"Shopify yönetim paneli › <b>Ayarlar › Uygulamalar ve satış kanalları › Uygulama geliştir</b> › yeni uygulama › Admin API izinlerinden yalnızca <b>read_orders</b> (ve isterseniz read_products) › Yükle › <b>Admin API erişim anahtarı</b>.",alanlar:[{a:"magaza",l:"Mağaza adresi (…myshopify.com)"},{a:"token",l:"Admin API erişim anahtarı",gizli:1}],ozet:b=>String(b.magaza||"")}];
+const _maske=s=>{s=String(s||"");return s.length>4?s.slice(0,2)+"***"+s.slice(-2):"***"};
+const PZ_DURUM={Unpacked:"Paket bölündü",ReturnStarted:"İade süreci",Awaiting:"Ödeme bekleniyor",Created:"Yeni",Picking:"Hazırlanıyor",Invoiced:"Faturalandı",Shipped:"Kargoda",AtCollectionPoint:"Teslimat noktasında",Delivered:"Teslim edildi",UnDelivered:"Teslim edilemedi",Cancelled:"İptal",Returned:"İade",UnSupplied:"Tedarik edilemedi"};
 const PZ_ISLEM={Sale:"Satış",Return:"İade",Discount:"İndirim",DiscountCancel:"İndirim iptali",Coupon:"Kupon",CouponCancel:"Kupon iptali",ProvisionPositive:"Provizyon +",ProvisionNegative:"Provizyon −",ManualRefund:"Manuel iade",ManualRefundCancel:"Manuel iade iptali",TyDiscount:"Trendyol indirimi",TyDiscountCancel:"Trendyol indirimi iptali",TyCoupon:"Trendyol kuponu",TyCouponCancel:"Trendyol kuponu iptali",SellerRevenuePositive:"Satıcı geliri +",SellerRevenueNegative:"Satıcı geliri −",CommissionPositive:"Komisyon +",CommissionNegative:"Komisyon −",DeliveryFee:"Kargo bedeli",DeliveryFeeCancel:"Kargo bedeli iptali",Stoppage:"Stopaj",CashAdvance:"Erken ödeme",WireTransfer:"Ödeme (havale)",IncomingTransfer:"Gelen havale",ReturnInvoice:"İade faturası",CommissionAgreementInvoice:"Komisyon faturası",PaymentOrder:"Ödeme emri",DeductionInvoices:"Kesinti faturası",FinancialItem:"Diğer finansal kalem"};
 const pzTarih=t=>t?new Date(Number(t)).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
 async function pzCagir(govde){
@@ -3387,16 +3394,13 @@ async function pazaryeriAyarModal(){
         <div class="filters"><button class="primary small" data-m="kaydet" type="button">${t?"Bilgileri değiştir":"Kaydet ve bağla"}</button>${t?`<button class="small" data-m="dene" type="button">Bağlantıyı dene</button><button class="small ghost danger" data-m="sil" type="button">Bağlantıyı kaldır</button>`:""}</div>
         ${t?"":`<details style="font-size:.85rem"><summary style="cursor:pointer">Bilgiler daha önce Supabase'e (Secrets) girildiyse</summary><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px"><div class="muted">Supabase › Edge Functions › Secrets'taki <b>TRENDYOL_*</b> bilgileri tek bir mağazaya aittir. Yalnızca o mağazanın firması açıkken bağlayın.</div><button class="small" data-m="secret" type="button">Secrets'taki bilgileri “${esc(state.firma)}” firmasına bağla</button></div></details>`}
       </div>
-      ${(n=>`<div class="panel" style="padding:12px;gap:8px">
-        <b>N11 (yalnızca sipariş okuma)</b>
-        <div style="font-size:.88rem">${n?`<span class="chip satis">Bağlı</span> ${esc(n.ozet)} <span class="muted">· ${new Date(n.guncelleme).toLocaleString("tr-TR")}</span>`:`<span class="chip alis">Bağlı değil</span>`}</div>
-        <div class="muted" style="font-size:.82rem">N11 mağaza paneli (so.n11.com) › sağ üstte <b>Hesabım › API Hesapları</b>. Oradaki <b>API Anahtarı</b> ve <b>API Şifresi</b>'ni girin. Bu bilgilerle N11'e hiçbir şey gönderilmez; yalnızca siparişler okunur.</div>
-        <div class="grid2">
-          <div class="field"><label for="paN11Key">API Anahtarı</label><input id="paN11Key" autocomplete="off" spellcheck="false"></div>
-          <div class="field"><label for="paN11Sec">API Şifresi</label><input id="paN11Sec" type="password" autocomplete="new-password" spellcheck="false"></div>
-        </div>
-        <div class="filters"><button class="primary small" data-m="n11kaydet" type="button">${n?"Bilgileri değiştir":"Kaydet ve bağla"}</button>${n?`<button class="small" data-m="n11dene" type="button">Bağlantıyı dene</button><button class="small ghost danger" data-m="n11sil" type="button">Bağlantıyı kaldır</button>`:""}</div>
-      </div>`)((pzAyar||[]).find(x=>x.pazaryeri==="n11"))}
+      ${PZ_FORMLAR.map(F=>(n=>`<details class="panel" style="padding:12px;gap:8px" ${n?"":""}><summary style="cursor:pointer;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(PZ_ADLAR[F.k])} (yalnızca sipariş okuma)</b> ${n?`<span class="chip satis">Bağlı</span> <span style="font-size:.85rem">${esc(n.ozet)}</span>`:`<span class="chip alis">Bağlı değil</span>`}</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+        ${n?`<div class="muted" style="font-size:.8rem">Son güncelleme ${new Date(n.guncelleme).toLocaleString("tr-TR")}</div>`:""}
+        <div class="muted" style="font-size:.82rem">${F.yardim} Bu bilgilerle ${esc(PZ_ADLAR[F.k])}'e hiçbir şey gönderilmez; yalnızca siparişler okunur. Kaydedilen bilgiler bir daha ekranda gösterilmez.</div>
+        <div class="grid2">${F.alanlar.map(A=>`<div class="field"><label for="pa_${F.k}_${A.a}">${esc(A.l)}</label><input id="pa_${F.k}_${A.a}" ${A.gizli?`type="password" autocomplete="new-password"`:`autocomplete="off"`} spellcheck="false"></div>`).join("")}</div>
+        <div class="filters"><button class="primary small" data-m="pzk" data-pz="${F.k}" type="button">${n?"Bilgileri değiştir":"Kaydet ve bağla"}</button>${n?`<button class="small" data-m="pzd" data-pz="${F.k}" type="button">Bağlantıyı dene</button><button class="small ghost danger" data-m="pzs" data-pz="${F.k}" type="button">Bağlantıyı kaldır</button>`:""}</div>
+        </div></details>`)((pzAyar||[]).find(x=>x.pazaryeri===F.k))).join("")}
       <div class="panel" style="padding:12px;gap:8px">
         <b>Deneme ürünleri (stok / fiyat gönderimi açık)</b>
         <div class="muted" style="font-size:.82rem">Trendyol'a stok ve fiyat <b>yalnızca bu listedeki ürünler için</b> gönderilebilir (kontrol sunucuda yapılır). Her satıra bir barkod ya da stok kodu yazın. Bu ürünleri başka bir programda (ör. Yengeç) stok/fiyat güncellemesinden çıkarmayı unutmayın; yoksa iki program birbirinin üstüne yazar.</div>
@@ -3431,18 +3435,20 @@ async function pazaryeriAyarModal(){
       if(m==="testKaydet"){const kodlar=[...new Set(root.querySelector("#paTest").value.split(/[\r\n,;]+/).map(x=>x.trim()).filter(Boolean))];
         if(kodlar.length>20){er().textContent="Deneme listesine en fazla 20 ürün eklenebilir.";return}
         try{await api.setDoc("ayar","pazaryeriTest",Object.assign({},(state.ayarEk||{}).pazaryeriTest||{},{kodlar,guncelleme:Date.now()}));pz.deneme=null;du().textContent=kodlar.length+" deneme ürünü kaydedildi.";ciz(root);kopruBak()}catch(err){er().textContent=errMsg(err)}return}
-      if(m==="n11kaydet"){const key=root.querySelector("#paN11Key").value.trim(),sec=root.querySelector("#paN11Sec").value.trim();
-        if(key.length<6||sec.length<6){er().textContent="N11 API Anahtarı ve API Şifresi'ni eksiksiz yapıştırın.";return}
-        b.disabled=true;const oz="Anahtar "+(key.length>4?key.slice(0,2)+"***"+key.slice(-2):"***");
-        const {error}=await sb.rpc("pazaryeri_hesap_kaydet",{p_firma:firmaId,p_pazaryeri:"n11",p_bilgi:{appKey:key,appSecret:sec},p_ozet:oz});b.disabled=false;
-        if(error){er().textContent=sbMesaj(error);return}
-        await durumYukle();ciz(root);kopruBak();du().textContent="N11 bilgileri kaydedildi. Bağlantı deneniyor…";
-        try{const d=await pzCagir({islem:"durum",pazaryeri:"n11"});du().textContent="N11 bağlantısı tamam ✓"+(d.pazaryerleri[0].son14GunSiparis!=null?" · son 14 günde "+d.pazaryerleri[0].son14GunSiparis+" sipariş":"")}catch(err){du().textContent="";er().textContent="Bilgiler kaydedildi ama N11'e bağlanılamadı: "+(err.message||err)}
-        return}
-      if(m==="n11dene"){b.disabled=true;try{const d=await pzCagir({islem:"durum",pazaryeri:"n11"});du().textContent="N11 bağlantısı tamam ✓"+(d.pazaryerleri[0].son14GunSiparis!=null?" · son 14 günde "+d.pazaryerleri[0].son14GunSiparis+" sipariş":"")}catch(err){er().textContent=err.message||String(err)}b.disabled=false;return}
-      if(m==="n11sil"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Kaldırmayı onayla";return}
-        const {error}=await sb.rpc("pazaryeri_hesap_sil",{p_firma:firmaId,p_pazaryeri:"n11"});if(error){er().textContent=sbMesaj(error);return}
-        await durumYukle();ciz(root);kopruBak();if(pz.pazaryeri==="n11"){pz.siparisler=null;pz.bag=null}toast("N11 bağlantısı kaldırıldı");return}
+      // Okuma bağlantılı pazaryerleri (N11, Pazarama, İdefix, Shopify): kaydet / dene / kaldır
+      const F=PZ_FORMLAR.find(x=>x.k===b.dataset.pz);
+      if(F&&/^pz[kds]$/.test(m)){const ad=PZ_ADLAR[F.k];
+        const dene=async()=>{const d=await pzCagir({islem:"durum",pazaryeri:F.k});const n=d.pazaryerleri[0].son14GunSiparis;du().textContent=ad+" bağlantısı tamam ✓"+(n!=null?" · son 14 günde "+n+" sipariş":"")};
+        if(m==="pzk"){const bilgi={};for(const A of F.alanlar){const v=root.querySelector(`#pa_${F.k}_${A.a}`).value.trim();if(v.length<3){er().textContent=ad+": “"+A.l+"” alanını eksiksiz doldurun.";return}bilgi[A.a]=v}
+          if(F.k==="shopify"){bilgi.magaza=bilgi.magaza.toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*$/,"");if(!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(bilgi.magaza)){er().textContent="Shopify mağaza adresi …myshopify.com ile bitmeli (ör. seyfikirtasiye.myshopify.com).";return}}
+          b.disabled=true;const {error}=await sb.rpc("pazaryeri_hesap_kaydet",{p_firma:firmaId,p_pazaryeri:F.k,p_bilgi:bilgi,p_ozet:F.ozet(bilgi)});b.disabled=false;
+          if(error){er().textContent=/check|violat|constraint/i.test(error.message||"")?ad+" henüz veritabanında tanımlı değil (Supabase'de küçük bir güncelleme gerekiyor).":sbMesaj(error);return}
+          await durumYukle();ciz(root);kopruBak();du().textContent=ad+" bilgileri kaydedildi. Bağlantı deneniyor…";
+          try{await dene()}catch(err){du().textContent="";er().textContent="Bilgiler kaydedildi ama "+ad+"'e bağlanılamadı: "+(err.message||err)}return}
+        if(m==="pzd"){b.disabled=true;try{await dene()}catch(err){er().textContent=err.message||String(err)}b.disabled=false;return}
+        if(m==="pzs"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Kaldırmayı onayla";return}
+          const {error}=await sb.rpc("pazaryeri_hesap_sil",{p_firma:firmaId,p_pazaryeri:F.k});if(error){er().textContent=sbMesaj(error);return}
+          await durumYukle();ciz(root);kopruBak();if(pz.pazaryeri===F.k){pz.siparisler=null;pz.bag=null}toast(ad+" bağlantısı kaldırıldı");return}}
       if(m==="dene"){b.disabled=true;try{const d=await pzCagir({islem:"durum"});du().textContent="Bağlantı tamam ✓ · son 14 günde "+d.pazaryerleri[0].son14GunSiparis+" sipariş"}catch(err){er().textContent=err.message||String(err)}b.disabled=false;return}
       if(m==="sil"){if(b.dataset.ok!=="1"){b.dataset.ok="1";b.textContent="Kaldırmayı onayla";return}
         const {error}=await sb.rpc("pazaryeri_hesap_sil",{p_firma:firmaId,p_pazaryeri:"trendyol"});if(error){er().textContent=sbMesaj(error);return}
@@ -3460,7 +3466,7 @@ function vPazaryeri(){
       <button class="primary small" data-act="pzGetir" type="button" ${pz.yuk?"disabled":""}>📡 ${esc(PZ_ADLAR[pzAd]+PZ_EK[pzAd])} getir</button></div></section>
     <div class="filters" role="tablist" aria-label="Pazaryeri">${Object.entries(PZ_ADLAR).map(([k,v])=>`<button class="small ${k===pzAd?"primary":""}" data-act="pzSec" data-id="${k}" type="button" role="tab" aria-selected="${k===pzAd}">${esc(v)}</button>`).join("")}</div>`;
   const sekmeler=`<div class="filters"><button class="small ${pz.sekme==="siparis"?"primary":""}" data-act="pzSekme" data-id="siparis" type="button">Siparişler</button>${ty?`<button class="small ${pz.sekme==="hakedis"?"primary":""}" data-act="pzSekme" data-id="hakedis" type="button">Hakediş / komisyon</button><button class="small ${pz.sekme==="deneme"?"primary":""}" data-act="pzSekme" data-id="deneme" type="button">🧪 Deneme ürünleri · stok/fiyat</button>`:""}
-    ${pz.bag?`<span class="muted" style="font-size:.85rem">${ty?"Satıcı":"API anahtarı"} ${esc(pz.bag.pazaryerleri[0].saticiId)} · bağlantı tamam${pz.zaman?" · "+new Date(pz.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}</span>`:""}</div>`;
+    ${pz.bag?`<span class="muted" style="font-size:.85rem">${ty?"Satıcı":"Hesap"} ${esc(pz.bag.pazaryerleri[0].saticiId)} · bağlantı tamam${pz.zaman?" · "+new Date(pz.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}</span>`:""}</div>`;
   let govde="";
   if(pz.yuk)govde=`<div class="muted">⏳ ${esc(pz.yuk)}</div>`;
   else if(pz.hata)govde=`<div class="err">${esc(pz.hata)}</div>`;
