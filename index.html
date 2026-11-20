@@ -329,6 +329,7 @@ function notices(){
   let s="";
   if(state.mode==="local")s+=`<div class="notice"><b>Yerel mod:</b> Kayıtlar şu an yalnızca bu tarayıcıda saklanıyor. Sayfayı claude.ai üzerinden açtığınızda kayıtlar hesabınızda kalıcı olarak tutulur.</div>`;
   if(state.readonly)s+=`<div class="notice"><b>Salt okunur:</b> Bu sayfada kayıt ekleme yetkiniz yok. Sahibinden “Katkıda bulunan” erişimi isteyebilirsiniz.</div>`;
+  if(state.guncelleniyor)s+=`<div class="notice"><b>Kayıtlar güncelleniyor…</b> Bu cihazda saklanan son kayıtlar gösteriliyor; güncel hali birkaç saniye içinde gelir.</div>`;
   if(state.stale)s+=`<div class="notice"><b>Bağlantı bekleniyor:</b> Kayıtlara henüz ulaşılamadı, gösterilenler güncel olmayabilir.</div>`;
   if(state.error)s+=`<div class="notice"><b>Hata:</b> ${esc(state.error)}</div>`;
   if(state.hareketler.some(h=>h.ornek)||state.cariler.some(c=>c.ornek)||state.personeller.some(p=>p.ornek))
@@ -3306,7 +3307,8 @@ async function pzAralikOku(islem,ilk,son,gunAdim,alan,ek,ilerle,enFazla){const s
 const pzDepo=(()=>{let p=null;const ac=()=>p||(p=new Promise((ok,red)=>{const r=indexedDB.open("arvenato-pz",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>ok(r.result);r.onerror=()=>red(r.error)}));
   return {al:async k=>{try{const db=await ac();return await new Promise((ok,red)=>{const q=db.transaction("kv").objectStore("kv").get(k);q.onsuccess=()=>ok(q.result||null);q.onerror=()=>red(q.error)})}catch(e){return null}},
     koy:async(k,v)=>{try{const db=await ac();await new Promise((ok,red)=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").put(v,k);t.oncomplete=()=>ok();t.onerror=()=>red(t.error)})}catch(e){}},
-    sil:async k=>{try{const db=await ac();await new Promise(ok=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").delete(k);t.oncomplete=()=>ok();t.onerror=()=>ok()})}catch(e){}}}})();
+    sil:async k=>{try{const db=await ac();await new Promise(ok=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").delete(k);t.oncomplete=()=>ok();t.onerror=()=>ok()})}catch(e){}},
+    temizle:async()=>{try{const db=await ac();await new Promise(ok=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").clear();t.oncomplete=()=>ok();t.onerror=()=>ok()})}catch(e){}}}})();
 const PZ_TAM_YENILE=6*3600000;
 async function pzSiparisleriOku(ilk,zorla,pzAd){pzAd=pzAd||"trendyol";const simdi=Date.now(),GUN=86400000;const anahtar=pzAd==="trendyol"?"siparis-"+firmaId:"siparis-"+pzAd+"-"+firmaId;let n=0;const ekA={pazaryeri:pzAd};
   const ilerle=k=>{n+=k;pz.yuk=`Siparişler okunuyor… (${n.toLocaleString("tr-TR")})`;renderSonra()};
@@ -4065,7 +4067,9 @@ function firmaOlusturEkrani(ek){kapiGoster(`<h2>${ek?"Yeni firma ekle":"Firmanı
     await firmaSec()})}
 async function firmaAc(d){const degisti=firmaId&&firmaId!==d.firma_id;firmaId=d.firma_id;firmaRol=d.rol;try{localStorage.setItem("secili-firma",firmaId)}catch(e){}kapiKapat();
   if(degisti){urunSecim.clear();fatSecim.clear();pz.siparisler=null;pz.hakedis=null;pz.bag=null;pz.hata="";pz.deneme=null;pzAyar=null}document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
-async function cikisYap(){try{if(kanal)sb.removeChannel(kanal);kanal=null;await sb.auth.signOut()}catch(e){}oturum=null;firmaId=null;for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";girisEkrani()}
+async function cikisYap(){try{if(kanal)sb.removeChannel(kanal);kanal=null;await sb.auth.signOut()}catch(e){}
+  // Çıkışta bu cihazda saklanan kayıtlar silinir (başka biri aynı cihazdan girerse görmesin)
+  await pzDepo.temizle();oturum=null;firmaId=null;for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";girisEkrani()}
 function idUret(){const a="abcdefghijklmnopqrstuvwxyz0123456789";let s="";for(const x of crypto.getRandomValues(new Uint8Array(20)))s+=a[x%36];return s}
 // Arka plandan gelen yeniden çizim, kullanıcı bir kutuya (yazı, seçim) tıklamışken yapılmaz; kutudan çıkınca yapılır.
 // (Aksi halde açılır liste kapanır, yazılan kutu kaybolur.)
@@ -4085,9 +4089,23 @@ function uzakUygula(col,id,veri){
     if(veri&&mevcut){const {id:_,...m}=mevcut;if(_sirali(m)===_sirali(veri))return}}
   yerelUygula(col,id,veri);renderSonra()}
 function yerelUygula(col,id,veri){if(col==="ayar"){if(id==="firma")state.firma=veri?veri.ad||"":"";else{state.ayarEk=state.ayarEk||{};if(veri)state.ayarEk[id]=veri;else delete state.ayarEk[id]}return}const k=KOLEKSIYONLAR[col];if(!k)return;const arr=state[k].filter(x=>x.id!==id);if(veri)arr.push({id,...veri});state[k]=arr}
-async function tumunuYukle(){const rows=[];const N=1000;for(let from=0;;from+=N){const {data,error}=await sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",firmaId).order("koleksiyon").order("id").range(from,from+N-1);if(error)throw error;rows.push(...data);if(data.length<N)break}
-  for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";state.ayarEk={};for(const r of rows)yerelUygula(r.koleksiyon,r.id,r.veri)}
+// Bütün kayıtlar: önce sayı sorulur, sonra 1000'lik parçalar aynı anda 6'şar okunur (sırayla okumaktan ~5 kat hızlı).
+// Okunan kayıtlar bu cihazda saklanır; program bir sonraki açılışta önce onları gösterir.
+async function tumunuYukle(){const f=firmaId,N=1000;
+  const parca=async from=>{for(let d=0;;d++){const {data,error}=await sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",f).order("koleksiyon").order("id").range(from,from+N-1);if(!error)return data;if(d>=2)throw error;await new Promise(r=>setTimeout(r,800*(d+1)))}};
+  const {count,error:ce}=await sb.from("kayitlar").select("id",{count:"exact",head:true}).eq("firma_id",f);
+  let rows=[];
+  if(ce||!(count>=0)){for(let from=0;;from+=N){const d=await parca(from);rows.push(...d);if(d.length<N)break}}
+  else{const bas=[];for(let from=0;from<count+N;from+=N)bas.push(from);const sonuc=new Array(bas.length);let i=0;
+    await Promise.all(Array.from({length:Math.min(6,bas.length)},async()=>{while(i<bas.length){const k=i++;sonuc[k]=await parca(bas[k])}}));
+    rows=sonuc.flat()}
+  if(f!==firmaId)return;kayitUygula(rows);pzDepo.koy("kayitlar-"+f,{zaman:Date.now(),rows})}
+function kayitUygula(rows){for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";state.ayarEk={};
+  // Aynı koleksiyondaki kayıtlar tek seferde dizilir (her kayıtta diziyi yeniden kurmak 27 bin kayıtta yavaş)
+  const gr={};for(const r of rows){if(r.koleksiyon==="ayar"){yerelUygula("ayar",r.id,r.veri);continue}const k=KOLEKSIYONLAR[r.koleksiyon];if(!k)continue;(gr[k]=gr[k]||new Map()).set(r.id,{id:r.id,...r.veri})}
+  for(const [k,m] of Object.entries(gr))state[k]=[...m.values()]}
 function sbHata(e){const m=e.message||"";const x=new Error(m);x.code=/rate|too many|429/i.test(m)?"resource_exhausted":/fetch|network|Failed/i.test(m)?"unavailable":"invalid_argument";return x}
+let _yazSay=0;
 let _yenileZ=null;function veriYenile(){clearTimeout(_yenileZ);_yenileZ=setTimeout(async()=>{try{await tumunuYukle();render()}catch(e){}},800)}
 /* ---------- Yengeç'ten ürün ve stok aktarımı (yer imi düğmesi) ---------- */
 const YENGEC_KAYNAK="https://app.yengec.co";let yengecBekleyen=null,yengecHazir=false;
@@ -4098,7 +4116,7 @@ window.addEventListener("message",e=>{if(e.origin!==YENGEC_KAYNAK||!e.data||e.da
 function yengecHazirBildir(){yengecHazir=true;try{if(window.opener)window.opener.postMessage("arvenato-hazir",YENGEC_KAYNAK)}catch(e){}if(yengecBekleyen)yengecAktarModal()}
 async function topluYaz(satirlar0,ilerleme){
   // Aynı kayıt bir pakette iki kez olursa veritabanı tüm paketi reddeder: son hali kalacak şekilde tekilleştir
-  const tek=new Map();for(const s of satirlar0)tek.set(s.col+"|"+s.id,s);const satirlar=[...tek.values()];
+  _yazSay++;const tek=new Map();for(const s of satirlar0)tek.set(s.col+"|"+s.id,s);const satirlar=[...tek.values()];
   for(const s of satirlar)yerelUygula(s.col,s.id,s.veri);renderSonra();
   let n=0;for(let i=0;i<satirlar.length;i+=500){const parca=satirlar.slice(i,i+500).map(s=>({firma_id:firmaId,koleksiyon:s.col,id:s.id,veri:s.veri,guncelleme:new Date().toISOString()}));let dene=0;
     for(;;){const {error}=await sb.from("kayitlar").upsert(parca);if(!error)break;if(++dene>3){veriYenile();throw sbHata(error)}await new Promise(r=>setTimeout(r,1500*dene))}n+=parca.length;ilerleme&&ilerleme(n,satirlar.length)}}
@@ -4172,8 +4190,17 @@ function yengecKurulumModal(){
     if(b.dataset.m==="kopyala"){try{await navigator.clipboard.writeText(decodeURIComponent(YENGEC_YERIMI.slice(11)).replace(/^/,"javascript:"));toast("Kod kopyalandı")}catch(err){toast("Kopyalanamadı")}}}));
 }
 async function veriBaslat(){
-  state.mode="loading";state.error="";render();
+  state.mode="loading";state.error="";state.guncelleniyor=false;render();
+  // Bu cihazda saklanan son kayıtlar varsa hemen gösterilir; güncelleri arkadan gelir
+  const f=firmaId;const ob=await pzDepo.al("kayitlar-"+f);
+  if(f!==firmaId)return;
+  if(ob&&Array.isArray(ob.rows)&&state.mode==="loading"){kayitUygula(ob.rows);state.mode="db";state.guncelleniyor=true;render()}
+  const yaz0=_yazSay;
   try{await tumunuYukle();state.mode="db"}catch(e){state.mode="db";state.error="Kayıtlar yüklenemedi. "+sbMesaj(e)}
+  if(f!==firmaId)return;
+  state.guncelleniyor=false;render();
+  // Güncelleme sürerken kayıt yazıldıysa okunan liste o yazmayı kaçırmış olabilir: bir kez daha oku
+  if(_yazSay!==yaz0)veriYenile();
   pzOtoPlanla();
   if(kanal)sb.removeChannel(kanal);
   kanal=sb.channel("kayitlar-"+firmaId)
@@ -4182,8 +4209,8 @@ async function veriBaslat(){
     .on("postgres_changes",{event:"DELETE",schema:"public",table:"kayitlar"},p=>{const o=p.old||{};if(o.firma_id===firmaId&&o.koleksiyon)uzakUygula(o.koleksiyon,o.id,null)})
     .subscribe();
   api={newId:()=>idUret(),
-    setDoc:async(col,id,obj)=>{yerelUygula(col,id,obj);renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
-    del:async(col,id)=>{yerelUygula(col,id,null);renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
+    setDoc:async(col,id,obj)=>{_yazSay++;yerelUygula(col,id,obj);renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
+    del:async(col,id)=>{_yazSay++;yerelUygula(col,id,null);renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
     setFirma:async n=>{yerelUygula("ayar","firma",{ad:n});render();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:n}});if(error)throw sbHata(error);if(firmaRol==="sahip")await sb.from("firmalar").update({ad:n}).eq("id",firmaId)}};
   render();
   document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId)veriYenile()});
