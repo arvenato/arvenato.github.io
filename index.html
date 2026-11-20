@@ -2947,9 +2947,11 @@ function pzDenemeKimlikler(){const k=new Set(pzDenemeKodlar().map(pzKimlik).filt
 function pzKimlikUrun(x){const a=[x.barkod,x.stokKodu].map(pzKimlik).filter(Boolean);return state.urunler.find(u=>a.includes(pzKimlik(u.barkod))||a.includes(pzKimlik(u.kod)))||null}
 // Teslim edilen siparişin satış tutarı (KDV oranına göre gruplanmış, KDV dahil).
 // Satırların tamamı işleniyorsa müşterinin ödediği toplam esas alınır; değilse satırların birim fiyat × adedi.
+const pzSatisHedef=s=>r2((Number(s.toplam)||0)+(Number(s.tyIndirim)||0));
 function pzSatisGruplari(s,satirlar){
   const tum=(s.satirlar||[]).length===satirlar.length;const sat0=satirlar.map(o=>({o,t:r2((Number(o.x.birimFiyat)||0)*(Number(o.x.adet)||0))}));
-  const ham=sat0.reduce((a,b)=>a+b.t,0);const k=tum&&Number(s.toplam)>0&&ham>0?Number(s.toplam)/ham:1;
+  // Satış = müşterinin ödediği + Trendyol'un karşıladığı indirim (o indirimi satıcıya Trendyol öder; hakedişteki satış tutarı budur)
+  const hedef=pzSatisHedef(s);const ham=sat0.reduce((a,b)=>a+b.t,0);const k=tum&&hedef>0&&ham>0?hedef/ham:1;
   const gr={};let kdvYok=0;for(const {o,t} of sat0){let kd=Number(o.x.kdvOran);if(!kd){kdvYok++;kd=Number(o.u&&o.u.kdvOran)||20}gr[kd]=(gr[kd]||0)+t*k}
   const out={};for(const [kd,v] of Object.entries(gr)){const top=r2(v);if(top>0)out[kd]=top}
   return {gr:out,kdvYok,toplam:r2(Object.values(out).reduce((a,b)=>a+b,0))}}
@@ -2992,7 +2994,7 @@ function pzSiparisPlan(basOzel,listeOzel,hkOzel){
       // Siparişin yalnızca bir kısmı deneme ürünüyse kesinti satış tutarıyla orantılı paylaştırılır.
       const h=PZ_KOMISYON_ACIK&&hk&&hk[s.siparisNo];
       if(h&&h.kesinti>0&&!komGoruldu.has(s.siparisNo)){komGoruldu.add(s.siparisNo);
-        const oran=Number(s.toplam)>0?Math.min(1,G.toplam/Number(s.toplam)):1;const top=r2(h.kesinti*oran);
+        const oran=pzSatisHedef(s)>0?Math.min(1,G.toplam/pzSatisHedef(s)):1;const top=r2(h.kesinti*oran);
         if(top>0){const net=r2(top/1.2);istenen.push({col:"hareketler",id:`tyk-${s.siparisNo}`,veri:{tur:"gider",tarih:pzGun(h.tarih||s.teslimTarihi||s.sonDegisim),odeme:"acik",cariId,kanal:"",kategori:"Pazaryeri komisyonu",bankaId:"",kdvOran:20,net,kdv:r2(top-net),toplam:top,aciklama:("Trendyol komisyon / kesinti · sipariş "+s.siparisNo).slice(0,300),belgeNo:s.siparisNo,olusturma:olus+1}})}}}
     const satisIsteniyor=istenen.some(w=>w.col==="hareketler"&&w.id.startsWith("tyh-"));
     const mevcut=[...state.stokHareketleri.filter(h=>String(h.id).startsWith(`tys-${s.paketId}-`)).map(h=>({col:"stokHareketleri",h})),...state.hareketler.filter(h=>String(h.id).startsWith(`tyh-${s.paketId}-`)).map(h=>({col:"hareketler",h})),
@@ -3030,7 +3032,7 @@ function pzSiparisPanel(){
 const pzKurus=v=>Math.round((Number(v)||0)*100);
 function pzFaturaVeri(s){
   const sat=(s.satirlar||[]).filter(x=>Number(x.adet)>0).map(x=>{const u=pzKimlikUrun(x);let kd=Number(x.kdvOran);if(!kd)kd=Number(u&&u.kdvOran)||20;return {ad:String((u&&u.ad)||x.ad||"Ürün").trim(),adet:Number(x.adet),kdv:kd,dahil:pzKurus((Number(x.birimFiyat)||0)*Number(x.adet))}});
-  const ham=sat.reduce((a,b)=>a+b.dahil,0),hedef=pzKurus(s.toplam);
+  const ham=sat.reduce((a,b)=>a+b.dahil,0),hedef=pzKurus(pzSatisHedef(s));
   if(hedef>0&&ham>0&&hedef!==ham){let kalan=hedef;sat.forEach((x,i)=>{x.dahil=i===sat.length-1?kalan:Math.round(x.dahil*hedef/ham);kalan-=x.dahil})}
   const vkn=String(s.vergiNo||"").replace(/\D/g,"")||String(s.tckn||"").replace(/\D/g,"")||"11111111111";
   return {satirlar:sat.filter(x=>x.dahil>0),alici:{ad:String(s.firma||s.faturaAd||s.musteri||"").trim(),vkn,il:s.il||"",ilce:s.ilce||"",adres:s.adres||"",vergiDairesi:s.vergiDairesi||"",eposta:s.eposta||""},
@@ -3072,7 +3074,7 @@ async function pzFaturaModal(paketId){
     ${govde?`<div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Adet</th><th class="num">KDV</th><th class="num">Matrah</th><th class="num">KDV tutarı</th><th class="num">Toplam</th></tr></thead><tbody>
       ${govde.invoiceLines.map(l=>`<tr><td>${esc(l.itemName)}</td><td class="num">${l.quantity}</td><td class="num">%${l.taxPercent}</td><td class="num">${tl(l.totalAmount)}</td><td class="num">${tl(l.taxAmount)}</td><td class="num"><b>${tl(l.totalAmount+l.taxAmount)}</b></td></tr>`).join("")}
       <tr><td colspan="3"><b>Genel toplam</b></td><td class="num">${tl(govde.invoiceTotal.taxExclusiveAmount)}</td><td class="num">${tl(govde.totalTax.totalTaxAmount)}</td><td class="num"><b>${tl(tum)}</b></td></tr></tbody></table></div>`:`<div class="err">${esc(hata)}</div>`}
-    <div class="muted" style="font-size:.82rem">Toplam, müşterinin ödediği tutara (${money(s.toplam)}) eşitlenir. <b>Deneme aşamasında</b> gönderim yalnızca e-Fatura köprüsü <b>test ortamındayken</b> açılır; gerçek fatura kesilmez. Bu mağazanın faturalarını şu an başka bir program kesiyorsa canlıya geçmeden önce o programdaki fatura kesimi kapatılmalı (aynı siparişe iki fatura kesilmesin).</div>
+    <div class="muted" style="font-size:.82rem">Toplam = müşterinin ödediği ${money(s.toplam)}${Number(s.tyIndirim)?` + Trendyol'un karşıladığı indirim ${money(s.tyIndirim)}`:""} = <b>${money(pzSatisHedef(s))}</b> (Trendyol'un karşıladığı indirim faturaya yansıtılmaz; satıcı indirimi düşülür — canlıya geçmeden muhasebecinizle teyit edin). <b>Deneme aşamasında</b> gönderim yalnızca e-Fatura köprüsü <b>test ortamındayken</b> açılır; gerçek fatura kesilmez. Bu mağazanın faturalarını şu an başka bir program kesiyorsa canlıya geçmeden önce o programdaki fatura kesimi kapatılmalı (aynı siparişe iki fatura kesilmesin).</div>
     <div id="pfKopru" class="muted" style="font-size:.85rem">Köprü kontrol ediliyor…</div><div class="err" id="pfErr"></div>
     <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" class="primary" data-m="gonder" disabled>Test ortamına gönder</button></div>`,
   async root=>{root.style.maxWidth="860px";const kb=root.querySelector("#pfKopru"),gb=root.querySelector("[data-m=gonder]"),er=root.querySelector("#pfErr");let durum=null;
