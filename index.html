@@ -1531,6 +1531,7 @@ function vStok(){
       <button class="small" data-act="uToplu" data-id="kategori" type="button">Kategori</button><button class="small" data-act="uToplu" data-id="marka" type="button">Marka</button>
       <button class="small" data-act="uToplu" data-id="kdv" type="button">KDV</button><button class="small" data-act="uToplu" data-id="birim" type="button">Birim</button>
       <button class="small" data-act="uToplu" data-id="stok" type="button">Stok (ekle / çıkar / eşitle)</button>
+      <button class="small" data-act="tyGorselSecili" type="button" title="Seçili ürünlerin görsellerini ve açıklamasını Trendyol'dan alır">🖼 Görselleri Trendyol'dan çek</button>
       <button class="small" data-act="uToplu" data-id="satis" type="button">Satış fiyatı</button><button class="small" data-act="uToplu" data-id="alis" type="button">Alış fiyatı</button>
       <button class="small" data-act="uToplu" data-id="kritik" type="button">Kritik seviye</button><button class="small" data-act="uToplu" data-id="barkod" type="button" title="Barkodu boş olup stok kodu barkod gibi (8–14 rakam) olan ürünlerde stok kodunu Barkod alanına da yazar">Barkodu stok kodundan al</button><button class="small" data-act="uExcel" type="button">Excel'e aktar</button>
       <button class="small danger" data-act="uToplu" data-id="sil" type="button">Sil</button><button class="small ghost" data-act="uSecimKaldir" type="button">Seçimi kaldır</button></div>`:""}
@@ -1570,7 +1571,7 @@ function urunForm(existing){
     ${(Number(u.alisFiyat)||0)&&(Number(u.satisFiyat)||0)?`<div class="muted" style="font-size:.82rem">Kâr marjı: %${Math.round((u.satisFiyat-u.alisFiyat)/u.alisFiyat*100)}</div>`:""}
     <div class="field"><label>Görseller <span class="muted" style="font-weight:400">(en fazla 8; ilki ana görsel — pazaryerlerine ürün açarken kullanılır)</span></label>
       <div id="sGorsel" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-      <div class="filters" style="margin-top:6px"><button class="small" data-m="dosya" type="button">📷 Bilgisayardan ekle</button><input id="sGorselDosya" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <div class="filters" style="margin-top:6px"><button class="small primary" data-m="tyGorsel" type="button" title="Bu ürünün görsellerini ve açıklamasını barkoduyla Trendyol'dan alır">🖼 Trendyol'dan çek</button><button class="small" data-m="dosya" type="button">📷 Bilgisayardan ekle</button><input id="sGorselDosya" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
         <input id="sGorselUrl" placeholder="ya da görsel adresi yapıştırın (https://…)" style="flex:1;min-width:180px"><button class="small" data-m="urlEkle" type="button">Adresi ekle</button></div>
       <div class="muted" id="sGorselDurum" role="status" style="font-size:.8rem"></div></div>
     <div class="field"><label for="sAcik">Açıklama <span class="muted" style="font-weight:400">(pazaryerlerinde ürün açıklaması)</span></label><textarea id="sAcik" rows="4" placeholder="Ürünün özellikleri, ölçüleri, kullanım alanı…">${esc(u.aciklama||"")}</textarea></div>
@@ -1595,6 +1596,15 @@ function urunForm(existing){
     const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;const er=root.querySelector("#sErr");
     if(a==="close")return closeModal();
     if(a==="dosya"){root.querySelector("#sGorselDosya").click();return}
+    if(a==="tyGorsel"){const du=root.querySelector("#sGorselDurum");const bk=root.querySelector("#sBarkod").value.trim(),kd=root.querySelector("#sKod").value.trim();
+      if(!bk&&!kd){du.textContent="Önce barkod ya da stok kodu yazın.";return}if(!sb||!oturum){du.textContent="Bunun için internet ve giriş gerekli.";return}
+      b.disabled=true;du.textContent="Trendyol'da aranıyor…";
+      try{let t=null;for(const k of [bk,kd].filter(Boolean)){const r=await pzCagir({islem:"urunler",sayfa:0,barkod:k});t=(r.urunler||[]).find(x=>pzKimlik(x.barkod)===pzKimlik(k)||pzKimlik(x.stokKodu)===pzKimlik(k));if(t)break}
+        if(!t){du.textContent="Bu barkodla Trendyol'da onaylı ürün bulunamadı.";b.disabled=false;return}
+        if(!(t.gorseller||[]).length)du.textContent="Trendyol'da bu ürünün görseli yok.";
+        else{gorseller=t.gorseller.slice(0,8);gCiz();du.textContent=`Trendyol'dan ${gorseller.length} görsel alındı (kaydedince ürüne yazılır).`}
+        const ac=root.querySelector("#sAcik");if(t.aciklama&&!ac.value.trim()){ac.value=t.aciklama;du.textContent+=" Açıklama da eklendi."}}
+      catch(err){du.textContent=err.message||String(err)}b.disabled=false;return}
     if(a==="urlEkle"){const v=root.querySelector("#sGorselUrl").value.trim();if(!/^https:\/\/\S+$/i.test(v)){root.querySelector("#sGorselDurum").textContent="Adres https:// ile başlamalı.";return}
       if(gorseller.length>=8){root.querySelector("#sGorselDurum").textContent="En fazla 8 görsel eklenebilir.";return}if(!gorseller.includes(v))gorseller.push(v);root.querySelector("#sGorselUrl").value="";gCiz();return}
     if(a==="sil"){if(hasH){er.textContent="Bu ürünün stok hareketleri var. Önce hareketleri silin.";return}
@@ -3797,12 +3807,14 @@ function trendyolUrunCek(){
 /* ---------- Trendyol'daki görselleri ve açıklamaları programdaki ürünlere ekleme ----------
    Trendyol'daki bütün onaylı ürünler okunur (yalnızca okuma), barkod ya da stok koduyla programdaki ürünle eşleşenlere
    görsel adresleri (Trendyol'un herkese açık görsel sunucusu, en fazla 8) ve açıklama yazılır. Önce özet gösterilir, onayla yazılır. */
-function tyGorselAl(){
+function tyGorselAl(secili){
   if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
+  // secili: yalnızca seçili ürünler (200'e kadar barkodla tek tek aranır; daha fazlasında bütün Trendyol ürünleri okunur)
+  const hedef=secili?state.urunler.filter(u=>secili.has(u.id)):state.urunler;
   let plan=null;
-  openModal(`<div class="section-head"><h2>🖼 Görselleri Trendyol'dan al</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
-    <div class="muted" style="font-size:.88rem">Trendyol'daki onaylı ürünler okunur (Trendyol'a hiçbir şey gönderilmez). Barkod ya da stok koduyla eşleşen ürünlere görseller ve açıklama eklenir. Bu görseller sonra diğer pazaryerlerine ürün açarken kullanılır.</div>
-    <label style="display:flex;gap:8px;align-items:center;font-size:.9rem"><input id="tgBos" type="checkbox" checked> Yalnızca görseli olmayan ürünlere ekle (mevcut görsellere dokunma)</label>
+  openModal(`<div class="section-head"><h2>🖼 Görselleri Trendyol'dan ${secili?"çek · "+hedef.length.toLocaleString("tr-TR")+" seçili ürün":"al"}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">Trendyol'daki onaylı ürünler okunur (Trendyol'a hiçbir şey gönderilmez). Barkod ya da stok koduyla eşleşen ${secili?"seçili ":""}ürünlere görseller ve açıklama eklenir. Bu görseller sonra diğer pazaryerlerine ürün açarken kullanılır.</div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:.9rem"><input id="tgBos" type="checkbox" ${secili?"":"checked"}> Yalnızca görseli olmayan ürünlere ekle (mevcut görsellere dokunma)</label>
     <label style="display:flex;gap:8px;align-items:center;font-size:.9rem"><input id="tgAcik" type="checkbox" checked> Açıklaması boş ürünlere Trendyol açıklamasını da ekle</label>
     <div class="muted" id="tgDurum" role="status" style="font-size:.85rem"></div><div class="err" id="tgErr" role="alert"></div>
     <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="oku">Trendyol'dan oku</button></div>`,
@@ -3810,16 +3822,18 @@ function tyGorselAl(){
     const du=root.querySelector("#tgDurum"),er=root.querySelector("#tgErr");if(m==="close"){if(!tyUrunCekiliyor)closeModal();return}
     if(m==="oku"&&!tyUrunCekiliyor){er.textContent="";tyUrunCekiliyor=true;b.disabled=true;
       try{const tum=[];let tok="";
-        for(let s=0;s<500;s++){const r=await pzCagir({islem:"urunler",sayfa:s,sonrakiToken:tok});tum.push(...(r.urunler||[]));du.textContent=`Trendyol ürünleri okunuyor… ${tum.length.toLocaleString("tr-TR")}${r.toplam?" / "+Number(r.toplam).toLocaleString("tr-TR")+" içerik":""}`;
+        if(secili&&hedef.length<=200){for(let i=0;i<hedef.length;i++){const u=hedef[i];du.textContent=`Trendyol'da aranıyor… ${i+1} / ${hedef.length}`;
+            for(const k of [u.barkod,u.kod].map(x=>String(x||"").trim()).filter(Boolean)){const r=await pzCagir({islem:"urunler",sayfa:0,barkod:k});const l=(r.urunler||[]).filter(x=>pzKimlik(x.barkod)===pzKimlik(k)||pzKimlik(x.stokKodu)===pzKimlik(k));if(l.length){tum.push(...l);break}}}}
+        else for(let s=0;s<500;s++){const r=await pzCagir({islem:"urunler",sayfa:s,sonrakiToken:tok});tum.push(...(r.urunler||[]));du.textContent=`Trendyol ürünleri okunuyor… ${tum.length.toLocaleString("tr-TR")}${r.toplam?" / "+Number(r.toplam).toLocaleString("tr-TR")+" içerik":""}`;
           if(s+1>=(r.toplamSayfa||1)&&!(r.sonrakiToken&&s>=99))break;tok=s>=99?(r.sonrakiToken||""):"";if(s>=99&&!tok)break}
         const byB=new Map(),byK=new Map();for(const t of tum){if(t.barkod)byB.set(pzKimlik(t.barkod),t);if(t.stokKodu)byK.set(pzKimlik(t.stokKodu),t)}
         const bos=root.querySelector("#tgBos").checked,acik=root.querySelector("#tgAcik").checked;let eslesen=0,gorsel=0,aciklama=0;const satir=[];
-        for(const u of state.urunler){const t=byB.get(pzKimlik(u.barkod))||byK.get(pzKimlik(u.kod))||byB.get(pzKimlik(u.kod));if(!t)continue;eslesen++;
+        for(const u of hedef){const t=byB.get(pzKimlik(u.barkod))||byK.get(pzKimlik(u.kod))||byB.get(pzKimlik(u.kod));if(!t)continue;eslesen++;
           const y={};if((t.gorseller||[]).length&&(!bos||!(u.gorseller||[]).length)&&_sirali(u.gorseller||[])!==_sirali(t.gorseller)){y.gorseller=t.gorseller;gorsel++}
           if(acik&&t.aciklama&&!String(u.aciklama||"").trim()){y.aciklama=t.aciklama;aciklama++}
           if(Object.keys(y).length){const {id,...r}=u;satir.push({col:"urunler",id,veri:{...r,...y}})}}
         plan=satir;tyUrunCekiliyor=false;
-        du.innerHTML=`<b>${tum.length.toLocaleString("tr-TR")}</b> Trendyol ürünü okundu, programdaki <b>${eslesen.toLocaleString("tr-TR")}</b> ürünle eşleşti. <b>${gorsel.toLocaleString("tr-TR")}</b> ürüne görsel, <b>${aciklama.toLocaleString("tr-TR")}</b> ürüne açıklama eklenecek.`;
+        du.innerHTML=`<b>${tum.length.toLocaleString("tr-TR")}</b> Trendyol ürünü okundu, ${secili?"seçili "+hedef.length.toLocaleString("tr-TR")+" üründen ":"programdaki "}<b>${eslesen.toLocaleString("tr-TR")}</b> ürünle eşleşti. <b>${gorsel.toLocaleString("tr-TR")}</b> ürüne görsel, <b>${aciklama.toLocaleString("tr-TR")}</b> ürüne açıklama eklenecek.`;
         b.outerHTML=satir.length?`<button type="button" class="primary" data-m="yaz">Evet, ${satir.length.toLocaleString("tr-TR")} ürüne ekle</button>`:`<span class="muted">Eklenecek bir şey yok.</span>`}
       catch(err){tyUrunCekiliyor=false;b.disabled=false;du.textContent="";er.textContent=err.message||String(err)}return}
     if(m==="yaz"&&plan){b.disabled=true;try{await topluYaz(plan,(x,t)=>{du.textContent=`Kaydediliyor… ${x.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});closeModal();toast(`${plan.length.toLocaleString("tr-TR")} ürüne görsel / açıklama eklendi`)}
@@ -4329,6 +4343,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzGetir")pzGetir();
   else if(a==="trendyolCek")trendyolUrunCek();
   else if(a==="tyGorsel")tyGorselAl();
+  else if(a==="tyGorselSecili")tyGorselAl(new Set(urunSecim));
   else if(a==="fatSec"){if(b.checked)fatSecim.add(id);else fatSecim.delete(id);render()}
   else if(a==="fatHepsi"){const hepsi=fatListeSon.length&&fatListeSon.every(x=>fatSecim.has(x));if(hepsi)fatListeSon.forEach(x=>fatSecim.delete(x));else fatListeSon.forEach(x=>fatSecim.add(x));render()}
   else if(a==="fatSecKaldir"){fatSecim.clear();render()}
