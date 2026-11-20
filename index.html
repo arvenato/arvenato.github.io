@@ -2958,8 +2958,9 @@ function pzSatisGruplari(s,satirlar){
 /* Hakediş: Trendyol'un sipariş başına kestiği tutar (komisyon vb.) = Σ(alacak − borç − satıcı hakedişi).
    Satıcı indirimi gibi kayıtlarda bu fark sıfırdır; yani yalnızca Trendyol'un gerçekten elinde tuttuğu tutar kalır.
    Satıcı hakedişi alanı gelmezse komisyon tutarı kullanılır. */
-// Komisyonun Trendyol carisine yazılması: kuru denemede gerçek hakediş verisiyle doğrulanana kadar KAPALI (yanlış tutar yazılmasın)
-const PZ_KOMISYON_ACIK=false;
+// Komisyonun Trendyol carisine yazılması. 2026-11-20 kuru denemesinde gerçek veriyle doğrulandı
+// (iade edilmemiş 32.009 siparişin 31.966'sında satış − kesinti = Trendyol'un ödeyeceği; kalanlar kurumsal fatura kayıtlarıydı, eklendi).
+const PZ_KOMISYON_ACIK=true;
 // Trendyol işlem türünü İngilizce ya da Türkçe gelmesinden bağımsız tanır: satis | iade | indirim | indirimIptal | diger
 function pzIslemTuru(k){const t=String((k&&k.transactionType)||"").trim().toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/ş/g,"s").replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ü/g,"u").replace(/ö/g,"o").replace(/[\s_-]+/g,"");
   if(t==="sale"||t==="satis")return "satis";if(t==="return"||t==="iade")return "iade";
@@ -2968,7 +2969,10 @@ function pzIslemTuru(k){const t=String((k&&k.transactionType)||"").trim().toLoca
 // Yön: alacak > borç ise +1, değilse −1 (ikisi de 0 ise işlem türüne göre).
 function pzKayitYon(k){const a=(Number(k.credit)||0)-(Number(k.debt)||0);if(a>0)return 1;if(a<0)return -1;return /^(iade|indirim)$/.test(pzIslemTuru(k))?-1:1}
 // Bu kaydın Trendyol kesintisine katkısı (satışta +komisyon, indirim/iadede −komisyon: Trendyol o kısmın komisyonunu geri verir)
-function pzKayitKesinti(k){const y=pzKayitYon(k);const kom=Number(k.commissionAmount);if(isFinite(kom)&&k.commissionAmount!=null&&k.commissionAmount!=="")return y*Math.abs(kom);
+function pzKayitKesinti(k){const y=pzKayitYon(k);
+  // Komisyonsuz diğer kayıtlar (ör. "Kurumsal Fatura - Trendyol Promosyon/Kupon"): tutarın tamamı hakedişi etkiler → borçsa kesinti, alacaksa kesinti iadesi
+  if(pzIslemTuru(k)==="diger"&&!(Math.abs(Number(k.commissionAmount))>0)){const sr=Number(k.sellerRevenue);const t=isFinite(sr)&&k.sellerRevenue!=null&&k.sellerRevenue!==""?Math.abs(sr):Math.abs((Number(k.credit)||0)-(Number(k.debt)||0));return -y*t}
+  const kom=Number(k.commissionAmount);if(isFinite(kom)&&k.commissionAmount!=null&&k.commissionAmount!=="")return y*Math.abs(kom);
   const tutar=Math.abs((Number(k.credit)||0)-(Number(k.debt)||0)),sr=Number(k.sellerRevenue);return isFinite(sr)?y*(tutar-Math.abs(sr)):0}
 // Bu kaydın satıcıya ödenecek tutara katkısı (işaretli satıcı hakedişi)
 function pzKayitHakedis(k){const sr=Number(k.sellerRevenue);return isFinite(sr)?pzKayitYon(k)*Math.abs(sr):0}
