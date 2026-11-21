@@ -3583,7 +3583,11 @@ async function pzUrunGovde(u,p){
     images:gor.map(url=>({url})),attributes:ozl.map(([id,v])=>v.degerId?{attributeId:sayi(id),attributeValueId:sayi(v.degerId)}:{attributeId:sayi(id),customAttributeValue:v.deger})}]}};
   if(p==="n11"){const ay=pzUrunAyar().n11||{};if(!String(ay.sablon||"").trim())ek.push("N11 kargo şablonu adı (Ürün açma ayarları)");
     const at=ozl.map(([id,v])=>({id:sayi(id),valueId:v.degerId?sayi(v.degerId):null,customValue:v.degerId?null:v.deger}));
-    if(markaOz&&mk)at.push({id:sayi(markaOz.id),valueId:mk.id?sayi(mk.id):null,customValue:mk.id?null:mk.ad});else if(markaOz&&markaOz.zorunlu&&!mk)ek.push("N11 marka eşleştirmesi");
+    // N11 marka numaraları kategoriye göre değişir: eşleştirilen numara bu kategorinin listesinde yoksa marka adıyla (serbest) gönderilir
+    // (2026-11-21: "Seyfi Kırtasiye" 16562030, Yazar Kasa ve Termal Rulolar kategorisinde yoktu → N11 reddetti)
+    const mkListede=!!(mk&&mk.id&&markaOz&&(markaOz.degerler||[]).some(d=>String(d.id)===String(mk.id)));
+    if(markaOz&&mk&&mk.id&&!mkListede&&!markaOz.serbest)ek.push(`N11 marka “${mk.ad}” bu kategoride yok`);
+    if(markaOz&&mk)at.push({id:sayi(markaOz.id),valueId:mkListede?sayi(mk.id):null,customValue:mkListede?null:mk.ad});else if(markaOz&&markaOz.zorunlu&&!mk)ek.push("N11 marka eşleştirmesi");
     return {ek,govde:{payload:{integrator:"Arvenato",skus:[{title:ad,description:acikHtml,categoryId:sayi(e&&e.id),currencyType:"TL",productMainId:ana,preparingDay:Number(ay.hazirlik)||1,shipmentTemplate:String(ay.sablon||"").trim(),stockCode:kod,barcode:bk,quantity:stok,
       images:gor.map((url,i)=>({url,order:i+1})),attributes:at,salePrice:fiyat,listPrice:fiyat,vatRate:kdv}]}}}}
   if(p==="pazarama"){// Grup kodu en fazla 10 karakter: uzunsa stok kodundan kısa ve sabit bir kod üretilir
