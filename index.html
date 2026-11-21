@@ -3857,7 +3857,7 @@ async function pzOECalis(){
         pzOEYaz(true);pzOECiz()}}
     if(mk&&!kes()){const markalar=say("marka").filter(m=>pzl.some(p=>!pzEsMarka(m,p)&&yok("marka",m,p)));let n=0;
       const tek=async(m,p)=>{const g={islem:"markaAra",pazaryeri:p,ad:m};if(p==="n11"){const kid=pzOEN11Kat(m);if(kid)g.kategoriId=kid}
-        try{const r=await pzCagir(g);const l=(r.markalar||[]).slice(0,8).map(x=>({id:x.id,ad:x.ad}));const tam=l.findIndex(x=>_norm(x.ad)===_norm(m));
+        try{const r=await pzCagir(g);const l=(r.markalar||[]).slice(0,10).map(x=>({id:x.id,ad:x.ad,p:x.p}));const bos=s=>_norm(s).replace(/ /g,"");const tam=l.findIndex(x=>(x.p!=null&&x.p<=1)||bos(x.ad)===bos(m));
           if(tam<0&&p==="n11"&&r.serbest)l.push({id:"",ad:m,serbest:true});
           pzOE.satir.push({tur:"marka",ad:m,p,aday:l,net:tam>=0,sec:tam>=0?tam:"",not:l.length?"":(r.not||"pazaryerinde bulunamadı")})}
         catch(e){/* hata: satır eklenmez, "Devam et" ile yeniden denenir */pzOE.hata=`Son hata (${PZ_ADLAR[p]} · ${m}): ${e.message||e}`}};
@@ -3873,7 +3873,7 @@ async function pzOECalis(){
 async function pzOEKatYukle(p){if(pzOE.katListe[p])return;try{pzOE.katListe[p]=await pzKategoriler(p)}catch(e){pzOE.katListe[p]={hata:e.message||String(e)}}}
 async function pzOEMarkaAra(r){const ad=String(pzOE.araQ||"").trim();if(ad.length<2){pzOE.araMarka=[];pzOE.araMarkaDurum="En az 2 harf yazın.";return}
   pzOE.araMarka=null;pzOE.araMarkaDurum="Aranıyor…";const g={islem:"markaAra",pazaryeri:r.p,ad};if(r.p==="n11"){const kid=pzOEN11Kat(r.ad);if(kid)g.kategoriId=kid}
-  try{const s=await pzCagir(g);const l=(s.markalar||[]).map(x=>({id:x.id,ad:x.ad}));if(r.p==="n11"&&s.serbest&&!l.some(x=>_norm(x.ad)===_norm(ad)))l.push({id:"",ad,serbest:true});
+  try{const s=await pzCagir(g);const l=(s.markalar||[]).map(x=>({id:x.id,ad:x.ad,p:x.p}));if(r.p==="n11"&&s.serbest&&!l.some(x=>_norm(x.ad)===_norm(ad)))l.push({id:"",ad,serbest:true});
     pzOE.araMarka=l;pzOE.araMarkaDurum=l.length?"":(s.not||"Bulunamadı; farklı yazımla deneyin.")}catch(e){pzOE.araMarka=[];pzOE.araMarkaDurum="Hata: "+(e.message||e)}}
 function pzOEAraSonuclar(r){
   if(r.tur==="kategori"){const L=pzOE.katListe[r.p];if(!L||L.hata)return null;const q=_norm(pzOE.araQ).split(" ").filter(Boolean);if(!q.length||_norm(pzOE.araQ).length<2)return [];
@@ -3914,7 +3914,7 @@ async function pzOtoEsModal(){  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_
     <div class="muted" style="font-size:.88rem">Henüz eşleşmemiş kategori ve markalar için pazaryerlerinde öneri aranır. Tarama <b>arka planda</b> sürer: bu pencereyi kapatıp programda çalışmaya devam edebilirsiniz; bitince haber verilir. Sonuçlar bu bilgisayarda saklanır. <b>Kaydet</b>'e basana kadar eşleştirme kaydedilmez; pazaryerlerine hiçbir şey gönderilmez.</div>
     <div class="filters"><label><input type="checkbox" id="oeKat" ${A.kat?"checked":""}> Kategoriler + zorunlu özellikler</label><label><input type="checkbox" id="oeMarka" ${A.mk?"checked":""}> Markalar</label></div>
     <div class="filters">${PZ_ES_PZ.map(p=>`<label><input type="checkbox" data-oepz="${p}" ${A.pzl.includes(p)?"checked":""}> ${esc(PZ_ADLAR[p])}</label>`).join("")}</div>
-    <div class="filters"><button class="primary small" data-m="basla" type="button">Önerileri bul</button><button class="small" data-m="dur" type="button">Durdur</button><button class="small ghost" data-m="sifirla" type="button">Sonuçları sil</button><span id="oeDurum" class="muted" style="font-size:.85rem"></span></div>
+    <div class="filters"><button class="primary small" data-m="basla" type="button">Önerileri bul</button><button class="small" data-m="dur" type="button">Durdur</button><button class="small" data-m="markaYeni" type="button" title="Seçilmemiş marka satırlarını silip markaları geliştirilmiş aramayla (farklı yazımlar dahil) yeniden arar; kategori seçimlerine dokunmaz">🔁 Eşleşmeyen markaları yeniden ara</button><button class="small ghost" data-m="sifirla" type="button">Sonuçları sil</button><span id="oeDurum" class="muted" style="font-size:.85rem"></span></div>
     <div id="oeSonuc"></div><div class="err" id="oeErr"></div>
     <div class="modal-foot"><button type="button" data-m="close">Kapat (tarama sürer)</button><button type="button" class="primary" data-m="kaydet" disabled>Seçilenleri kaydet</button></div>`,
   root=>{root.style.maxWidth="1000px";const $=s=>root.querySelector(s);
@@ -3922,7 +3922,7 @@ async function pzOtoEsModal(){  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_
     const ciz=()=>{if(!root.isConnected){pzOE.ciz=null;return}
       const S=pzOE.satir,sec=S.filter(r=>r.sec!=="").length;
       $("#oeDurum").textContent=(pzOE.calisiyor?"⏳ ":"")+pzOE.durum;$("#oeErr").textContent=pzOE.hata;
-      $('[data-m="basla"]').disabled=pzOE.calisiyor;$('[data-m="dur"]').disabled=!pzOE.calisiyor;$('[data-m="sifirla"]').disabled=pzOE.calisiyor||pzOE.kayit||!S.length;
+      $('[data-m="basla"]').disabled=pzOE.calisiyor;$('[data-m="dur"]').disabled=!pzOE.calisiyor;$('[data-m="sifirla"]').disabled=pzOE.calisiyor||pzOE.kayit||!S.length;$('[data-m="markaYeni"]').disabled=pzOE.calisiyor||pzOE.kayit;
       $('[data-m="basla"]').textContent=S.length&&!pzOE.bitti?"Devam et":S.length?"Yeniden tara (eksikleri)":"Önerileri bul";
       const kb=$('[data-m="kaydet"]');kb.disabled=pzOE.kayit||!sec;kb.textContent=pzOE.kayit?"⏳ "+pzOE.kayitDurum:`Seçilenleri kaydet (${sec})`;
       if(!S.length){$("#oeSonuc").innerHTML="";return}
@@ -3938,7 +3938,7 @@ async function pzOtoEsModal(){  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_
       const tumSec=`<button class="small" data-oetab="hepsiBos" type="button">Bu listede seçimleri temizle</button>`;
       $("#oeSonuc").innerHTML=`<div class="filters" role="tablist">${pzSek}</div><div class="filters">${turSek}${filSek}${tumSec}<span class="muted" style="font-size:.82rem">Toplam ${sec} seçili (tüm pazaryerleri)</span></div>
         <div class="tscroll" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Programdaki ${sTur==="kategori"?"kategori":"marka"}</th><th>${esc(PZ_ADLAR[sPz])}'daki karşılığı</th></tr></thead><tbody>
-        ${gor.map(([r,i])=>`<tr><td><b>${esc(r.ad)}</b>${r.net?` <span class="muted" style="font-size:.75rem">✓ net</span>`:""}</td><td>${r.aday.length?`<select data-oe="${i}" style="max-width:600px;width:100%"><option value="">— boş bırak —</option>${r.aday.map((a,j)=>`<option value="${j}" ${String(r.sec)===String(j)?"selected":""}>${esc(r.tur==="kategori"?a.yol:(a.serbest?"“"+a.ad+"” olarak serbest yaz":a.ad+" ("+a.id+")"))}</option>`).join("")}</select>`:`<span class="muted" style="font-size:.8rem">${esc(r.not||"öneri yok · elle eşleştirin")}</span>`} <button class="small" data-oetab="ara" data-i="${i}" type="button" title="Doğru karşılığı kendiniz arayın">🔍 Ara</button></td></tr>${pzOE.araI===i?`<tr><td colspan="2" style="background:var(--soft,#f5f7f6)"><div class="filters"><input data-oeara value="${esc(pzOE.araQ)}" placeholder="${r.tur==="kategori"?esc(PZ_ADLAR[r.p])+" kategorisi ara (en az 2 harf)":esc(PZ_ADLAR[r.p])+"'da marka adı yazıp Enter'a basın"}" style="flex:1;min-width:240px">${r.tur==="marka"?`<button class="small primary" data-oetab="markaAra" type="button">Ara</button>`:""}<button class="small" data-oetab="araKapat" type="button">Kapat</button></div><div id="oeAraSonuc" style="max-height:240px;overflow:auto;font-size:.88rem">${pzOEAraHtml(r)}</div></td></tr>`:""}`).join("")||`<tr><td colspan="2" class="empty">Bu listede satır yok.</td></tr>`}
+        ${gor.map(([r,i])=>`<tr><td><b>${esc(r.ad)}</b>${r.net?` <span class="muted" style="font-size:.75rem">✓ net</span>`:""}</td><td>${r.aday.length?`<select data-oe="${i}" style="max-width:600px;width:100%"><option value="">— boş bırak —</option>${r.aday.map((a,j)=>`<option value="${j}" ${String(r.sec)===String(j)?"selected":""}>${esc(r.tur==="kategori"?a.yol:(a.serbest?"“"+a.ad+"” olarak serbest yaz (önerilmez)":(a.p>=2?"≈ ":"")+a.ad+" ("+a.id+")"))}</option>`).join("")}</select>`:`<span class="muted" style="font-size:.8rem">${esc(r.not||"öneri yok · elle eşleştirin")}</span>`} <button class="small" data-oetab="ara" data-i="${i}" type="button" title="Doğru karşılığı kendiniz arayın">🔍 Ara</button></td></tr>${pzOE.araI===i?`<tr><td colspan="2" style="background:var(--soft,#f5f7f6)"><div class="filters"><input data-oeara value="${esc(pzOE.araQ)}" placeholder="${r.tur==="kategori"?esc(PZ_ADLAR[r.p])+" kategorisi ara (en az 2 harf)":esc(PZ_ADLAR[r.p])+"'da marka adı yazıp Enter'a basın"}" style="flex:1;min-width:240px">${r.tur==="marka"?`<button class="small primary" data-oetab="markaAra" type="button">Ara</button>`:""}<button class="small" data-oetab="araKapat" type="button">Kapat</button></div><div id="oeAraSonuc" style="max-height:240px;overflow:auto;font-size:.88rem">${pzOEAraHtml(r)}</div></td></tr>`:""}`).join("")||`<tr><td colspan="2" class="empty">Bu listede satır yok.</td></tr>`}
         </tbody></table></div>`;
       const yk=$("#oeSonuc .tscroll");if(yk)yk.scrollTop=kay};
     pzOE.ciz=ciz;ciz();
@@ -3965,6 +3965,7 @@ async function pzOtoEsModal(){  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_
       if(m==="close"){pzOE.ciz=null;return closeModal()}
       if(m==="dur"){pzOE.dur=true;pzOE.durum="Durduruluyor…";ciz();return}
       if(m==="sifirla"){if(!confirm("Bulunan öneriler silinsin mi? (Kaydedilmiş eşleştirmeler etkilenmez.)"))return;pzOE.satir.splice(0);pzOE.bitti=false;pzOE.durum="";pzOE.hata="";pzOEYaz(true);ciz();return}
+      if(m==="markaYeni"){if(pzOE.calisiyor||pzOE.kayit)return;const pzl=PZ_ES_PZ.filter(p=>root.querySelector(`[data-oepz="${p}"]`).checked);if(!pzl.length)return;for(let j=pzOE.satir.length-1;j>=0;j--){const r=pzOE.satir[j];if(r.tur==="marka"&&r.sec===""&&pzl.includes(r.p))pzOE.satir.splice(j,1)}pzOE.ayar={pzl,kat:false,mk:true};pzOE.sTur="marka";pzOEYaz(true);pzOECalis();return}
       if(m==="basla")return basla();if(m==="kaydet")return pzOEKaydet()})})}
 function pzKomisyonModal(){
   openModal(`<div class="section-head"><h2>Pazaryeri komisyon oranları</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
