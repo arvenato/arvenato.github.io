@@ -4632,7 +4632,10 @@ function sbMesaj(e){const m=(e&&(e.message||e.error_description))||"";
   if(/Invalid login credentials/i.test(m))return "E-posta veya şifre hatalı.";
   if(/Email not confirmed/i.test(m))return "E-postanız henüz onaylanmamış. Gelen kutunuzdaki onay bağlantısına tıklayın.";
   if(/User already registered/i.test(m))return "Bu e-postayla zaten bir hesap var. Giriş yapın.";
-  if(/Password should be at least/i.test(m))return "Şifre en az 6 karakter olmalı.";
+  if(/Password should be at least|Password should contain|weak.?password/i.test(m))return "Şifre kurallara uymuyor: "+SIFRE_KURAL_METNI;
+  if(/should be different from the old/i.test(m))return "Yeni şifre eski şifrenizle aynı olamaz.";
+  if(/invalid.*(totp|code)|code.*(invalid|expired)|mfa_verification_failed/i.test(m))return "Kod hatalı ya da süresi geçmiş. Uygulamadaki güncel kodu yazın.";
+  if(/aal2|AAL2/.test(m))return "Bu işlem için önce iki adımlı doğrulama kodunu girmeniz gerekiyor.";
   if(/rate limit|too many/i.test(m))return "Çok fazla deneme yapıldı. Birkaç dakika bekleyip tekrar deneyin.";
   if(/Failed to fetch|NetworkError|network/i.test(m))return "Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edin.";
   if(/relation .* does not exist|function .* does not exist|schema cache/i.test(m))return "Veritabanı kurulumu tamamlanmamış. schema.sql dosyasını Supabase SQL Editor'da çalıştırın.";
@@ -4642,7 +4645,7 @@ function girisEkrani(mod){mod=mod||"giris";
   kapiGoster(`<h2>${baslik}</h2>
     <form id="gForm" style="display:flex;flex-direction:column;gap:10px" novalidate>
       <div class="field"><label for="gEposta">E-posta</label><input id="gEposta" type="email" autocomplete="email" required></div>
-      ${mod!=="unuttum"?`<div class="field"><label for="gSifre">Şifre</label><input id="gSifre" type="password" autocomplete="${mod==="kayit"?"new-password":"current-password"}" minlength="6" required></div>`:""}
+      ${mod!=="unuttum"?`<div class="field"><label for="gSifre">Şifre</label><input id="gSifre" type="password" autocomplete="${mod==="kayit"?"new-password":"current-password"}" ${mod==="kayit"?'minlength="12"':""} required>${mod==="kayit"?`<div class="muted" style="font-size:.8rem">${SIFRE_KURAL_METNI}</div>`:""}</div>`:""}
       <div class="err" id="gErr" role="alert"></div><div class="muted" id="gBilgi" role="status" style="font-size:.88rem"></div>
       <button class="primary" type="submit" id="gBtn">${mod==="giris"?"Giriş yap":mod==="kayit"?"Hesap oluştur":"Sıfırlama bağlantısı gönder"}</button>
     </form>
@@ -4653,18 +4656,80 @@ function girisEkrani(mod){mod=mod||"giris";
   kapi.querySelector("#gForm").addEventListener("submit",async e=>{e.preventDefault();const er=kapi.querySelector("#gErr"),bi=kapi.querySelector("#gBilgi"),btn=kapi.querySelector("#gBtn");er.textContent="";bi.textContent="";
     const ep=kapi.querySelector("#gEposta").value.trim(),sf=kapi.querySelector("#gSifre")?kapi.querySelector("#gSifre").value:"";
     if(!/^\S+@\S+\.\S+$/.test(ep)){er.textContent="Geçerli bir e-posta girin.";return}
-    if(mod!=="unuttum"&&sf.length<6){er.textContent="Şifre en az 6 karakter olmalı.";return}
+    if(mod==="giris"&&!sf){er.textContent="Şifrenizi yazın.";return}
+    if(mod==="kayit"){const h=sifreKuralHata(sf);if(h){er.textContent=h;return}}
     btn.disabled=true;
     try{const yonlen=location.origin+location.pathname;
-      if(mod==="giris"){const {data,error}=await sb.auth.signInWithPassword({email:ep,password:sf});if(error)throw error;oturum=data.session;await firmaSec()}
-      else if(mod==="kayit"){const {data,error}=await sb.auth.signUp({email:ep,password:sf,options:{emailRedirectTo:yonlen}});if(error)throw error;
-        if(data.session){oturum=data.session;await firmaSec()}else{bi.textContent="Hesabınız oluşturuldu. E-postanıza gelen onay bağlantısına tıklayın, sonra buradan giriş yapın.";btn.disabled=false}}
+      // Giriş: eski (kurallara uymayan) şifreyle girilebilir ama hemen yeni şifre belirlemek gerekir
+      if(mod==="giris"){const {data,error}=await sb.auth.signInWithPassword({email:ep,password:sf});if(error)throw error;oturum=data.session;_girisSifreZayif=!!sifreKuralHata(sf);await guvenlikKapisi()}
+      else if(mod==="kayit"){const {data,error}=await sb.auth.signUp({email:ep,password:sf,options:{emailRedirectTo:yonlen,data:{sifreTarihi:new Date().toISOString()}}});if(error)throw error;
+        if(data.session){oturum=data.session;await guvenlikKapisi()}else{bi.textContent="Hesabınız oluşturuldu. E-postanıza gelen onay bağlantısına tıklayın, sonra buradan giriş yapın.";btn.disabled=false}}
       else{const {error}=await sb.auth.resetPasswordForEmail(ep,{redirectTo:yonlen});if(error)throw error;bi.textContent="Şifre sıfırlama bağlantısı e-postanıza gönderildi.";btn.disabled=false}}
     catch(err){er.textContent=sbMesaj(err);btn.disabled=false}});
 }
-function sifreYenileEkrani(){kapiGoster(`<h2>Yeni şifre belirleyin</h2><form id="ySForm" style="display:flex;flex-direction:column;gap:10px"><div class="field"><label for="ySifre">Yeni şifre</label><input id="ySifre" type="password" autocomplete="new-password" minlength="6"></div><div class="err" id="yErr" role="alert"></div><button class="primary" type="submit">Şifreyi kaydet</button></form>`);
-  kapi.querySelector("#ySForm").addEventListener("submit",async e=>{e.preventDefault();const s=kapi.querySelector("#ySifre").value;const er=kapi.querySelector("#yErr");if(s.length<6){er.textContent="Şifre en az 6 karakter olmalı.";return}
-    const {error}=await sb.auth.updateUser({password:s});if(error){er.textContent=sbMesaj(error);return}toast("Şifreniz güncellendi");await firmaSec()})}
+/* ---------- Hesap güvenliği (Amazon SP-API veri koruma şartları) ----------
+   1) Şifre: en az 12 karakter; büyük + küçük harf, rakam, özel karakter (sunucuda da aynı kural: Supabase › Auth › Password).
+   2) Şifre en geç 365 günde bir yenilenir (tarih: kullanıcı bilgisinde sifreTarihi). Kurala uymayan eski şifreyle girilirse hemen yenilenir.
+   3) İki adımlı doğrulama (TOTP, telefondaki doğrulama uygulaması) HERKES için zorunlu: kurulmamışsa girişten sonra kurdurulur,
+      kuruluysa her yeni girişte 6 haneli kod istenir. Telefon kaybolursa yönetici Supabase › Authentication › Users'tan doğrulamayı sıfırlar. */
+const SIFRE_GUN=365,SIFRE_KURAL_METNI="En az 12 karakter; büyük harf, küçük harf, rakam ve özel karakter (ör. ! ? . * - _ @ #) içermeli.";
+let _girisSifreZayif=false;
+function sifreKuralHata(s){s=String(s||"");
+  if(s.length<12)return "Şifre en az 12 karakter olmalı.";
+  if(!/[a-zçğıöşü]/.test(s)||!/[A-ZÇĞİÖŞÜ]/.test(s))return "Şifrede en az bir büyük ve bir küçük harf olmalı.";
+  if(!/[0-9]/.test(s))return "Şifrede en az bir rakam olmalı.";
+  if(!/[!-\/:-@\[-`{-~]/.test(s))return "Şifrede en az bir özel karakter olmalı (ör. ! ? . * - _ @ #).";
+  return ""}
+function sifreSuresiDoldu(u){const t=Date.parse((u&&u.user_metadata&&u.user_metadata.sifreTarihi)||"");return !isFinite(t)||Date.now()-t>SIFRE_GUN*86400000}
+const kapiCikisBagla=()=>{const c=kapi.querySelector("[data-cikis]");if(c)c.onclick=cikisYap};
+// Girişten sonra sırayla: iki adımlı doğrulama → şifre kuralı / süresi → firma
+async function guvenlikKapisi(){
+  try{const {data:a,error}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();if(error)throw error;
+    if(a.currentLevel!=="aal2")return a.nextLevel==="aal2"?mfaKodEkrani(guvenlikKapisi):mfaKurEkrani();
+    const {data:{user}}=await sb.auth.getUser();
+    if(_girisSifreZayif)return sifreYenileEkrani("kural");
+    if(sifreSuresiDoldu(user))return sifreYenileEkrani("sure");
+    return await firmaSec()}
+  catch(err){kapiGoster(`<h2>Bağlantı sorunu</h2><div class="err">${esc(sbMesaj(err))}</div><button class="primary" type="button" id="gkTekrar">Tekrar dene</button><button class="ghost small" type="button" data-cikis>Çıkış yap</button>`);kapi.querySelector("#gkTekrar").onclick=guvenlikKapisi;kapiCikisBagla()}}
+async function mfaKurEkrani(){kapiGoster(`<div class="empty">İki adımlı doğrulama hazırlanıyor…</div>`);
+  // Yarım kalmış (doğrulanmamış) eski kurulumlar silinir
+  try{const {data:l}=await sb.auth.mfa.listFactors();for(const f of ((l&&l.all)||[]).filter(f=>f.status!=="verified"))await sb.auth.mfa.unenroll({factorId:f.id})}catch(e){}
+  const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",issuer:"Arvenato",friendlyName:"Arvenato "+Date.now()});
+  if(error){kapiGoster(`<h2>İki adımlı doğrulama</h2><div class="err">${esc(sbMesaj(error))}</div><button class="primary" type="button" id="mTekrar">Tekrar dene</button><button class="ghost small" type="button" data-cikis>Çıkış yap</button>`);kapi.querySelector("#mTekrar").onclick=mfaKurEkrani;kapiCikisBagla();return}
+  kapiGoster(`<h2>İki adımlı doğrulamayı açın</h2>
+    <div class="muted" style="font-size:.88rem">Hesabınızı korumak için girişte şifrenin yanında telefonunuzdaki 6 haneli kod da istenecek. Telefonunuza <b>Google Authenticator</b> ya da <b>Microsoft Authenticator</b> uygulamasını kurun, uygulamada <b>+</b> ile aşağıdaki kare kodu okutun.</div>
+    <div style="text-align:center"><img src="${esc(data.totp.qr_code)}" alt="İki adımlı doğrulama kare kodu" width="200" height="200" style="background:#fff;padding:8px;border-radius:8px"></div>
+    <details style="font-size:.8rem"><summary>Kare kod okunmuyor mu?</summary><div style="word-break:break-all;margin-top:4px">Uygulamada "kurulum anahtarı gir"i seçip bu anahtarı yazın: <b style="font-family:var(--font-num)">${esc(data.totp.secret)}</b></div></details>
+    <form id="mForm" style="display:flex;flex-direction:column;gap:10px"><div class="field"><label for="mKod">Uygulamada görünen 6 haneli kod</label><input id="mKod" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"></div><div class="err" id="mErr" role="alert"></div><button class="primary" type="submit">Doğrula ve aç</button></form>
+    <button class="ghost small" type="button" data-cikis>Çıkış yap</button>`);
+  kapiCikisBagla();
+  kapi.querySelector("#mForm").addEventListener("submit",async e=>{e.preventDefault();const k=kapi.querySelector("#mKod").value.replace(/\D/g,""),er=kapi.querySelector("#mErr");if(k.length!==6){er.textContent="6 haneli kodu yazın.";return}
+    const b=e.target.querySelector("button");b.disabled=true;const {error:ve}=await sb.auth.mfa.challengeAndVerify({factorId:data.id,code:k});b.disabled=false;
+    if(ve){er.textContent=sbMesaj(ve);return}toast("İki adımlı doğrulama açıldı");await guvenlikKapisi()})}
+async function mfaKodEkrani(sonra){const {data:l}=await sb.auth.mfa.listFactors();const f=((l&&l.totp)||[]).find(x=>x.status==="verified");if(!f)return mfaKurEkrani();
+  kapiGoster(`<h2>Doğrulama kodu</h2><div class="muted" style="font-size:.88rem">Telefonunuzdaki doğrulama uygulamasında <b>Arvenato</b> satırında görünen 6 haneli kodu yazın.</div>
+    <form id="mForm" style="display:flex;flex-direction:column;gap:10px"><div class="field"><label for="mKod">6 haneli kod</label><input id="mKod" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div><div class="err" id="mErr" role="alert"></div><button class="primary" type="submit">Devam</button></form>
+    <div class="muted" style="font-size:.78rem">Telefonunuzu kaybettiyseniz firma yöneticisinin iki adımlı doğrulamanızı sıfırlaması gerekir.</div>
+    <button class="ghost small" type="button" data-cikis>Çıkış yap</button>`);
+  kapiCikisBagla();
+  kapi.querySelector("#mForm").addEventListener("submit",async e=>{e.preventDefault();const k=kapi.querySelector("#mKod").value.replace(/\D/g,""),er=kapi.querySelector("#mErr");if(k.length!==6){er.textContent="6 haneli kodu yazın.";return}
+    const b=e.target.querySelector("button");b.disabled=true;const {error}=await sb.auth.mfa.challengeAndVerify({factorId:f.id,code:k});b.disabled=false;
+    if(error){er.textContent=sbMesaj(error);return}await (sonra||guvenlikKapisi)()})}
+async function sifreYenileEkrani(neden){
+  // İki adımlı doğrulama kurulu ama bu oturumda kod girilmemişse (ör. e-postadaki sıfırlama bağlantısı) önce kod istenir
+  try{const {data:a}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();if(a&&a.nextLevel==="aal2"&&a.currentLevel!=="aal2")return mfaKodEkrani(()=>sifreYenileEkrani(neden))}catch(e){}
+  const aciklama={kural:"Şifre kurallarımız güncellendi. Devam etmek için yeni kurallara uyan bir şifre belirleyin.",sure:"Güvenlik için şifreler yılda bir yenileniyor. Devam etmek için yeni bir şifre belirleyin.",degistir:"",kurtarma:""}[neden]||"";
+  kapiGoster(`<h2>Yeni şifre belirleyin</h2>${aciklama?`<div class="notice" style="font-size:.88rem">${aciklama}</div>`:""}
+    <form id="ySForm" style="display:flex;flex-direction:column;gap:10px"><div class="field"><label for="ySifre">Yeni şifre</label><input id="ySifre" type="password" autocomplete="new-password" minlength="12"><div class="muted" style="font-size:.8rem">${SIFRE_KURAL_METNI}</div></div>
+      <div class="field"><label for="ySifre2">Yeni şifre (tekrar)</label><input id="ySifre2" type="password" autocomplete="new-password" minlength="12"></div>
+      <div class="err" id="yErr" role="alert"></div><button class="primary" type="submit">Şifreyi kaydet</button></form>
+    ${neden==="degistir"?`<button class="ghost small" type="button" id="yVaz">Vazgeç</button>`:`<button class="ghost small" type="button" data-cikis>Çıkış yap</button>`}`);
+  kapiCikisBagla();const vz=kapi.querySelector("#yVaz");if(vz)vz.onclick=()=>guvenlikKapisi();
+  kapi.querySelector("#ySForm").addEventListener("submit",async e=>{e.preventDefault();const s=kapi.querySelector("#ySifre").value,s2=kapi.querySelector("#ySifre2").value,er=kapi.querySelector("#yErr");
+    const h=sifreKuralHata(s);if(h){er.textContent=h;return}if(s!==s2){er.textContent="İki şifre aynı değil.";return}
+    const b=e.target.querySelector("button");b.disabled=true;
+    const {error}=await sb.auth.updateUser({password:s,data:{sifreTarihi:new Date().toISOString()}});b.disabled=false;if(error){er.textContent=sbMesaj(error);return}
+    _girisSifreZayif=false;toast("Şifreniz güncellendi");await guvenlikKapisi()})}
 async function firmaSec(liste){
   kapiGoster(`<div class="empty">Firma bilgileri yükleniyor…</div>`);
   const {data,error}=await sb.from("firma_uyeleri").select("firma_id,rol,firmalar(ad)").eq("user_id",oturum.user.id);
@@ -4890,7 +4955,7 @@ function hesapModal(){
     if(m==="pzayar"){closeModal();return pazaryeriAyarModal()}
     if(m==="yedek"){closeModal();return yedekAl()}
     if(m==="geri"){closeModal();return yedekYukleModal()}
-    if(m==="sifre"){closeModal();return sifreYenileEkrani()}
+    if(m==="sifre"){closeModal();return sifreYenileEkrani("degistir")}
     if(m==="cikis"){closeModal();return cikisYap()}}));
 }
 async function kullanicilarModal(){
@@ -4911,11 +4976,11 @@ async function uygulamaBaslat(){
   if(!window.supabase){kapiGoster(`<h2>Bağlantı kurulamadı</h2><div class="muted">Uygulama dosyaları yüklenemedi. İnternet bağlantınızı kontrol edip sayfayı yenileyin.</div><button class="primary" type="button" onclick="location.reload()">Yenile</button>`);return}
   sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   let kurtarma=/type=recovery/.test(location.hash);
-  sb.auth.onAuthStateChange((ev,s)=>{if(ev==="PASSWORD_RECOVERY"){kurtarma=true;oturum=s;sifreYenileEkrani()}else if(ev==="SIGNED_OUT"){oturum=null}else if(s)oturum=s});
+  sb.auth.onAuthStateChange((ev,s)=>{if(ev==="PASSWORD_RECOVERY"){kurtarma=true;oturum=s;sifreYenileEkrani("kurtarma")}else if(ev==="SIGNED_OUT"){oturum=null}else if(s)oturum=s});
   const {data:{session}}=await sb.auth.getSession();oturum=session;
-  if(kurtarma&&oturum)return sifreYenileEkrani();
+  if(kurtarma&&oturum)return sifreYenileEkrani("kurtarma");
   if(!oturum)return girisEkrani();
-  await firmaSec();
+  await guvenlikKapisi();
 }
 window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();kurulumOlayi=e});
 if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
