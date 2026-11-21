@@ -3755,7 +3755,7 @@ function pzOzVarsayilan(ozl){const z=ozl.filter(o=>o.zorunlu&&!pzMarkaOz(o)),oz=
   return {oz,zorunluSay:z.length}}
 // Otomatik eşleştirme işi pencereden bağımsızdır: pencere kapansa da arka planda sürer; sonuçlar bu bilgisayarda (firma başına) saklanır,
 // sayfa yenilenirse "Devam et" ile kalan kısımdan sürer. Kaydedilen satırlar listeden düşer.
-const pzOE={firma:null,yuklendi:false,satir:[],ayar:null,bitti:false,calisiyor:false,dur:false,kayit:false,durum:"",hata:"",sPz:"",sTur:"kategori",sFil:"",ciz:null};
+const pzOE={firma:null,yuklendi:false,satir:[],ayar:null,bitti:false,calisiyor:false,dur:false,kayit:false,kayitDurum:"",durum:"",hata:"",sPz:"",sTur:"kategori",sFil:"",ciz:null};
 const pzOEAnahtar=()=>"otoEs-"+firmaId;
 async function pzOEYukle(){
   if(pzOE.firma===firmaId&&pzOE.yuklendi)return;
@@ -3797,8 +3797,31 @@ async function pzOECalis(){
     pzOE.bitti=!pzOE.dur;pzOE.durum=pzOE.dur?"Durduruldu. “Devam et” ile kalan kısım taranır.":"Bitti. Önerileri kontrol edip kaydedin.";
     if(pzOE.bitti&&!pzOE.ciz)toast("🤖 Otomatik eşleştirme önerileri hazır (Pazaryeri › Kategori eşleştirme › Otomatik eşleştir)")}
   finally{if(firmaId===f){pzOE.calisiyor=false;pzOE.dur=false;pzOEYaz(true);pzOECiz();if(!pzOE.ciz&&/eslesme/.test(pz.sekme||""))render()}}}
-async function pzOtoEsModal(){
-  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_PZ.slice(),kat:true,mk:true};
+// Seçilen önerileri kaydeder (arka planda; pencere kapansa da sürer). Önce markalar, sonra kategoriler 10'arlı parçalarla:
+// her parçanın zorunlu özellikleri okunur ve hemen kaydedilir; kaydedilen satırlar listeden düşer. Yarıda kesilirse kalanlar seçili bekler.
+async function pzOEKaydet(){
+  if(pzOE.kayit)return;const f=firmaId;const sec=pzOE.satir.filter(r=>r.sec!=="");if(!sec.length)return;
+  const yapilan=[];// {r,a,o}: bu çalıştırmada kaydedilenler (her yazışta yeniden uygulanır; ayar belgesi gecikmeli güncellense de kaybolmaz)
+  const uygula=es=>{for(const {r,a,o} of yapilan){
+    if(r.tur==="kategori")(es.kategori[r.ad]=es.kategori[r.ad]||{})[r.p]=Object.assign({id:a.id,yol:a.yol,ozellik:o?o.oz:{},zaman:Date.now(),oto:true},o?{zorunluSay:o.zorunluSay}:{});
+    else (es.marka[r.ad]=es.marka[r.ad]||{})[r.p]=Object.assign({id:a.id,ad:a.ad,zaman:Date.now(),oto:true},a.serbest?{serbest:true}:{})}};
+  const yaz=async parca=>{const es=pzEs();es.kategori=es.kategori||{};es.marka=es.marka||{};uygula(es);await api.setDoc("ayar","pzEslesme",es);
+    const gitti=new Set(parca);for(let j=pzOE.satir.length-1;j>=0;j--)if(gitti.has(pzOE.satir[j]))pzOE.satir.splice(j,1);pzOEYaz(true)};
+  pzOE.kayit=true;pzOE.hata="";let kSay=0,mSay=0,eksik=0;
+  try{
+    const mk=sec.filter(r=>r.tur==="marka"&&r.sec!=="");
+    if(mk.length){pzOE.kayitDurum=`Markalar kaydediliyor… (${mk.length})`;pzOECiz();for(const r of mk)yapilan.push({r,a:r.aday[r.sec]});await yaz(mk);mSay=mk.length;pzOECiz()}
+    const kt=sec.filter(r=>r.tur==="kategori");
+    for(let i=0;i<kt.length;i+=10){if(firmaId!==f)return;
+      const parca=kt.slice(i,i+10).filter(r=>r.sec!==""&&r.aday[r.sec]);
+      for(const [j,r] of parca.entries()){pzOE.kayitDurum=`Zorunlu özellikler okunuyor… ${i+j+1}/${kt.length}`;pzOECiz();const a=r.aday[r.sec];let o=null;
+        try{o=pzOzVarsayilan(await pzOzellikler(r.p,a.id))}catch(_){}
+        if(!o||Object.keys(o.oz).length<o.zorunluSay)eksik++;yapilan.push({r,a,o})}
+      pzOE.kayitDurum=`Kaydediliyor… ${Math.min(i+10,kt.length)}/${kt.length}`;pzOECiz();await yaz(parca);kSay+=parca.length;pzOECiz()}
+    toast(`${kSay} kategori, ${mSay} marka eşleştirmesi kaydedildi`+(eksik?` · ${eksik} kategoride doldurulmamış zorunlu özellik var (Kategori eşleştirme › Durum: Zorunlu özelliği eksik)`:""))}
+  catch(e){pzOE.hata="Kaydetme yarıda kaldı: "+(e.message||String(e))+" · kaydedilmeyenler seçili duruyor, yeniden “Seçilenleri kaydet”e basın."}
+  finally{if(firmaId===f){pzOE.kayit=false;pzOE.kayitDurum="";pzOECiz();if(!pzOE.ciz&&/eslesme/.test(pz.sekme||""))render()}}}
+async function pzOtoEsModal(){  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_PZ.slice(),kat:true,mk:true};
   openModal(`<div class="section-head"><h2>🤖 Otomatik eşleştirme</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">Henüz eşleşmemiş kategori ve markalar için pazaryerlerinde öneri aranır. Tarama <b>arka planda</b> sürer: bu pencereyi kapatıp programda çalışmaya devam edebilirsiniz; bitince haber verilir. Sonuçlar bu bilgisayarda saklanır. <b>Kaydet</b>'e basana kadar eşleştirme kaydedilmez; pazaryerlerine hiçbir şey gönderilmez.</div>
     <div class="filters"><label><input type="checkbox" id="oeKat" ${A.kat?"checked":""}> Kategoriler + zorunlu özellikler</label><label><input type="checkbox" id="oeMarka" ${A.mk?"checked":""}> Markalar</label></div>
@@ -3811,9 +3834,9 @@ async function pzOtoEsModal(){
     const ciz=()=>{if(!root.isConnected){pzOE.ciz=null;return}
       const S=pzOE.satir,sec=S.filter(r=>r.sec!=="").length;
       $("#oeDurum").textContent=(pzOE.calisiyor?"⏳ ":"")+pzOE.durum;$("#oeErr").textContent=pzOE.hata;
-      $('[data-m="basla"]').disabled=pzOE.calisiyor;$('[data-m="dur"]').disabled=!pzOE.calisiyor;$('[data-m="sifirla"]').disabled=pzOE.calisiyor||!S.length;
+      $('[data-m="basla"]').disabled=pzOE.calisiyor;$('[data-m="dur"]').disabled=!pzOE.calisiyor;$('[data-m="sifirla"]').disabled=pzOE.calisiyor||pzOE.kayit||!S.length;
       $('[data-m="basla"]').textContent=S.length&&!pzOE.bitti?"Devam et":S.length?"Yeniden tara (eksikleri)":"Önerileri bul";
-      const kb=$('[data-m="kaydet"]');kb.disabled=pzOE.kayit||!sec;kb.textContent=`Seçilenleri kaydet (${sec})`;
+      const kb=$('[data-m="kaydet"]');kb.disabled=pzOE.kayit||!sec;kb.textContent=pzOE.kayit?"⏳ "+pzOE.kayitDurum:`Seçilenleri kaydet (${sec})`;
       if(!S.length){$("#oeSonuc").innerHTML="";return}
       const sk=$("#oeSonuc .tscroll"),kay=sk?sk.scrollTop:0;
       const pzVar=PZ_ES_PZ.filter(p=>S.some(r=>r.p===p));if(!pzVar.includes(pzOE.sPz))pzOE.sPz=pzVar[0];const sPz=pzOE.sPz,sTur=pzOE.sTur,sFil=pzOE.sFil;
@@ -3836,19 +3859,6 @@ async function pzOtoEsModal(){
     const basla=()=>{const pzl=PZ_ES_PZ.filter(p=>root.querySelector(`[data-oepz="${p}"]`).checked),kat=$("#oeKat").checked,mk=$("#oeMarka").checked;
       if(!pzl.length||(!kat&&!mk)){$("#oeErr").textContent="En az bir pazaryeri ve bir tür seçin.";return}
       pzOE.ayar={pzl,kat,mk};pzOECalis()};
-    const kaydet=async b=>{const sec=pzOE.satir.filter(r=>r.sec!=="");if(!sec.length)return;pzOE.kayit=true;b.disabled=true;
-      try{const katSec=sec.filter(r=>r.tur==="kategori"),ozl={};let i=0;
-        for(const r of katSec){i++;b.textContent=`Zorunlu özellikler okunuyor… ${i}/${katSec.length}`;const a=r.aday[r.sec];
-          try{ozl[r.p+":"+a.id]=pzOzVarsayilan(await pzOzellikler(r.p,a.id))}catch(_){ozl[r.p+":"+a.id]=null}}
-        b.textContent="Kaydediliyor…";
-        await pzEsKaydet(es=>{for(const r of sec){const a=r.aday[r.sec];
-          if(r.tur==="kategori"){const o=ozl[r.p+":"+a.id];(es.kategori[r.ad]=es.kategori[r.ad]||{})[r.p]=Object.assign({id:a.id,yol:a.yol,ozellik:o?o.oz:{},zaman:Date.now(),oto:true},o?{zorunluSay:o.zorunluSay}:{})}
-          else (es.marka[r.ad]=es.marka[r.ad]||{})[r.p]=Object.assign({id:a.id,ad:a.ad,zaman:Date.now(),oto:true},a.serbest?{serbest:true}:{})}});
-        // Kaydedilenler listeden düşer (dizi yerinde güncellenir; arka plandaki tarama aynı diziye eklemeye devam eder)
-        const gitti=new Set(sec);for(let j=pzOE.satir.length-1;j>=0;j--)if(gitti.has(pzOE.satir[j]))pzOE.satir.splice(j,1);pzOEYaz(true);
-        const k=katSec.length,m=sec.length-k,eksik=katSec.filter(r=>{const o=ozl[r.p+":"+r.aday[r.sec].id];return !o||Object.keys(o.oz).length<o.zorunluSay}).length;
-        toast(`${k} kategori, ${m} marka eşleştirmesi kaydedildi`+(eksik?` · ${eksik} kategoride doldurulmamış zorunlu özellik var (Kategori eşleştirme › Durum: Zorunlu özelliği eksik)`:""))}
-      catch(e){pzOE.hata=e.message||String(e)}finally{pzOE.kayit=false;ciz()}};
     root.addEventListener("change",e=>{const s=e.target.closest("[data-oe]");if(s){pzOE.satir[Number(s.dataset.oe)].sec=s.value===""?"":Number(s.value);pzOEYaz(true);s.blur();ciz();return}
       if(e.target.dataset.oetab==="fil"){pzOE.sFil=e.target.value;ciz()}});
     root.addEventListener("click",e=>{const t=e.target.closest("[data-oetab]");
@@ -3858,7 +3868,7 @@ async function pzOtoEsModal(){
       if(m==="close"){pzOE.ciz=null;return closeModal()}
       if(m==="dur"){pzOE.dur=true;pzOE.durum="Durduruluyor…";ciz();return}
       if(m==="sifirla"){if(!confirm("Bulunan öneriler silinsin mi? (Kaydedilmiş eşleştirmeler etkilenmez.)"))return;pzOE.satir.splice(0);pzOE.bitti=false;pzOE.durum="";pzOE.hata="";pzOEYaz(true);ciz();return}
-      if(m==="basla")return basla();if(m==="kaydet")return kaydet(b)})})}
+      if(m==="basla")return basla();if(m==="kaydet")return pzOEKaydet()})})}
 function pzKomisyonModal(){
   openModal(`<div class="section-head"><h2>Pazaryeri komisyon oranları</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">Teslim edilen deneme siparişlerinde komisyon, <b>KDV dahil satış tutarı × oran</b> olarak hesaplanır ve üstüne %20 KDV eklenerek pazaryeri carisine gider yazılır. N11'in oranı her siparişte N11'den gelir (komisyon + pazarlama + pazaryeri hizmet bedeli). Trendyol'un komisyonu DSM faturalarından geldiği için ayrıca yazılmaz; Shopify'da komisyon yoktur.</div>
