@@ -3618,7 +3618,7 @@ function pzEslesmeHtml(tur){
     return `<a href="#" data-act="esKat" data-k="${esc(k)}" data-p="${p}" style="font-size:.8rem" title="${esc(e.yol)}">${esc(String(e.yol).split(" › ").slice(-2).join(" › "))}</a><div class="${z!=null&&n<z?"neg":"muted"}" style="font-size:.72rem">${z!=null?`özellik ${n}/${z}`:""}</div>`};
   const markaHucre=(m,p)=>{const e=pzEsMarka(m,p);
     return e?`<a href="#" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" style="font-size:.8rem">${esc(e.ad)}</a>${e.serbest?`<div class="muted" style="font-size:.72rem">serbest yazı</div>`:""}`:`<button class="small" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" type="button">Eşleştir</button>`};
-  const bilgi=`<div class="notice" style="font-size:.85rem"><b>Ürün açmanın temeli:</b> ${marka?"programdaki her markayı pazaryerlerindeki karşılığıyla bir kez eşleştirin. N11'de seçilen marka, ürün açılırken kategorinin “Marka” özelliğine yazılır.":"programdaki her kategoriyi pazaryerlerindeki karşılığıyla bir kez eşleştirin ve kategorinin zorunlu özellikleri için varsayılan değer seçin."} Bu ekran pazaryerlerine hiçbir şey göndermez. Shopify'da ${marka?"marka":"kategori"} serbest metindir, otomatik kullanılır. <button class="small" data-act="pzUrunAyar" type="button">⚙️ Ürün açma ayarları</button></div>`;
+  const bilgi=`<div class="notice" style="font-size:.85rem"><b>Ürün açmanın temeli:</b> ${marka?"programdaki her markayı pazaryerlerindeki karşılığıyla bir kez eşleştirin. N11'de seçilen marka, ürün açılırken kategorinin “Marka” özelliğine yazılır.":"programdaki her kategoriyi pazaryerlerindeki karşılığıyla bir kez eşleştirin ve kategorinin zorunlu özellikleri için varsayılan değer seçin."} Bu ekran pazaryerlerine hiçbir şey göndermez. Shopify'da ${marka?"marka":"kategori"} serbest metindir, otomatik kullanılır. <button class="small primary" data-act="pzOtoEs" type="button">🤖 Otomatik eşleştir (kategori + marka + özellik)</button> <button class="small" data-act="pzUrunAyar" type="button">⚙️ Ürün açma ayarları</button></div>`;
   // Filtre: pazaryeri (tümü ya da tek) × durum (eşleşmiş / eşleşmemiş / zorunlu özelliği eksik); sayfa başına 50
   const on=marka?"esM":"esK",pzListe=PZ_ES_PZ;
   const fPz=pzListe.includes(ui[on+"Pz"])?ui[on+"Pz"]:"",fDurum=ui[on+"Durum"]||"";
@@ -3734,6 +3734,79 @@ function pzMarkaEslesModal(marka,p){
         await pzEsKaydet(es=>{(es.marka[marka]=es.marka[marka]||{})[p]=Object.assign({id:a.dataset.sec,ad:a.dataset.ad,zaman:Date.now()},a.dataset.serbest?{serbest:true}:{})});closeModal();toast(`${marka} → ${PZ_ADLAR[p]}: ${a.dataset.ad}`);return}
       const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m==="ara")return ara();
       if(b.dataset.m==="kaldir"){await pzEsKaydet(es=>{if(es.marka[marka])delete es.marka[marka][p]});closeModal();toast("Eşleştirme kaldırıldı")}})})}
+/* Otomatik eşleştirme: eşleşmemiş kategori ve markalar için pazaryerlerinde öneri bulur; kullanıcı kontrol edip kaydeder.
+   Kategori: programdaki ad, pazaryerinin en alt kategorileriyle kelime kelime karşılaştırılır (en iyi 5 öneri; yalnızca çok net olan önceden seçili).
+   Marka: pazaryerinde adla aranır; adı birebir aynı olan önceden seçili. Kayıtta zorunlu özelliklerin güvenli varsayılanları doldurulur
+   (tek seçenek varsa o, yoksa "Belirtilmemiş" / "Diğer" / "Standart"); gerisi ürün açarken ürün kartından tamamlanır. Pazaryerine hiçbir şey yazılmaz. */
+const _ES_DUR=new Set(["ve","ile","icin","ve","the","of","urun","urunleri","cesitleri","modelleri","diger","genel"]);
+function _esKok(w){return w.length>5?w.replace(/(leri|lari|ler|lar)$/,""):w.length>4?w.replace(/(si|su|i|u)$/,""):w}
+const _esTok=s=>_norm(s).split(" ").filter(w=>w.length>=2&&!_ES_DUR.has(w)).map(_esKok);
+const _esEs=(a,b)=>a===b||(a.length>=4&&b.length>=4&&(a.startsWith(b)||b.startsWith(a)));
+function pzKatOner(kat,liste){
+  const pt=_esTok(kat);if(!pt.length)return {aday:[],net:false};const kn=_norm(kat);
+  const l=liste.map(x=>{if(!x._lt){const yp=String(x.yol).split(" › ");x._ln=_norm(yp[yp.length-1]);x._lt=_esTok(yp[yp.length-1]);x._yt=_esTok(x.yol)}
+    let s=0,yap=0;for(const t of pt){if(x._lt.some(w=>_esEs(t,w))){s+=3;yap++}else if(x._yt.some(w=>_esEs(t,w)))s+=1}
+    s=s/(pt.length*3)-0.08*Math.max(0,x._lt.length-yap)+(x._ln===kn?1:0);return {x,s}}).filter(o=>o.s>0.3).sort((a,b)=>b.s-a.s).slice(0,5);
+  const net=!!l[0]&&(l[0].x._ln===kn||(l[0].s>=0.99&&(!l[1]||l[1].s<l[0].s-0.15)));
+  return {aday:l.map(o=>o.x),net}}
+const _ES_VARSAY=["belirtilmemis","diger","standart","yok"];
+function pzOzVarsayilan(ozl){const z=ozl.filter(o=>o.zorunlu&&!pzMarkaOz(o)),oz={};
+  for(const o of z){const d=(o.degerler||[]);const v=d.length===1?d[0]:d.find(x=>_ES_VARSAY.includes(_norm(x.ad)));if(v)oz[o.id]={ad:o.ad,degerId:v.id,deger:v.ad}}
+  return {oz,zorunluSay:z.length}}
+function pzOtoEsModal(){
+  const say=alan=>{const m={};for(const u of state.urunler){const v=String(u[alan]||"").trim();if(v)m[v]=(m[v]||0)+1}return Object.keys(m)};
+  let satir=[],dur=false,calisiyor=false;
+  openModal(`<div class="section-head"><h2>🤖 Otomatik eşleştirme</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">Henüz eşleşmemiş kategori ve markalar için pazaryerlerinde öneri aranır. Sonuçları kontrol edip <b>Kaydet</b>'e basana kadar hiçbir şey kaydedilmez; pazaryerlerine hiçbir şey gönderilmez. Kesin olmayan önerilerde seçim boş gelir, listeden siz seçersiniz.</div>
+    <div class="filters"><label><input type="checkbox" id="oeKat" checked> Kategoriler + zorunlu özellikler</label><label><input type="checkbox" id="oeMarka" checked> Markalar</label></div>
+    <div class="filters">${PZ_ES_PZ.map(p=>`<label><input type="checkbox" data-oepz="${p}" checked> ${esc(PZ_ADLAR[p])}</label>`).join("")}</div>
+    <div class="filters"><button class="primary small" data-m="basla" type="button">Önerileri bul</button><button class="small" data-m="dur" type="button" disabled>Durdur</button><span id="oeDurum" class="muted" style="font-size:.85rem"></span></div>
+    <div id="oeSonuc"></div><div class="err" id="oeErr"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" class="primary" data-m="kaydet" disabled>Seçilenleri kaydet</button></div>`,
+  root=>{root.style.maxWidth="1000px";const $=s=>root.querySelector(s);const durum=t=>$("#oeDurum").textContent=t;
+    const ciz=()=>{const sec=satir.filter(r=>r.sec!=="").length;
+      $("#oeSonuc").innerHTML=satir.length?`<div class="muted" style="font-size:.85rem">${satir.length} öneri satırı · ${sec} seçili</div><div class="tscroll" style="max-height:55vh;overflow:auto"><table><thead><tr><th>Tür</th><th>Programdaki</th><th>Pazaryeri</th><th>Eşleşecek</th></tr></thead><tbody>
+        ${satir.map((r,i)=>`<tr><td class="muted" style="font-size:.78rem">${r.tur==="kategori"?"Kategori":"Marka"}</td><td><b>${esc(r.ad)}</b></td><td>${esc(PZ_ADLAR[r.p])}</td><td>${r.aday.length?`<select data-oe="${i}" style="max-width:520px"><option value="">— boş bırak —</option>${r.aday.map((a,j)=>`<option value="${j}" ${String(r.sec)===String(j)?"selected":""}>${esc(r.tur==="kategori"?a.yol:a.ad+" ("+a.id+")")}</option>`).join("")}</select>${r.sec===""?"":` <span class="muted" style="font-size:.75rem">${r.net?"✓ net":""}</span>`}`:`<span class="muted" style="font-size:.8rem">${esc(r.not||"öneri yok · elle eşleştirin")}</span>`}</td></tr>`).join("")}
+        </tbody></table></div>`:"";
+      $('[data-m="kaydet"]').disabled=calisiyor||!sec};
+    const n11Kat=(marka)=>{const kats=((state.ayarEk||{}).pzEslesme||{}).kategori||{};
+      const yeni=k=>{const r=satir.find(x=>x.tur==="kategori"&&x.p==="n11"&&x.ad===k&&x.sec!=="");return r?r.aday[r.sec].id:""};
+      for(const u of state.urunler){if(String(u.marka||"").trim()!==marka)continue;const k=String(u.kategori||"").trim();const e=(kats[k]||{}).n11;if(e&&e.id)return e.id;const y=yeni(k);if(y)return y}
+      for(const k of Object.values(kats))if(k&&k.n11&&k.n11.id)return k.n11.id;const r=satir.find(x=>x.tur==="kategori"&&x.p==="n11"&&x.sec!=="");return r?r.aday[r.sec].id:""};
+    const basla=async()=>{const pzl=PZ_ES_PZ.filter(p=>root.querySelector(`[data-oepz="${p}"]`).checked),kat=$("#oeKat").checked,mk=$("#oeMarka").checked;
+      if(!pzl.length||(!kat&&!mk)){$("#oeErr").textContent="En az bir pazaryeri ve bir tür seçin.";return}
+      $("#oeErr").textContent="";satir=[];dur=false;calisiyor=true;$('[data-m="basla"]').disabled=true;$('[data-m="dur"]').disabled=false;ciz();
+      try{
+        if(kat){const katlar=say("kategori");
+          for(const p of pzl){if(dur)break;durum(`${PZ_ADLAR[p]} kategori ağacı okunuyor…`);let liste;
+            try{liste=await pzKategoriler(p)}catch(e){$("#oeErr").textContent+=`${PZ_ADLAR[p]}: ${e.message||e} `;continue}
+            for(const k of katlar){if(pzEsKat(k,p))continue;const o=pzKatOner(k,liste);satir.push({tur:"kategori",ad:k,p,aday:o.aday,net:o.net,sec:o.net?0:""})}
+            ciz()}}
+        if(mk&&!dur){const markalar=say("marka").filter(m=>pzl.some(p=>!pzEsMarka(m,p)));let n=0;
+          const tek=async(m,p)=>{const g={islem:"markaAra",pazaryeri:p,ad:m};if(p==="n11"){const kid=n11Kat(m);if(kid)g.kategoriId=kid}
+            try{const r=await pzCagir(g);const l=(r.markalar||[]).slice(0,8);const tam=l.findIndex(x=>_norm(x.ad)===_norm(m));
+              if(tam<0&&p==="n11"&&r.serbest)l.push({id:"",ad:m,serbest:true});
+              satir.push({tur:"marka",ad:m,p,aday:l,net:tam>=0,sec:tam>=0?tam:"",not:l.length?"":(r.not||"pazaryerinde bulunamadı")})}
+            catch(e){satir.push({tur:"marka",ad:m,p,aday:[],sec:"",not:"hata: "+(e.message||e)})}};
+          for(const m of markalar){if(dur)break;n++;durum(`Markalar aranıyor… ${n}/${markalar.length} · ${m}`);
+            await Promise.all(pzl.filter(p=>!pzEsMarka(m,p)).map(p=>tek(m,p)));if(n%5===0)ciz()}}
+        durum(dur?"Durduruldu; bulunanlar aşağıda.":"Bitti. Önerileri kontrol edip kaydedin.")}
+      finally{calisiyor=false;$('[data-m="basla"]').disabled=false;$('[data-m="dur"]').disabled=true;ciz()}};
+    const kaydet=async b=>{const sec=satir.filter(r=>r.sec!=="");if(!sec.length)return;b.disabled=true;calisiyor=true;
+      try{const katSec=sec.filter(r=>r.tur==="kategori"),ozl={};let i=0;
+        for(const r of katSec){i++;durum(`Zorunlu özellikler okunuyor… ${i}/${katSec.length}`);const a=r.aday[r.sec];
+          try{ozl[r.p+":"+a.id]=pzOzVarsayilan(await pzOzellikler(r.p,a.id))}catch(_){ozl[r.p+":"+a.id]=null}}
+        durum("Kaydediliyor…");
+        await pzEsKaydet(es=>{for(const r of sec){const a=r.aday[r.sec];
+          if(r.tur==="kategori"){const o=ozl[r.p+":"+a.id];(es.kategori[r.ad]=es.kategori[r.ad]||{})[r.p]=Object.assign({id:a.id,yol:a.yol,ozellik:o?o.oz:{},zaman:Date.now(),oto:true},o?{zorunluSay:o.zorunluSay}:{})}
+          else (es.marka[r.ad]=es.marka[r.ad]||{})[r.p]=Object.assign({id:a.id,ad:a.ad,zaman:Date.now(),oto:true},a.serbest?{serbest:true}:{})}});
+        const k=katSec.length,m=sec.length-k,eksik=katSec.filter(r=>{const o=ozl[r.p+":"+r.aday[r.sec].id];return !o||Object.keys(o.oz).length<o.zorunluSay}).length;
+        closeModal();toast(`${k} kategori, ${m} marka eşleştirmesi kaydedildi`+(eksik?` · ${eksik} kategoride doldurulmamış zorunlu özellik var (Kategori eşleştirme › Durum: Zorunlu özelliği eksik)`:""))}
+      catch(e){$("#oeErr").textContent=e.message||String(e);b.disabled=false}finally{calisiyor=false}};
+    root.addEventListener("change",e=>{const s=e.target.closest("[data-oe]");if(s){satir[Number(s.dataset.oe)].sec=s.value===""?"":Number(s.value);ciz()}});
+    root.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
+      if(m==="close"){if(calisiyor)dur=true;return closeModal()}if(m==="dur"){dur=true;durum("Durduruluyor…");return}
+      if(m==="basla")return basla();if(m==="kaydet")return kaydet(b)})})}
 function pzKomisyonModal(){
   openModal(`<div class="section-head"><h2>Pazaryeri komisyon oranları</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">Teslim edilen deneme siparişlerinde komisyon, <b>KDV dahil satış tutarı × oran</b> olarak hesaplanır ve üstüne %20 KDV eklenerek pazaryeri carisine gider yazılır. N11'in oranı her siparişte N11'den gelir (komisyon + pazarlama + pazaryeri hizmet bedeli). Trendyol'un komisyonu DSM faturalarından geldiği için ayrıca yazılmaz; Shopify'da komisyon yoktur.</div>
@@ -4509,6 +4582,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="tyGorsel")tyGorselAl();
   else if(a==="tyGorselSecili")tyGorselAl(new Set(urunSecim));
   else if(a==="pzUrunAyar")pzUrunAyarModal();
+  else if(a==="pzOtoEs")pzOtoEsModal();
   else if(a==="fatSec"){if(b.checked)fatSecim.add(id);else fatSecim.delete(id);render()}
   else if(a==="fatHepsi"){const hepsi=fatListeSon.length&&fatListeSon.every(x=>fatSecim.has(x));if(hepsi)fatListeSon.forEach(x=>fatSecim.delete(x));else fatListeSon.forEach(x=>fatSecim.add(x));render()}
   else if(a==="fatSecKaldir"){fatSecim.clear();render()}
