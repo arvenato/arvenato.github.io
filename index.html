@@ -3914,6 +3914,10 @@ async function pzOEKaydet(){  if(pzOE.kayit)return;const f=firmaId;const sec=pzO
   catch(e){pzOE.hata="Kaydetme yarıda kaldı: "+(e.message||String(e))+" · kaydedilmeyenler seçili duruyor, yeniden “Seçilenleri kaydet”e basın."}
   finally{if(firmaId===f){pzOE.kayit=false;pzOE.kayitDurum="";pzOECiz();if(!pzOE.ciz&&/eslesme/.test(pz.sekme||""))render()}}}
 async function pzOtoEsModal(){  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_PZ.slice(),kat:true,mk:true};
+  // Ürünü kalmamış (birleştirilmiş / boşaltılmış) kategori ve markaların öneri satırları listeden çıkarılır (kayıtlı eşleştirmelere dokunulmaz)
+  if(!pzOE.calisiyor&&!pzOE.kayit){const var_={kategori:new Set(),marka:new Set()};for(const u of state.urunler){const k=String(u.kategori||"").trim(),m=String(u.marka||"").trim();if(k)var_.kategori.add(k);if(m)var_.marka.add(m)}
+    const once=pzOE.satir.length;for(let j=pzOE.satir.length-1;j>=0;j--){const r=pzOE.satir[j];if(var_[r.tur]&&!var_[r.tur].has(r.ad))pzOE.satir.splice(j,1)}
+    if(pzOE.satir.length!==once)pzOEYaz(true)}
   openModal(`<div class="section-head"><h2>🤖 Otomatik eşleştirme</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">Henüz eşleşmemiş kategori ve markalar için pazaryerlerinde öneri aranır. Tarama <b>arka planda</b> sürer: bu pencereyi kapatıp programda çalışmaya devam edebilirsiniz; bitince haber verilir. Sonuçlar bu bilgisayarda saklanır. <b>Kaydet</b>'e basana kadar eşleştirme kaydedilmez; pazaryerlerine hiçbir şey gönderilmez.</div>
     <div class="filters"><label><input type="checkbox" id="oeKat" ${A.kat?"checked":""}> Kategoriler + zorunlu özellikler</label><label><input type="checkbox" id="oeMarka" ${A.mk?"checked":""}> Markalar</label></div>
