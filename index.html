@@ -5119,6 +5119,11 @@ async function veriBaslat(){
   const f=firmaId;const ob=await pzDepo.al("kayitlar-"+f);
   if(f!==firmaId)return;
   if(ob&&Array.isArray(ob.rows)&&state.mode==="loading"){kayitUygula(ob.rows);state.mode="db";state.guncelleniyor=true;render()}
+  // Yazma bağlantısı okumayı beklemeden kurulur: kayıtlar arkadan güncellenirken de kaydetme çalışır
+  api={newId:()=>idUret(),
+    setDoc:async(col,id,obj)=>{_yazSay++;yerelUygula(col,id,obj);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
+    del:async(col,id)=>{_yazSay++;yerelUygula(col,id,null);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
+    setFirma:async n=>{yerelUygula("ayar","firma",{ad:n});render();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:n}});if(error)throw sbHata(error);if(firmaRol==="sahip")await sb.from("firmalar").update({ad:n}).eq("id",firmaId)}};
   const yaz0=_yazSay;
   try{await tumunuYukle();state.mode="db"}catch(e){state.mode="db";state.error="Kayıtlar yüklenemedi. "+sbMesaj(e)}
   if(f!==firmaId)return;
@@ -5132,10 +5137,6 @@ async function veriBaslat(){
     .on("postgres_changes",{event:"UPDATE",schema:"public",table:"kayitlar",filter:"firma_id=eq."+firmaId},p=>uzakUygula(p.new.koleksiyon,p.new.id,p.new.veri))
     .on("postgres_changes",{event:"DELETE",schema:"public",table:"kayitlar"},p=>{const o=p.old||{};if(o.firma_id===firmaId&&o.koleksiyon)uzakUygula(o.koleksiyon,o.id,null)})
     .subscribe();
-  api={newId:()=>idUret(),
-    setDoc:async(col,id,obj)=>{_yazSay++;yerelUygula(col,id,obj);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
-    del:async(col,id)=>{_yazSay++;yerelUygula(col,id,null);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
-    setFirma:async n=>{yerelUygula("ayar","firma",{ad:n});render();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:n}});if(error)throw sbHata(error);if(firmaRol==="sahip")await sb.from("firmalar").update({ad:n}).eq("id",firmaId)}};
   render();
   document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId)veriYenile()});
   yengecHazirBildir();
