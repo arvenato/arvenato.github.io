@@ -1483,7 +1483,32 @@ function sayiFiltre(ifade,deger){const s=String(ifade).replace(/\s/g,"").replace
   if((m=/^(>=|<=|>|<|=)?(-?\d+(?:\.\d+)?)$/.exec(s))){const n=Number(m[2]);switch(m[1]){case ">":return v>n;case "<":return v<n;case ">=":return v>=n;case "<=":return v<=n;default:return Math.abs(v-n)<0.005}}
   if((m=/^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/.exec(s))){const a=Number(m[1]),b=Number(m[2]);return v>=Math.min(a,b)&&v<=Math.max(a,b)}
   return true}
+// Ürünler sayfası sekmeleri: Ürünler · Kategoriler · Markalar (her kategori/markada kaç ürün olduğu)
+function urunSekmeHtml(){const s=ui.uSekme||"urunler";
+  return `<div class="filters" role="tablist" aria-label="Ürünler bölümü">${[["urunler","📦 Ürünler"],["kategori","📂 Kategoriler"],["marka","🏷️ Markalar"]].map(([k,ad])=>`<button class="small ${s===k?"primary":""}" data-act="uSekme" data-id="${k}" type="button" role="tab" aria-selected="${s===k}">${ad}</button>`).join("")}</div>`}
+function urunGrupHtml(tur){
+  const alan=tur==="marka"?"marka":"kategori",AD=tur==="marka"?"Marka":"Kategori";
+  const m=new Map();
+  for(const u of state.urunler){const k=String(u[alan]||"").trim();const g=m.get(k)||{ad:k,n:0,stokta:0,adet:0,deger:0};const mk=stokMiktar(u);
+    g.n++;if(mk>0){g.stokta++;g.adet+=mk;g.deger+=mk*(Number(u.alisFiyat)||0)}m.set(k,g)}
+  const q=_norm(ui.ugAra||"");let l=[...m.values()].filter(g=>!q||_norm(g.ad||"(boş)").includes(q));
+  const SIRA={cok:["Ürün sayısı: çoktan aza",(a,b)=>b.n-a.n||a.ad.localeCompare(b.ad,"tr")],az:["Ürün sayısı: azdan çoğa",(a,b)=>a.n-b.n||a.ad.localeCompare(b.ad,"tr")],adAZ:["Ad: A → Z",(a,b)=>a.ad.localeCompare(b.ad,"tr")],adZA:["Ad: Z → A",(a,b)=>b.ad.localeCompare(a.ad,"tr")],stok:["Stoktaki adet: çoktan aza",(a,b)=>b.adet-a.adet]};
+  const sira=SIRA[ui.ugSira]?ui.ugSira:"cok";l.sort(SIRA[sira][1]);
+  const toplam=[...m.values()].filter(g=>g.ad).length,bos=m.get("");
+  return `<section class="section-head"><h2>Ürünler</h2></section>${urunSekmeHtml()}
+  <section class="panel">
+    <div class="filters">
+      <input id="fUgAra" type="search" data-filter="ugAra" value="${esc(ui.ugAra||"")}" placeholder="${AD} ara" aria-label="${AD} ara" style="flex:1;min-width:160px">
+      <select id="fUgSira" data-filter="ugSira" aria-label="Sıralama">${Object.entries(SIRA).map(([k,v])=>`<option value="${k}" ${sira===k?"selected":""}>↕ ${v[0]}</option>`).join("")}</select>
+      <span class="muted" style="font-size:.88rem"><b>${toplam.toLocaleString("tr-TR")}</b> ${tur==="marka"?"marka":"kategori"} · ${state.urunler.length.toLocaleString("tr-TR")} ürün${bos?` · ${bos.n.toLocaleString("tr-TR")} üründe ${tur==="marka"?"marka":"kategori"} boş`:""}</span>
+    </div>
+    <div class="muted" style="font-size:.82rem">Bir ${tur==="marka"?"markanın":"kategorinin"} adına tıklayınca o ${tur==="marka"?"markanın":"kategorinin"} ürünleri açılır.</div>
+    <div class="tscroll"><table><thead><tr><th>${AD}</th><th class="num">Ürün sayısı</th><th class="num">Stokta olan ürün</th><th class="num">Stoktaki adet</th><th class="num">Stok değeri (alış)</th></tr></thead><tbody>
+      ${l.map(g=>`<tr><td>${g.ad?`<a href="#" data-act="ugAc" data-id="${esc(g.ad)}" data-p="${alan}"><b>${esc(g.ad)}</b></a>`:`<span class="muted">(${tur==="marka"?"marka":"kategori"} boş)</span>`}</td><td class="num"><b>${g.n.toLocaleString("tr-TR")}</b></td><td class="num">${g.stokta.toLocaleString("tr-TR")}</td><td class="num">${fmtMiktar(r2(g.adet))}</td><td class="num">${money(r2(g.deger))}</td></tr>`).join("")||`<tr><td colspan="5" class="empty">Aramaya uyan ${tur==="marka"?"marka":"kategori"} yok.</td></tr>`}
+    </tbody></table></div>
+  </section>`}
 function vStok(){
+  if(ui.uSekme==="kategori"||ui.uSekme==="marka")return urunGrupHtml(ui.uSekme);
   const q=ui.sAra.trim().toLocaleLowerCase("tr");
   const kats=[...new Set(state.urunler.map(u=>u.kategori).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
   const markalar=[...new Set(state.urunler.map(u=>u.marka).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
@@ -1517,6 +1542,7 @@ function vStok(){
     ${kpi("Kritik stok",String(kritik),"Kritik seviyenin altında",kritik>0)}
     ${kpi("Stokta yok",String(yok),"Miktarı sıfır veya eksi",yok>0)}
   </section>
+  ${urunSekmeHtml()}
   <section class="panel">
     <div class="filters">
       <input id="fSAra" type="search" data-filter="sAra" value="${esc(ui.sAra)}" placeholder="Ürün adı, stok kodu, barkod…" aria-label="Ara" style="flex:1;min-width:160px">
@@ -1541,7 +1567,7 @@ function vStok(){
       <tr class="kol-filtre">${ro?"":"<th></th>"}${URUN_KOL.map(c=>`<th style="padding-top:0"><input id="fK_${c.k}" data-kolf="${c.k}" value="${esc(kf[c.k]||"")}" placeholder="${c.sayi?"örn. >10":"Filtrele…"}" title="${c.sayi?"Sayı filtresi: 5 · >10 · <100 · >=5 · 10-20":"Bu sütunda içerenleri göster"}" style="width:100%;min-width:${c.sayi?"64px":"80px"};padding:4px 6px;font-size:.78rem;font-weight:400;${c.sayi?"text-align:right;":""}${(kf[c.k]||"").trim()?"border-color:var(--accent,#17624d);background:rgba(23,98,77,.06)":""}"></th>`).join("")}<th>${kolVar?`<button class="small ghost" data-act="uKolTemizle" type="button" title="Sütun filtrelerini temizle">✕ Temizle</button>`:""}</th></tr></thead><tbody>
     ${gorunen.length?"":`<tr><td colspan="${URUN_KOL.length+(ro?1:2)}" class="empty">Filtreye uyan ürün yok.</td></tr>`}
     ${gorunen.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><div style="display:flex;gap:8px;align-items:center">${(u.gorseller||[])[0]?`<img src="${esc(u.gorseller[0])}" alt="" loading="lazy" data-buyut="${esc(u.id)}" title="Büyütmek için tıklayın" style="cursor:zoom-in;width:36px;height:36px;object-fit:cover;border-radius:6px;flex:none">`:""}<b>${esc(u.ad)}</b></div></td>
-      <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${esc(u.marka||"—")}</td><td>${esc(u.kategori||"—")}</td>
+      <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${u.marka?`<a href="#" data-act="ugAc" data-id="${esc(u.marka)}" data-p="marka" title="Bu markanın ürünlerini göster">${esc(u.marka)}</a>`:"—"}</td><td>${u.kategori?`<a href="#" data-act="ugAc" data-id="${esc(u.kategori)}" data-p="kategori" title="Bu kategorinin ürünlerini göster">${esc(u.kategori)}</a>`:"—"}</td>
       <td class="num ${u.durum==="yok"?"neg":""}" ${ro?"":`data-dbl="stok" data-id="${u.id}" title="Çift tıklayın: stoğu değiştir" style="cursor:cell"`}>${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
       <td class="num" ${ro?"":`data-dbl="alis" data-id="${u.id}" title="Çift tıklayın: alış fiyatını değiştir" style="cursor:cell"`}>${money(u.alisFiyat)}</td><td class="num" ${ro?"":`data-dbl="satis" data-id="${u.id}" title="Çift tıklayın: satış fiyatını değiştir" style="cursor:cell"`}>${money(u.satisFiyat)}</td><td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
       <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="stokGiris" data-id="${u.id}" type="button">Giriş</button><button class="small" data-act="stokCikis" data-id="${u.id}" type="button">Çıkış</button><button class="small ghost" data-act="stokSayim" data-id="${u.id}" type="button">Sayım</button>`}<button class="small ghost" data-act="stokGecmis" data-id="${u.id}" type="button">Hareketler</button>${state.readonly?"":`<button class="small ghost" data-act="editUrun" data-id="${u.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
@@ -4724,6 +4750,8 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uHepsi"){const hepsi=stokListeSon.length&&stokListeSon.every(x=>urunSecim.has(x));if(hepsi)stokListeSon.forEach(x=>urunSecim.delete(x));else stokListeSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="uSecimKaldir"){urunSecim.clear();render()}
   else if(a==="uSayfaSec"){const hepsi=stokSayfaSon.length&&stokSayfaSon.every(x=>urunSecim.has(x));if(hepsi)stokSayfaSon.forEach(x=>urunSecim.delete(x));else stokSayfaSon.forEach(x=>urunSecim.add(x));render()}
+  else if(a==="uSekme"){ui.uSekme=id;render()}
+  else if(a==="ugAc"){e.preventDefault();if(b.dataset.p==="marka"){ui.sMarka=id;ui.sKat=""}else{ui.sKat=id;ui.sMarka=""}ui.sAra="";ui.uSekme="urunler";render();const mm=document.getElementById("main");if(mm)mm.scrollIntoView({block:"start"})}
   else if(a==="sSayfa"){ui.sSayfa=Number(id)||1;render();const m=document.getElementById("main");if(m)m.scrollIntoView({block:"start"})}
   else if(a==="uToplu")urunTopluForm(id);
   else if(a==="uKatDuzelt")katDuzeltModal();
