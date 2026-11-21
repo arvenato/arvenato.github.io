@@ -1553,7 +1553,7 @@ function vStok(){
       ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}
     </div>
     ${!ro&&urunSecim.size?`<div class="toplu-bar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(23,98,77,.08));border:1px solid var(--accent,#17624d)">
-      <b>${urunSecim.size.toLocaleString("tr-TR")} ürün seçildi</b><span style="flex:1"></span>
+      <b>${urunSecim.size.toLocaleString("tr-TR")} ürün seçildi</b>${(()=>{const gor=new Set(list.map(u=>u.id));const disarida=[...urunSecim].filter(id=>!gor.has(id)).length;return disarida?` <span class="neg" style="font-size:.85rem">⚠ ${disarida.toLocaleString("tr-TR")} tanesi bu listede görünmüyor (önceki aramadan kalmış)</span> <button class="small" data-act="uSecimListe" type="button">Yalnız bu listedekileri bırak</button>`:""})()}<span style="flex:1"></span>
       <button class="small" data-act="uToplu" data-id="kategori" type="button">Kategori</button><button class="small" data-act="uToplu" data-id="marka" type="button">Marka</button>
       <button class="small" data-act="uToplu" data-id="kdv" type="button">KDV</button><button class="small" data-act="uToplu" data-id="birim" type="button">Birim</button>
       <button class="small" data-act="uToplu" data-id="stok" type="button">Stok (ekle / çıkar / eşitle)</button>
@@ -1833,7 +1833,7 @@ function urunTopluForm(tip){  const sec=state.urunler.filter(u=>urunSecim.has(u.
       try{
         if(stokTip){const p=stokPlan(),acik=g("tpAcik")||"Toplu stok işlemi",simdi=Date.now();
           await topluYaz(p.map((x,i)=>({col:"stokHareketleri",id:idUret(),veri:{urunId:x.u.id,tarih:today(),tip:x.tip,miktar:x.fark,birimFiyat:Number(x.u.alisFiyat)||0,aciklama:acik,hareketId:"",olusturma:simdi+i}})),(x,t)=>{du.textContent=`Kaydediliyor… ${x.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});
-          closeModal();toast(`${p.length.toLocaleString("tr-TR")} üründe stok güncellendi`);return}
+          urunSecim.clear();closeModal();toast(`${p.length.toLocaleString("tr-TR")} üründe stok güncellendi`);return}
         if(tip==="sil"){const hepsi=!!(root.querySelector("#tpHareket")&&root.querySelector("#tpHareket").checked);
           const silinecek=hepsi?sec:sec.filter(u=>!hareketli.includes(u));
           if(!silinecek.length){er.textContent="Silinecek ürün yok. Stok hareketi olanları da silmek için kutuyu işaretleyin.";root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false);return}
@@ -1844,7 +1844,7 @@ function urunTopluForm(tip){  const sec=state.urunler.filter(u=>urunSecim.has(u.
           for(let i=0;i<silinecek.length;i+=200){const ids=silinecek.slice(i,i+200).map(u=>u.id);ids.forEach(id=>{yerelUygula("urunler",id,null);urunSecim.delete(id)});
             const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","urunler").in("id",ids);if(error){veriYenile();throw sbHata(error)}
             du.textContent=`Siliniyor… ${Math.min(i+200,silinecek.length)} / ${silinecek.length}`}
-          renderSonra();closeModal();toast(`${silinecek.length.toLocaleString("tr-TR")} ürün silindi${!hepsi&&hareketli.length?` · ${hareketli.length} ürün hareketi olduğu için silinmedi`:""}`);return}
+          urunSecim.clear();renderSonra();closeModal();toast(`${silinecek.length.toLocaleString("tr-TR")} ürün silindi${!hepsi&&hareketli.length?` · ${hareketli.length} ürün hareketi olduğu için silinmedi`:""}`);return}
         const satir=(tip==="barkod"?barkodAday:sec).map(u=>{const {id,miktar:_m,durum:_d,...r}=u;const y={...r};
           if(tip==="barkod")y.barkod=String(u.kod).trim();
           if(tip==="kategori")y.kategori=d;else if(tip==="marka")y.marka=d;else if(tip==="kdv")y.kdvOran=Number(d);else if(tip==="birim")y.birim=d;else if(tip==="kritik")y.kritik=r2(d);
@@ -1852,7 +1852,7 @@ function urunTopluForm(tip){  const sec=state.urunler.filter(u=>urunSecim.has(u.
           return {col:"urunler",id,veri:y}});
         const fp=fiyat?fiyatPlan():[];
         await topluYaz(satir,(x,t)=>{du.textContent=`Kaydediliyor… ${x.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});
-        closeModal();toast(`${satir.length.toLocaleString("tr-TR")} üründe “${baslik}” uygulandı`);
+        urunSecim.clear();renderSonra();closeModal();toast(`${satir.length.toLocaleString("tr-TR")} üründe “${baslik}” uygulandı · seçim temizlendi`);
         // Deneme ürünlerinin yeni satış fiyatı pazaryerlerine (sırayla; aşırı değişim ikinci onayla zaten onaylandı)
         if(tip==="satis")for(const x of fp.filter(x=>pzFiyatGider(x.u))){try{await pzFiyatGonder(x.u,x.y,x.asiri)}catch(err){toast("Fiyat pazaryerlerine gönderilemedi ("+x.u.kod+"): "+(err.message||err))}}}
       catch(err){er.textContent=errMsg(err);root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false)}})});
@@ -4751,6 +4751,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uSec"){if(b.checked)urunSecim.add(id);else urunSecim.delete(id);render()}
   else if(a==="uHepsi"){const hepsi=stokListeSon.length&&stokListeSon.every(x=>urunSecim.has(x));if(hepsi)stokListeSon.forEach(x=>urunSecim.delete(x));else stokListeSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="uSecimKaldir"){urunSecim.clear();render()}
+  else if(a==="uSecimListe"){const gor=new Set(stokListeSon);for(const id of [...urunSecim])if(!gor.has(id))urunSecim.delete(id);render()}
   else if(a==="uSayfaSec"){const hepsi=stokSayfaSon.length&&stokSayfaSon.every(x=>urunSecim.has(x));if(hepsi)stokSayfaSon.forEach(x=>urunSecim.delete(x));else stokSayfaSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="uSekme"){ui.uSekme=id;render()}
   else if(a==="ugAc"){e.preventDefault();if(b.dataset.p==="marka"){ui.sMarka=id;ui.sKat=""}else{ui.sKat=id;ui.sMarka=""}ui.sAra="";ui.uSekme="urunler";render();const mm=document.getElementById("main");if(mm)mm.scrollIntoView({block:"start"})}
