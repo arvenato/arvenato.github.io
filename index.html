@@ -1597,8 +1597,49 @@ function urunForm(existing){
       root.querySelector("#sPz").innerHTML=PZ_ACMA.map(p=>{const e=p!=="shopify"&&f.kategori?pzEsKat(f.kategori,p):null;
         return `<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:6px 10px;font-size:.85rem"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="min-width:80px">${esc(PZ_ADLAR[p])}</b><span data-pzdurum="${p}">${pzDurumHtml(f,p)}</span><span style="flex:1"></span>${e?`<button class="small ghost" type="button" data-pzoz="${p}">${pzAcik===p?"Özellikleri kapat":"Özellikler"}</button>`:""}</div>${pzAcik===p&&e?`<div data-pzozalan="${p}" style="margin-top:6px"><div class="muted">Özellikler okunuyor…</div></div>`:""}</div>`}).join("")
         +`<div class="muted" style="font-size:.78rem">Kategori ve marka eşleştirmeleri Pazaryeri › Eşleştirme sekmelerinden yapılır. Özelliklerde boş bıraktığın alanlar kategorinin varsayılan değerini kullanır. Shopify'da kategori ve marka serbest metindir.</div>
-        <div class="filters"><button class="small" type="button" data-pzon="1" title="Ürünün her pazaryerine nasıl gönderileceğini gösterir; hiçbir şey gönderilmez">🔍 Gönderim önizlemesi</button></div><div id="sPzOn"></div>`;
+        <div class="filters"><button class="small" type="button" data-pzon="1" title="Ürünün her pazaryerine nasıl gönderileceğini gösterir; hiçbir şey gönderilmez">🔍 Gönderim önizlemesi</button>${existing&&firmaRol==="sahip"&&sb&&!state.readonly?`<button class="small primary" type="button" data-pzac="1" title="Ürünü seçtiğin pazaryerlerinde satışa açar (önce özet ve onay)">🚀 Pazaryerlerinde aç</button>`:""}</div>
+        <div id="sPzAcDurum">${pzAcDurumHtml()}</div><div id="sPzOn"></div>`;
       if(pzAcik)pzOzYukle(pzAcik)};
+    // Pazaryerlerinde ürün açma: kayıtlı ürünle (karttaki kaydedilmemiş değişiklik varsa durur) → özet + onay → tek tek gönderim → sonuç takibi
+    const pzAcKayit=()=>(((state.ayarEk||{}).pzUrunAc||{})[existing&&existing.id])||{};
+    const PZ_AC_DURUM={gonderildi:["⏳ gönderildi, pazaryeri onayı bekleniyor",""],tamam:["✓ ilan açıldı / onaya düştü","color:var(--accent,#17624d);font-weight:600"],hata:["✕ reddedildi","color:var(--neg,#c0392b)"],zatenVar:["• bu barkodla ürün zaten var","color:var(--neg,#c0392b)"]};
+    function pzAcDurumHtml(){const k=pzAcKayit(),l=PZ_ACMA.filter(p=>k[p]);if(!l.length)return "";
+      return `<div style="font-size:.8rem;margin-top:4px"><b>Ürün açma durumu:</b> ${l.map(p=>{const d=PZ_AC_DURUM[k[p].durum]||[k[p].durum,""];return `<div><b>${esc(PZ_ADLAR[p])}</b>: <span style="${d[1]}">${esc(d[0])}</span>${k[p].mesaj?` <span class="muted">— ${esc(k[p].mesaj)}</span>`:""} <span class="muted">(${new Date(k[p].zaman||0).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})})</span></div>`}).join("")}</div>`}
+    const pzAcKaydet=async kayit=>{const t=(state.ayarEk||{}).pzUrunAc||{};await api.setDoc("ayar","pzUrunAc",{...t,[existing.id]:{...(t[existing.id]||{}),...kayit}})};
+    let pzTakipVar=false;
+    const pzAcTakip=async()=>{if(pzTakipVar)return;pzTakipVar=true;
+      try{for(let tur=0;tur<15;tur++){const k=pzAcKayit(),bek=PZ_ACMA.filter(p=>k[p]&&k[p].durum==="gonderildi");if(!bek.length||!root.isConnected)break;
+        if(tur)await new Promise(r=>setTimeout(r,20000));if(!root.isConnected)break;const yeni={};const u0=state.urunler.find(x=>x.id===existing.id);if(!u0)break;
+        for(const p of bek){try{const r=await pzCagir({islem:"urunSonuc",pazaryeri:p,kod:u0.kod,id:k[p].id||""});if(r.durum==="tamam"||r.durum==="hata")yeni[p]={...k[p],durum:r.durum,mesaj:String(r.mesaj||"").slice(0,300),zaman:Date.now()}}catch(err){/* bir sonraki turda yeniden sorulur */}}
+        if(Object.keys(yeni).length){await pzAcKaydet(yeni);const d=root.querySelector("#sPzAcDurum");if(d)d.innerHTML=pzAcDurumHtml()}}}
+      finally{pzTakipVar=false}};
+    const pzAcHazirla=async b=>{const alan=root.querySelector("#sPzOn"),u0=state.urunler.find(x=>x.id===existing.id);if(!u0){alan.innerHTML=`<div class="err">Önce ürünü kaydedin.</div>`;return}
+      const f=formU(),j=x=>JSON.stringify(x||null);
+      const fark=["ad","kod","barkod","kategori","marka","aciklama"].some(k=>String(f[k]??"").trim()!==String(u0[k]??"").trim())||Number(f.satisFiyat)!==Number(u0.satisFiyat)||Number(f.kdvOran)!==Number(u0.kdvOran)||(Number(f.desi)||0)!==(Number(u0.desi)||0)||j(f.gorseller)!==j(u0.gorseller||[])||j(f.pzOzellik)!==j(u0.pzOzellik||{});
+      if(fark){alan.innerHTML=`<div class="err">Kartta kaydedilmemiş değişiklik var. Önce <b>Kaydet</b>'e basıp ürünü yeniden açın.</div>`;return}
+      b.disabled=true;alan.innerHTML=`<div class="muted">Hazırlanıyor…</div>`;const uu={...u0,miktar:stokMiktar(u0)},hazir=[],k=pzAcKayit();
+      for(const p of PZ_ACMA){let r;try{r=await pzUrunGovde(uu,p)}catch(err){r={ek:[err.message||String(err)],govde:null}}
+        if(k[p]&&/^(gonderildi|tamam)$/.test(k[p].durum))r.ek=["daha önce gönderildi"].concat(r.ek);hazir.push({p,...r})}
+      const ay=(state.ayarEk||{}).pazaryeriTest||{},listede=(ay.kodlar||[]).some(x=>pzKimlik(x)===pzKimlik(u0.kod)||pzKimlik(x)===pzKimlik(u0.barkod));
+      alan.innerHTML=`<div class="notice" style="font-size:.85rem"><b>Pazaryerlerinde ürün aç:</b> ${esc(u0.ad)}<br>Satış fiyatı <b>${money(u0.satisFiyat)}</b> (üstü çizili fiyat da aynı) · stok <b>${esc(String(uu.miktar))} ${esc(u0.birim||"")}</b> · KDV %${esc(String(u0.kdvOran))}${listede?"":`<br>Ürün <b>deneme listesine eklenecek</b>; stoğu ve fiyatı sonra otomatik eşitlenir.`}<br>Pazaryerleri ürünü kendi onayından geçirir; sonuçlar burada görünür.</div>
+        ${hazir.map(h=>`<label style="display:flex;gap:8px;align-items:center;font-size:.88rem;flex-wrap:wrap"><input type="checkbox" data-acpz="${h.p}" ${h.ek.length?"disabled":"checked"}> <b>${esc(PZ_ADLAR[h.p])}</b> ${h.ek.length?`<span class="neg">gönderilmez: ${esc(h.ek.join(", "))}</span>`:""}<span data-acdurum="${h.p}"></span></label>`).join("")}
+        <div class="filters"><button class="small primary" type="button" data-acevet="1">Evet, seçili pazaryerlerinde aç</button><button class="small" type="button" data-acvaz="1">Vazgeç</button></div>`;
+      alan._hazir=hazir;b.disabled=false};
+    const pzAcCalis=async b=>{const alan=root.querySelector("#sPzOn"),sec=[...alan.querySelectorAll("[data-acpz]:checked")].map(x=>x.dataset.acpz);if(!sec.length)return;
+      const u0=state.urunler.find(x=>x.id===existing.id);if(!u0)return;b.disabled=true;alan.querySelectorAll("[data-acpz],[data-acvaz]").forEach(x=>x.disabled=true);
+      const ay=(state.ayarEk||{}).pazaryeriTest||{},kodlar=[...(ay.kodlar||[])];
+      if(!kodlar.some(x=>pzKimlik(x)===pzKimlik(u0.kod)||pzKimlik(x)===pzKimlik(u0.barkod))){
+        if(kodlar.length>=20){alan.insertAdjacentHTML("beforeend",`<div class="err">Deneme listesi dolu (en fazla 20 ürün).</div>`);return}
+        kodlar.push(u0.kod||u0.barkod);await api.setDoc("ayar","pazaryeriTest",{...ay,kodlar,guncelleme:Date.now()})}
+      const kayit={};
+      for(const p of sec){const d=alan.querySelector(`[data-acdurum="${p}"]`),h=alan._hazir.find(x=>x.p===p);d.innerHTML=`<span class="muted">gönderiliyor…</span>`;
+        try{const r=await pzCagir({islem:"urunAc",pazaryeri:p,kod:u0.kod||u0.barkod,govde:h.govde});
+          if(r.durum==="zatenVar"){kayit[p]={durum:"zatenVar",mesaj:r.mesaj||"",zaman:Date.now()};d.innerHTML=`<span class="neg">${esc(r.mesaj||"zaten var")}</span>`}
+          else{kayit[p]={durum:"gonderildi",id:String(r.id||""),zaman:Date.now()};d.innerHTML=`<span class="muted">gönderildi, onay bekleniyor…</span>`}}
+        catch(err){kayit[p]={durum:"hata",mesaj:String(err.message||err).slice(0,300),zaman:Date.now()};d.innerHTML=`<span class="neg">${esc(err.message||String(err))}</span>`}}
+      await pzAcKaydet(kayit);const ds=root.querySelector("#sPzAcDurum");if(ds)ds.innerHTML=pzAcDurumHtml();
+      alan.insertAdjacentHTML("beforeend",`<div class="muted" style="font-size:.8rem">Sonuçlar 20 saniyede bir soruluyor (kart açık kaldıkça). Kartı kapatıp sonra açtığında takip kaldığı yerden sürer.</div>`);
+      setTimeout(pzAcTakip,15000)};
     const pzOnizle=async b=>{const alan=root.querySelector("#sPzOn");b.disabled=true;alan.innerHTML=`<div class="muted">Hazırlanıyor…</div>`;const f=formU(),out=[];
       for(const p of PZ_ACMA){let r;try{r=await pzUrunGovde(f,p)}catch(err){r={ek:[err.message||String(err)],govde:null}}
         out.push(`<details style="border:1px solid var(--line,#ddd);border-radius:8px;padding:6px 10px;font-size:.82rem"><summary><b>${esc(PZ_ADLAR[p])}</b> — ${r.ek.length?`<span class="neg">gönderilemez: ${esc(r.ek.join(", "))}</span>`:`<span style="color:var(--accent,#17624d);font-weight:600">gönderime hazır</span>`}</summary>
@@ -1612,6 +1653,7 @@ function urunForm(existing){
         return `<div class="field"><label for="pzi_${p}_${esc(o.id)}">${esc(o.ad)}${o.serbest?' <span class="muted">· serbest</span>':""}</label><input id="pzi_${p}_${esc(o.id)}" data-pzozi="${p}" data-oid="${esc(o.id)}" list="${dl}" value="${esc(v)}" placeholder="${vs?"varsayılan: "+esc(vs):(o.degerler.length?"Listeden seçin":"Değer yazın")}"><datalist id="${dl}">${o.degerler.slice(0,3000).map(x=>`<option value="${esc(x.ad)}"></option>`).join("")}</datalist></div>`}).join("")}</div>`
         :`<div class="muted">Bu kategoride (marka dışında) zorunlu özellik yok.</div>`};
     pzCiz();
+    if(existing&&sb&&PZ_ACMA.some(p=>(pzAcKayit()[p]||{}).durum==="gonderildi"))setTimeout(pzAcTakip,1000);
     root.addEventListener("input",e=>{const t=e.target;
       if(t.dataset&&t.dataset.pzozi){const p=t.dataset.pzozi,alan=root.querySelector(`[data-pzozalan="${p}"]`),o=((alan&&alan._oz)||[]).find(x=>String(x.id)===t.dataset.oid);if(!o)return;
         const v=t.value.trim(),m=(pzOz[p]=pzOz[p]||{});
@@ -1631,6 +1673,9 @@ function urunForm(existing){
     const gl=e.target.closest("[data-g]");if(gl){e.preventDefault();const i=Number(gl.dataset.i);if(gl.dataset.g==="sil")gorseller.splice(i,1);else gorseller.unshift(...gorseller.splice(i,1));gCiz();return}
     const po=e.target.closest("[data-pzoz]");if(po){pzAcik=pzAcik===po.dataset.pzoz?"":po.dataset.pzoz;pzCiz();return}
     const pon=e.target.closest("[data-pzon]");if(pon){pzOnizle(pon);return}
+    const pac=e.target.closest("[data-pzac]");if(pac){pzAcHazirla(pac);return}
+    const pev=e.target.closest("[data-acevet]");if(pev){pzAcCalis(pev);return}
+    if(e.target.closest("[data-acvaz]")){root.querySelector("#sPzOn").innerHTML="";return}
     const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;const er=root.querySelector("#sErr");
     if(a==="close")return closeModal();
     if(a==="dosya"){root.querySelector("#sGorselDosya").click();return}
