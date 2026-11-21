@@ -1552,7 +1552,7 @@ function vStok(){
       <select id="fSDurum" data-filter="sDurum" aria-label="Durum"><option value="">Tüm durumlar</option><option value="ok" ${ui.sDurum==="ok"?"selected":""}>Yeterli</option><option value="kritik" ${ui.sDurum==="kritik"?"selected":""}>Kritik</option><option value="yok" ${ui.sDurum==="yok"?"selected":""}>Stokta yok</option></select>
       ${ilanPz.length?`<select id="fSPz" data-filter="sPz" aria-label="Pazaryeri durumu"><option value="">Tüm pazaryeri durumları</option>${ilanPz.map(p=>[["ak","'da aktif"],["pa","'da pasif"],["yok","'da yok"]].map(([t,ad])=>`<option value="${p}:${t}" ${ui.sPz===p+":"+t?"selected":""}>${esc(PZ_ADLAR[p])}${ad}</option>`).join("")).join("")}</select>`:""}
       <select id="fSSira" data-act-sayfa="sira" aria-label="Sıralama" title="Sıralama">${Object.entries(URUN_SIRA).map(([k,v])=>`<option value="${k}" ${(ui.sSira||"adAZ")===k?"selected":""}>↕ ${v[0]}</option>`).join("")}</select>
-      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}${ro?"":`<button class="small" data-act="pzIlanOku" type="button" ${pzIlanIs?"disabled":""} title="Bağlı pazaryerlerindeki ilanları okur (hiçbir şey göndermez); ürünlerin yanında hangi pazaryerinde aktif / pasif olduğu görünür">🛒 Pazaryeri durumlarını oku</button>`}
+      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}${ro?"":`<button class="small" data-act="pzIlanOku" type="button" ${pzIlanIs?"disabled":""} title="Bağlı pazaryerlerindeki ilanları okur (hiçbir şey göndermez); ürünlerin yanında hangi pazaryerinde aktif / pasif olduğu görünür">🛒 Pazaryeri durumlarını oku</button>${PZ_ILAN.some(p=>pzIlan.veri[p])?`<button class="small" data-act="pzIlanYeni" type="button" title="Yalnız programdan açılmış ama rozeti henüz aktif olmayan ürünleri sorar (hızlı). Program açıkken ~30 dakikada bir kendiliğinden de çalışır.">↻ Yenileri kontrol et</button>`:""}`}
     </div>
     <div id="pzIlanBilgi">${pzIlanBilgi()}</div>
     ${!ro&&urunSecim.size?`<div class="toplu-bar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(23,98,77,.08));border:1px solid var(--accent,#17624d)">
@@ -3731,7 +3731,8 @@ async function pzTopluAcModal(){
         if(p==="pazarama"){const bek=sonPzr+11000-Date.now();if(bek>0){sonuc[k]=`<span class="muted">Pazarama sırası bekleniyor…</span>`;ciz();await new Promise(r=>setTimeout(r,bek))}sonPzr=Date.now()}
         try{const r=await pzCagir({islem:"urunAc",pazaryeri:p,kod:u.kod||u.barkod,govde:h.govde});
           if(r.durum==="zatenVar"){s={durum:"zatenVar",mesaj:r.mesaj||"",zaman:Date.now()};sonuc[k]=`<span class="muted">● zaten var</span>`;sd[k]="zatenVar"}
-          else{s={durum:"gonderildi",id:String(r.id||""),zaman:Date.now()};sonuc[k]=`<span class="muted">⏳ gönderildi, onay bekleniyor</span>`;sd[k]="gonderildi"}
+          else{s={durum:"gonderildi",id:String(r.id||""),zaman:Date.now()};sonuc[k]=`<span class="muted">⏳ gönderildi, onay bekleniyor</span>`;sd[k]="gonderildi";
+            if(pzIlanYaz(u,p,[0,Math.max(0,Math.floor(stokMiktar(u))),"gönderildi, onay bekleniyor"]))pzIlanSakla()}
           break}
         catch(err){const m=String(err.message||err).slice(0,300);s={durum:"hata",mesaj:m,zaman:Date.now()};sonuc[k]=`<span class="neg">✕ ${esc(m)}</span>`;sd[k]="hata";
           if(d===0&&/\(429\)|çok fazla istek|too many/i.test(m)){sonuc[k]=`<span class="muted">${esc(PZ_ADLAR[p])} yoğun, 12 sn sonra yeniden deneniyor…</span>`;sd[k]="";ciz();await new Promise(r=>setTimeout(r,12000));continue}
@@ -3751,7 +3752,8 @@ async function pzTopluAcModal(){
         for(const [id,p] of bek){const u=urunler.find(x=>x.id===id),o=t[id][p],k=id+"|"+p;
           try{const r=await pzCagir({islem:"urunSonuc",pazaryeri:p,kod:u.kod||u.barkod,id:o.id||""});
             if(r.durum==="tamam"||r.durum==="hata"){(yk[id]=yk[id]||{})[p]={...o,durum:r.durum,mesaj:String(r.mesaj||"").slice(0,300),zaman:Date.now()};
-              if(r.durum==="tamam"){sonuc[k]=`<span style="color:var(--accent,#17624d);font-weight:600">✓ açıldı / onaya düştü</span>`;sd[k]="tamam"}
+              if(r.durum==="tamam"){sonuc[k]=`<span style="color:var(--accent,#17624d);font-weight:600">✓ açıldı / onaya düştü</span>`;sd[k]="tamam";
+                const d0=pzIlanDurum(u,p);if(!d0||d0[0]!==1){if(pzIlanYaz(u,p,[0,Math.max(0,Math.floor(stokMiktar(u))),"açıldı, onay / satışa açılma bekleniyor"]))pzIlanSakla()}}
               else{sonuc[k]=`<span class="neg">✕ reddedildi: ${esc(String(r.mesaj||"").slice(0,200))}</span>`;sd[k]="red"}}}
           catch(err){/* sonraki turda yeniden sorulur */}}
         if(Object.keys(yk).length){await yaz(yk);if(root.isConnected)ciz()}}}
@@ -4324,7 +4326,7 @@ const PZ_KISA={trendyol:"TY",n11:"N11",pazarama:"PZR",idefix:"İDX",shopify:"SHP
 const PZ_ILAN_RENK={trendyol:"#f27a1a",n11:"#6a2c91",pazarama:"#1a56c4",idefix:"#d0103a",shopify:"#5e8e3e",amazon:"#232f3e",hepsiburada:"#ff6000"};
 let pzIlan={firma:null,veri:{}},pzIlanIs=null;
 function pzIlanHazirla(){if(pzIlan.firma===firmaId)return;const f=firmaId;pzIlan={firma:f,veri:{}};
-  pzDepo.al("ilan-"+f).then(v=>{if(v&&pzIlan.firma===f&&Object.keys(v).length){pzIlan.veri=v;render()}})}
+  pzDepo.al("ilan-"+f).then(v=>{if(v&&pzIlan.firma===f&&Object.keys(v).length){pzIlan.veri=v;render();setTimeout(()=>{if(pzIlan.firma===f)pzIlanYeni(true)},8000)}})}
 function pzIlanDurum(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return null;const b=pzKimlik(u.barkod),k=pzKimlik(u.kod);return (b&&d.m[b])||(k&&d.m[k])||null}
 function pzIlanRozet(u){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(!l.length)return "";const h=[];
   for(const p of l){const d=pzIlanDurum(u,p);if(!d)continue;const ak=d[0]===1,r=PZ_ILAN_RENK[p];
@@ -4333,7 +4335,7 @@ function pzIlanRozet(u){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(!l.length)r
 function pzIlanFiltre(u,f){if(!f)return true;const [p,t]=f.split(":");const d=pzIlanDurum(u,p);return t==="yok"?!d:t==="ak"?!!d&&d[0]===1:!!d&&d[0]!==1}
 function pzIlanBilgi(){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(pzIlanIs)return `<div class="muted" style="font-size:.82rem">🛒 ${esc(PZ_ADLAR[pzIlanIs.pz]||"")} ilanları okunuyor… ${pzIlanIs.adet.toLocaleString("tr-TR")}</div>`;
   if(!l.length)return "";const en=Math.min(...l.map(p=>pzIlan.veri[p].zaman||0));
-  return `<div class="muted" style="font-size:.78rem">Pazaryeri rozetleri: <b style="color:var(--fg)">●</b> aktif (satışta) · ○ pasif / onay bekliyor · rozet yoksa o pazaryerinde ilan yok. Son okuma ${new Date(en).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · ${l.map(p=>`${esc(PZ_ADLAR[p])} ${(pzIlan.veri[p].adet||0).toLocaleString("tr-TR")}${pzIlan.veri[p].hata?" ⚠":""}`).join(" · ")}</div>`}
+  return `<div class="muted" style="font-size:.78rem">Pazaryeri rozetleri: <b style="color:var(--fg)">●</b> aktif (satışta) · ○ pasif / onay bekliyor · rozet yoksa o pazaryerinde ilan yok. Programdan açılan ürünlerin rozeti kendiliğinden güncellenir (~30 dakikada bir); pazaryeri panelinden eklenenler için ara sıra baştan okuyun. Son baştan okuma ${new Date(en).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · ${l.map(p=>`${esc(PZ_ADLAR[p])} ${(pzIlan.veri[p].adet||0).toLocaleString("tr-TR")}${pzIlan.veri[p].hata?" ⚠":""}`).join(" · ")}</div>`}
 async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
   const bagli=(await pzBagliAl()).filter(k=>PZ_ILAN_OKU.includes(k));if(!bagli.length){toast("Bağlı pazaryeri bulunamadı");return}
   const veri={...pzIlan.veri},hatalar=[];
@@ -4350,6 +4352,33 @@ async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
     pzIlan.veri=veri;await pzDepo.koy("ilan-"+f,veri)}
   finally{pzIlanIs=null;render()}
   toast(hatalar.length?"Bazı pazaryerleri okunamadı: "+hatalar.join(" · ").slice(0,300):"Pazaryeri ilan durumları güncellendi")}
+// Tek ürünün bir pazaryerindeki rozetini günceller (yalnız o pazaryeri en az bir kez baştan okunduysa); değiştiyse true
+function pzIlanYaz(u,p,v){const d=pzIlan.veri[p];if(!d||!d.m||pzIlan.firma!==firmaId)return false;const o=pzIlanDurum(u,p);
+  for(const key of [pzKimlik(u.barkod),pzKimlik(u.kod)])if(key)d.m[key]=v;return !o||o[0]!==v[0]||o[1]!==v[1]||o[2]!==v[2]}
+let _pzIlanKayZ=null;
+function pzIlanSakla(){clearTimeout(_pzIlanKayZ);const f=firmaId;_pzIlanKayZ=setTimeout(()=>{if(pzIlan.firma===f)pzDepo.koy("ilan-"+f,pzIlan.veri)},500)}
+/* Yeni açılanları kontrol: baştan okumak yerine yalnız programdan açılmış (gönderildi / açıldı) ama rozeti henüz aktif olmayan ürünler
+   tek tek sorulur. Program açıkken kendiliğinden ~30 dakikada bir çalışır; "↻ Yenileri kontrol et" ile hemen çalıştırılabilir. */
+let _pzYeniIs=false,_pzYeniSon=0;
+async function pzIlanYeni(sessiz){if(_pzYeniIs||pzIlanIs||state.readonly||!sb||!firmaId)return;const f=firmaId;
+  const ac=(state.ayarEk||{}).pzUrunAc||{};_pzYeniIs=true;_pzYeniSon=Date.now();let n=0,bakilan=0;
+  if(!sessiz){const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=`<div class="muted" style="font-size:.82rem">↻ Yeni açılan ürünler kontrol ediliyor…</div>`}
+  try{const bagli=(await pzBagliAl()).filter(k=>PZ_ILAN_OKU.includes(k)&&pzIlan.veri[k]);
+    for(const p of bagli){
+      const aday=state.urunler.filter(u=>{const r=(ac[u.id]||{})[p];if(!r||!/^(gonderildi|tamam)$/.test(r.durum))return false;const d=pzIlanDurum(u,p);return !d||d[0]!==1}).slice(0,100);
+      if(!aday.length)continue;
+      if(p==="trendyol"){for(const u of aday){if(pzIlan.firma!==f)return;bakilan++;
+          for(const k of [u.barkod,u.kod].map(x=>String(x||"").trim()).filter(Boolean)){
+            try{const r=await pzCagir({islem:"urunler",sayfa:0,barkod:k});const t=(r.urunler||[]).find(x=>pzKimlik(x.barkod)===pzKimlik(k)||pzKimlik(x.stokKodu)===pzKimlik(k));
+              if(t){if(pzIlanYaz(u,p,[t.satista?1:0,Number(t.stok)||0,t.satista?"":"satışta değil / arşiv"]))n++;break}}catch(e){}}}}
+      else for(let i=0;i<aday.length;i+=20){const parca=aday.slice(i,i+20),kod=u=>p==="n11"?(u.kod||u.barkod):(u.barkod||u.kod);bakilan+=parca.length;
+        try{const r=await pzCagir({islem:"ilanBul",pazaryeri:p,kodlar:parca.map(kod)});if(pzIlan.firma!==f)return;
+          for(const x of r.sonuclar||[]){if(!x.ilan)continue;const u=parca.find(y=>pzKimlik(kod(y))===pzKimlik(x.kod));if(u&&pzIlanYaz(u,p,[x.ilan.a?1:0,Number(x.ilan.s)||0,String(x.ilan.d||"")]))n++}}
+        catch(e){}}}
+    if(n)pzIlanSakla()}
+  finally{_pzYeniIs=false;if(pzIlan.firma===f)render()}
+  if(!sessiz)toast(bakilan?`${bakilan} yeni açılmış ürün kontrol edildi · ${n} rozet güncellendi`:"Kontrol edilecek yeni açılmış ürün yok")}
+setInterval(()=>{if(sb&&firmaId&&pzIlan.firma===firmaId&&Object.keys(pzIlan.veri).length&&Date.now()-_pzYeniSon>25*60000)pzIlanYeni(true)},5*60000);
 const PZ_TAM_YENILE=6*3600000;
 async function pzSiparisleriOku(ilk,zorla,pzAd){pzAd=pzAd||"trendyol";const simdi=Date.now(),GUN=86400000;const anahtar=pzAd==="trendyol"?"siparis-"+firmaId:"siparis-"+pzAd+"-"+firmaId;let n=0;const ekA={pazaryeri:pzAd};
   const ilerle=k=>{n+=k;pz.yuk=`Siparişler okunuyor… (${n.toLocaleString("tr-TR")})`;renderSonra()};
@@ -5016,6 +5045,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uSayfaSec"){const hepsi=stokSayfaSon.length&&stokSayfaSon.every(x=>urunSecim.has(x));if(hepsi)stokSayfaSon.forEach(x=>urunSecim.delete(x));else stokSayfaSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="uSekme"){ui.uSekme=id;render()}
   else if(a==="pzIlanOku")pzIlanOku();
+  else if(a==="pzIlanYeni")pzIlanYeni(false);
   else if(a==="pzTopluAc")pzTopluAcModal();
   else if(a==="ugAc"){e.preventDefault();if(b.dataset.p==="marka"){ui.sMarka=id;ui.sKat=""}else{ui.sKat=id;ui.sMarka=""}ui.sAra="";ui.uSekme="urunler";render();const mm=document.getElementById("main");if(mm)mm.scrollIntoView({block:"start"})}
   else if(a==="sSayfa"){ui.sSayfa=Number(id)||1;render();const m=document.getElementById("main");if(m)m.scrollIntoView({block:"start"})}
