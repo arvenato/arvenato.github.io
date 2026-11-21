@@ -1524,7 +1524,7 @@ function vStok(){
       ${markalar.length?`<select id="fSMarka" data-filter="sMarka" aria-label="Marka"><option value="">Tüm markalar</option>${markalar.map(k=>`<option ${ui.sMarka===k?"selected":""}>${esc(k)}</option>`).join("")}</select>`:""}
       <select id="fSDurum" data-filter="sDurum" aria-label="Durum"><option value="">Tüm durumlar</option><option value="ok" ${ui.sDurum==="ok"?"selected":""}>Yeterli</option><option value="kritik" ${ui.sDurum==="kritik"?"selected":""}>Kritik</option><option value="yok" ${ui.sDurum==="yok"?"selected":""}>Stokta yok</option></select>
       <select id="fSSira" data-act-sayfa="sira" aria-label="Sıralama" title="Sıralama">${Object.entries(URUN_SIRA).map(([k,v])=>`<option value="${k}" ${(ui.sSira||"adAZ")===k?"selected":""}>↕ ${v[0]}</option>`).join("")}</select>
-      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}
+      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}
     </div>
     ${!ro&&urunSecim.size?`<div class="toplu-bar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(23,98,77,.08));border:1px solid var(--accent,#17624d)">
       <b>${urunSecim.size.toLocaleString("tr-TR")} ürün seçildi</b><span style="flex:1"></span>
@@ -1702,8 +1702,52 @@ function urunForm(existing){
   })});
 }
 /* Ürünler: seçili ürünlere toplu işlem (kategori, marka, KDV, birim, fiyat, kritik seviye, silme) */
-function urunTopluForm(tip){
-  const sec=state.urunler.filter(u=>urunSecim.has(u.id));if(!sec.length)return;const n=sec.length.toLocaleString("tr-TR");
+/* Kategori düzeltme dosyası: dışarıda hazırlanmış "ürün → yeni kategori" listesini (.json) okur, gruplar halinde gösterir,
+   kullanıcının işaretlediklerini uygular. Yalnızca kategori alanı değişir. Dosyadaki "mevcut" kategori ile üründeki şu anki
+   kategori aynı değilse (bu arada elle değiştirilmişse) o ürün atlanır. Başka firmanın dosyası kabul edilmez. */
+function katDuzeltModal(){
+  let liste=null,onay=false;
+  openModal(`<div class="section-head"><h2>📂 Kategori düzeltme dosyası</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">Hazırlanmış düzeltme listesini (.json) seçin. Liste gruplar halinde gösterilir; istemediğiniz grubun ya da ürünün işaretini kaldırın. <b>Uygula</b>'ya basana kadar hiçbir şey değişmez; yalnızca ürünlerin kategorisi değişir, pazaryerlerine bir şey gönderilmez.</div>
+    <div class="filters"><input type="file" id="kdDosya" accept=".json,application/json"></div>
+    <div id="kdOzet"></div><div id="kdListe"></div><div class="err" id="kdErr" role="alert"></div><div class="muted" id="kdDurum" role="status" style="font-size:.85rem"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="uygula" disabled>Uygula</button></div>`,
+  root=>{root.style.maxWidth="980px";const $=s=>root.querySelector(s);
+    const ciz=()=>{if(!liste){$("#kdListe").innerHTML="";return}
+      const gecerli=liste.filter(x=>x.durum==="ok"),sec=gecerli.filter(x=>x.sec).length,atla=liste.length-gecerli.length;
+      const gruplar={};gecerli.forEach((x,i)=>{const k=x.mevcut+" → "+x.yeni;(gruplar[k]=gruplar[k]||[]).push(x)});
+      $("#kdOzet").innerHTML=`<div class="notice" style="font-size:.88rem"><b>${gecerli.length.toLocaleString("tr-TR")}</b> ürün, <b>${Object.keys(gruplar).length}</b> grup · <b>${sec}</b> seçili${atla?` · <b>${atla}</b> ürün atlanacak (silinmiş ya da kategorisi bu arada değişmiş)`:""}</div>
+        <div class="filters"><button class="small" data-m="hepsi" type="button">Hepsini seç</button><button class="small" data-m="hicbiri" type="button">Hiçbirini seçme</button></div>`;
+      $("#kdListe").innerHTML=`<div class="tscroll" style="max-height:52vh;overflow:auto">${Object.entries(gruplar).sort((a,b)=>b[1].length-a[1].length).map(([k,l])=>{const s=l.filter(x=>x.sec).length;
+        return `<details style="border-bottom:1px solid var(--line,#e5e7eb);padding:6px 0"><summary style="cursor:pointer;display:flex;gap:8px;align-items:center"><input type="checkbox" data-kdg="${esc(k)}" ${s===l.length?"checked":""} ${s&&s<l.length?'data-yarim="1"':""}> <b>${esc(k.split(" → ")[0])}</b> → <b style="color:var(--accent,#17624d)">${esc(k.split(" → ")[1])}</b> <span class="muted">(${s}/${l.length})</span></summary>
+          <div style="padding:4px 0 4px 26px;font-size:.85rem">${l.map(x=>`<label style="display:flex;gap:6px;align-items:flex-start;padding:2px 0"><input type="checkbox" data-kdu="${esc(x.id)}" ${x.sec?"checked":""}> ${esc(x.ad)}</label>`).join("")}</div></details>`}).join("")}</div>`;
+      root.querySelectorAll("[data-yarim]").forEach(c=>c.indeterminate=true);
+      const b=$('[data-m="uygula"]');b.disabled=!sec;b.textContent=onay?`Evet, ${sec} ürünün kategorisini değiştir`:`Uygula (${sec})`};
+    root.addEventListener("change",async e=>{
+      if(e.target.id==="kdDosya"){const f=e.target.files[0];if(!f)return;$("#kdErr").textContent="";liste=null;onay=false;
+        try{const j=JSON.parse(await f.text());
+          if(j.tur!=="arvenato-kategori-duzeltme"||!Array.isArray(j.liste))throw new Error("Bu dosya bir kategori düzeltme listesi değil.");
+          if(j.firmaId&&j.firmaId!==firmaId)throw new Error(`Bu liste başka bir firma için hazırlanmış (${j.firma||j.firmaId}). Doğru firmaya geçip yeniden deneyin.`);
+          const ur=new Map(state.urunler.map(u=>[u.id,u]));
+          liste=j.liste.map(x=>{const u=ur.get(x.id);const durum=!u?"yok":String(u.kategori||"").trim()!==String(x.mevcut||"").trim()?"degismis":String(x.yeni||"").trim()?"ok":"bos";
+            return {id:x.id,mevcut:String(x.mevcut||""),yeni:String(x.yeni||"").trim(),ad:u?u.ad:x.ad,durum,sec:durum==="ok"}})}
+        catch(err){$("#kdErr").textContent=err.message||String(err)}
+        ciz();return}
+      const g=e.target.closest("[data-kdg]");if(g){const v=g.checked;liste.forEach(x=>{if(x.durum==="ok"&&x.mevcut+" → "+x.yeni===g.dataset.kdg)x.sec=v});onay=false;ciz();return}
+      const u=e.target.closest("[data-kdu]");if(u){const x=liste.find(y=>y.id===u.dataset.kdu);if(x)x.sec=u.checked;onay=false;
+        const d=u.closest("details");ciz();if(d){const s=[...root.querySelectorAll("details")].find(z=>z.querySelector(`[data-kdu="${CSS.escape(x.id)}"]`));if(s)s.open=true}}});
+    root.addEventListener("click",async e=>{if(e.target.closest("summary input"))e.stopPropagation();
+      const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;if(m==="close")return closeModal();
+      if(m==="hepsi"||m==="hicbiri"){liste.forEach(x=>{if(x.durum==="ok")x.sec=m==="hepsi"});onay=false;ciz();return}
+      if(m!=="uygula")return;const sec=liste.filter(x=>x.durum==="ok"&&x.sec);if(!sec.length)return;
+      if(!onay){onay=true;ciz();return}
+      root.querySelectorAll("button,input").forEach(x=>x.disabled=true);
+      try{const ur=new Map(state.urunler.map(u=>[u.id,u]));
+        const satirlar=sec.map(x=>{const {id,...rest}=ur.get(x.id);return {col:"urunler",id,veri:{...rest,kategori:x.yeni}}});
+        await topluYaz(satirlar,(n,t)=>{$("#kdDurum").textContent=`Kaydediliyor… ${n.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});
+        closeModal();toast(`${sec.length.toLocaleString("tr-TR")} ürünün kategorisi düzeltildi`)}
+      catch(err){$("#kdErr").textContent=errMsg(err);root.querySelectorAll("button,input").forEach(x=>x.disabled=false)}})})}
+function urunTopluForm(tip){  const sec=state.urunler.filter(u=>urunSecim.has(u.id));if(!sec.length)return;const n=sec.length.toLocaleString("tr-TR");
   const kats=[...new Set(state.urunler.map(x=>x.kategori).filter(Boolean))],markalar=[...new Set(state.urunler.map(x=>x.marka).filter(Boolean))];
   const fiyat=tip==="satis"||tip==="alis";const alan=tip==="satis"?"satisFiyat":tip==="alis"?"alisFiyat":"";
   const baslik={kategori:"Kategori ata",marka:"Marka ata",kdv:"KDV oranı",birim:"Birim",satis:"Satış fiyatı güncelle",alis:"Alış fiyatı güncelle",kritik:"Kritik stok seviyesi",sil:"Ürünleri sil",barkod:"Barkodu stok kodundan al",stok:"Toplu stok"}[tip];
@@ -4682,6 +4726,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uSayfaSec"){const hepsi=stokSayfaSon.length&&stokSayfaSon.every(x=>urunSecim.has(x));if(hepsi)stokSayfaSon.forEach(x=>urunSecim.delete(x));else stokSayfaSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="sSayfa"){ui.sSayfa=Number(id)||1;render();const m=document.getElementById("main");if(m)m.scrollIntoView({block:"start"})}
   else if(a==="uToplu")urunTopluForm(id);
+  else if(a==="uKatDuzelt")katDuzeltModal();
   else if(a==="uExcel")urunSeciliExcel();
   else if(a==="uTumExcel")urunTumExcel();
   else if(a==="uKolSira"){const c=URUN_KOL.find(x=>x.k===id);if(c){ui.sSira=ui.sSira===c.artan?c.azalan:c.artan;ui.sSayfa=1;try{localStorage.setItem("urun-sira",ui.sSira)}catch(err){}render()}}
