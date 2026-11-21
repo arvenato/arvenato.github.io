@@ -3755,7 +3755,7 @@ function pzOzVarsayilan(ozl){const z=ozl.filter(o=>o.zorunlu&&!pzMarkaOz(o)),oz=
   return {oz,zorunluSay:z.length}}
 function pzOtoEsModal(){
   const say=alan=>{const m={};for(const u of state.urunler){const v=String(u[alan]||"").trim();if(v)m[v]=(m[v]||0)+1}return Object.keys(m)};
-  let satir=[],dur=false,calisiyor=false;
+  let satir=[],dur=false,calisiyor=false,sPz="",sTur="kategori",sFil="";
   openModal(`<div class="section-head"><h2>🤖 Otomatik eşleştirme</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">Henüz eşleşmemiş kategori ve markalar için pazaryerlerinde öneri aranır. Sonuçları kontrol edip <b>Kaydet</b>'e basana kadar hiçbir şey kaydedilmez; pazaryerlerine hiçbir şey gönderilmez. Kesin olmayan önerilerde seçim boş gelir, listeden siz seçersiniz.</div>
     <div class="filters"><label><input type="checkbox" id="oeKat" checked> Kategoriler + zorunlu özellikler</label><label><input type="checkbox" id="oeMarka" checked> Markalar</label></div>
@@ -3764,11 +3764,23 @@ function pzOtoEsModal(){
     <div id="oeSonuc"></div><div class="err" id="oeErr"></div>
     <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" class="primary" data-m="kaydet" disabled>Seçilenleri kaydet</button></div>`,
   root=>{root.style.maxWidth="1000px";const $=s=>root.querySelector(s);const durum=t=>$("#oeDurum").textContent=t;
+    // Sonuçlar: pazaryeri sekmeleri › Kategoriler / Markalar alt sekmeleri › durum filtresi
     const ciz=()=>{const sec=satir.filter(r=>r.sec!=="").length;
-      $("#oeSonuc").innerHTML=satir.length?`<div class="muted" style="font-size:.85rem">${satir.length} öneri satırı · ${sec} seçili</div><div class="tscroll" style="max-height:55vh;overflow:auto"><table><thead><tr><th>Tür</th><th>Programdaki</th><th>Pazaryeri</th><th>Eşleşecek</th></tr></thead><tbody>
-        ${satir.map((r,i)=>`<tr><td class="muted" style="font-size:.78rem">${r.tur==="kategori"?"Kategori":"Marka"}</td><td><b>${esc(r.ad)}</b></td><td>${esc(PZ_ADLAR[r.p])}</td><td>${r.aday.length?`<select data-oe="${i}" style="max-width:520px"><option value="">— boş bırak —</option>${r.aday.map((a,j)=>`<option value="${j}" ${String(r.sec)===String(j)?"selected":""}>${esc(r.tur==="kategori"?a.yol:a.ad+" ("+a.id+")")}</option>`).join("")}</select>${r.sec===""?"":` <span class="muted" style="font-size:.75rem">${r.net?"✓ net":""}</span>`}`:`<span class="muted" style="font-size:.8rem">${esc(r.not||"öneri yok · elle eşleştirin")}</span>`}</td></tr>`).join("")}
-        </tbody></table></div>`:"";
-      $('[data-m="kaydet"]').disabled=calisiyor||!sec};
+      if(!satir.length){$("#oeSonuc").innerHTML="";$('[data-m="kaydet"]').disabled=true;return}
+      const pzVar=PZ_ES_PZ.filter(p=>satir.some(r=>r.p===p));if(!pzVar.includes(sPz))sPz=pzVar[0];
+      const sayi=(f)=>{const l=satir.filter(f);return `${l.filter(r=>r.sec!=="").length}/${l.length}`};
+      const pzSek=pzVar.map(p=>`<button class="small ${p===sPz?"primary":""}" data-oetab="pz" data-id="${p}" type="button">${esc(PZ_ADLAR[p])} <span style="opacity:.75">${sayi(r=>r.p===p)}</span></button>`).join("");
+      const turSek=[["kategori","📂 Kategoriler"],["marka","🏷️ Markalar"]].map(([t,ad])=>`<button class="small ${t===sTur?"primary":""}" data-oetab="tur" data-id="${t}" type="button">${ad} <span style="opacity:.75">${sayi(r=>r.p===sPz&&r.tur===t)}</span></button>`).join("");
+      const FIL={"":"Tümü",net:"✓ Net olanlar",sec:"Seçili olanlar",bos:"Boş (seçim bekleyen)",yok:"Öneri bulunamayan"};
+      const filSek=`<select data-oetab="fil" aria-label="Durum">${Object.entries(FIL).map(([k,v])=>`<option value="${k}" ${k===sFil?"selected":""}>${v}</option>`).join("")}</select>`;
+      const uy=r=>!sFil||(sFil==="net"&&r.net)||(sFil==="sec"&&r.sec!=="")||(sFil==="bos"&&r.sec===""&&r.aday.length)||(sFil==="yok"&&!r.aday.length);
+      const gor=satir.map((r,i)=>[r,i]).filter(([r])=>r.p===sPz&&r.tur===sTur&&uy(r));
+      const tumSec=`<button class="small" data-oetab="hepsiBos" type="button">Bu listede seçimleri temizle</button>`;
+      $("#oeSonuc").innerHTML=`<div class="filters" role="tablist">${pzSek}</div><div class="filters">${turSek}${filSek}${tumSec}<span class="muted" style="font-size:.82rem">Toplam ${sec} seçili (tüm pazaryerleri)</span></div>
+        <div class="tscroll" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Programdaki ${sTur==="kategori"?"kategori":"marka"}</th><th>${esc(PZ_ADLAR[sPz])}'daki karşılığı</th></tr></thead><tbody>
+        ${gor.map(([r,i])=>`<tr><td><b>${esc(r.ad)}</b>${r.net?` <span class="muted" style="font-size:.75rem">✓ net</span>`:""}</td><td>${r.aday.length?`<select data-oe="${i}" style="max-width:600px;width:100%"><option value="">— boş bırak —</option>${r.aday.map((a,j)=>`<option value="${j}" ${String(r.sec)===String(j)?"selected":""}>${esc(r.tur==="kategori"?a.yol:(a.serbest?"“"+a.ad+"” olarak serbest yaz":a.ad+" ("+a.id+")"))}</option>`).join("")}</select>`:`<span class="muted" style="font-size:.8rem">${esc(r.not||"öneri yok · elle eşleştirin")}</span>`}</td></tr>`).join("")||`<tr><td colspan="2" class="empty">Bu listede satır yok.</td></tr>`}
+        </tbody></table></div>`;
+      $('[data-m="kaydet"]').disabled=calisiyor||!sec;$('[data-m="kaydet"]').textContent=`Seçilenleri kaydet (${sec})`};
     const n11Kat=(marka)=>{const kats=((state.ayarEk||{}).pzEslesme||{}).kategori||{};
       const yeni=k=>{const r=satir.find(x=>x.tur==="kategori"&&x.p==="n11"&&x.ad===k&&x.sec!=="");return r?r.aday[r.sec].id:""};
       for(const u of state.urunler){if(String(u.marka||"").trim()!==marka)continue;const k=String(u.kategori||"").trim();const e=(kats[k]||{}).n11;if(e&&e.id)return e.id;const y=yeni(k);if(y)return y}
@@ -3803,8 +3815,12 @@ function pzOtoEsModal(){
         const k=katSec.length,m=sec.length-k,eksik=katSec.filter(r=>{const o=ozl[r.p+":"+r.aday[r.sec].id];return !o||Object.keys(o.oz).length<o.zorunluSay}).length;
         closeModal();toast(`${k} kategori, ${m} marka eşleştirmesi kaydedildi`+(eksik?` · ${eksik} kategoride doldurulmamış zorunlu özellik var (Kategori eşleştirme › Durum: Zorunlu özelliği eksik)`:""))}
       catch(e){$("#oeErr").textContent=e.message||String(e);b.disabled=false}finally{calisiyor=false}};
-    root.addEventListener("change",e=>{const s=e.target.closest("[data-oe]");if(s){satir[Number(s.dataset.oe)].sec=s.value===""?"":Number(s.value);ciz()}});
-    root.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
+    root.addEventListener("change",e=>{const s=e.target.closest("[data-oe]");if(s){satir[Number(s.dataset.oe)].sec=s.value===""?"":Number(s.value);ciz();return}
+      if(e.target.dataset.oetab==="fil"){sFil=e.target.value;ciz()}});
+    root.addEventListener("click",e=>{const t=e.target.closest("[data-oetab]");
+      if(t&&t.tagName==="BUTTON"){const k=t.dataset.oetab;if(k==="pz")sPz=t.dataset.id;else if(k==="tur")sTur=t.dataset.id;
+        else if(k==="hepsiBos")satir.forEach(r=>{if(r.p===sPz&&r.tur===sTur)r.sec=""});ciz();return}
+      const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
       if(m==="close"){if(calisiyor)dur=true;return closeModal()}if(m==="dur"){dur=true;durum("Durduruluyor…");return}
       if(m==="basla")return basla();if(m==="kaydet")return kaydet(b)})})}
 function pzKomisyonModal(){
