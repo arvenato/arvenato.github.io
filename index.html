@@ -3702,68 +3702,208 @@ async function pzTopluAcModal(){
   if(!pzl.length){toast("Ürün açılabilecek bağlı pazaryeri yok");return}
   const acKayit=()=>((state.ayarEk||{}).pzUrunAc||{});
   let hucre=[];// {u,p,ek[],govde,durum:"hazir"|"var"|"once"|"eksik"}
+  const sonuc={},sd={};let gonderildi=false,duz="";// sonuc: hücrenin gönderim sonucu (html) · sd: sonucun türü (hata | red | gonderildi | zatenVar | tamam) · duz: düzeltilen hücre
+  const hesapla=async(u,p,k)=>{const h={u,p,ek:[],govde:null,durum:"eksik"};
+    if(pzIlanDurum(u,p))h.durum="var";
+    else if(k&&((k[u.id]||{})[p]||{}).durum&&/^(gonderildi|tamam)$/.test(k[u.id][p].durum))h.durum="once";
+    else{try{const r=await pzUrunGovde({...u,miktar:stokMiktar(u)},p);h.ek=r.ek||[];h.govde=r.govde}catch(err){h.ek=[err.message||String(err)]}h.durum=h.ek.length||!h.govde?"eksik":"hazir"}
+    return h};
   const ozet=()=>{const say=d=>hucre.filter(h=>h.durum===d).length;return `${say("hazir")} gönderime hazır · ${say("eksik")} eksik bilgi · ${say("var")+say("once")} zaten var / daha önce gönderildi`};
-  const tablo=(sonuc)=>`<div class="tscroll" style="max-height:55vh"><table><thead><tr><th>Ürün</th>${pzl.map(p=>`<th>${esc(PZ_ADLAR[p])}</th>`).join("")}</tr></thead><tbody>
+  const tablo=()=>`<div class="tscroll" style="max-height:45vh"><table><thead><tr><th>Ürün</th>${pzl.map(p=>`<th>${esc(PZ_ADLAR[p])}</th>`).join("")}</tr></thead><tbody>
     ${urunler.map(u=>`<tr><td style="min-width:180px"><b style="font-size:.85rem">${esc(u.ad)}</b><div class="muted" style="font-size:.75rem">${esc(u.barkod||u.kod||"")} · ${money(u.satisFiyat)} · stok ${esc(String(stokMiktar(u)))}</div></td>${pzl.map(p=>{const h=hucre.find(x=>x.u.id===u.id&&x.p===p);if(!h)return `<td class="muted">…</td>`;
-      const s=sonuc&&sonuc[u.id+"|"+p];
-      if(s)return `<td style="font-size:.78rem" data-sonuc="${esc(u.id+"|"+p)}">${s}</td>`;
-      if(h.durum==="hazir"&&sonuc)return `<td class="muted" style="font-size:.78rem">gönderilmedi</td>`;
-      if(h.durum==="hazir")return `<td><label style="display:flex;gap:4px;align-items:center;font-size:.78rem;color:var(--accent,#17624d);font-weight:600"><input type="checkbox" data-tac="${esc(u.id)}|${p}" checked> hazır</label></td>`;
+      const k=u.id+"|"+p,s=sonuc[k],ek=duz===k?' style="outline:2px solid var(--accent,#17624d);outline-offset:-2px"':"";
+      const dz=`<button class="small ghost" type="button" data-m="duzelt" data-k="${esc(k)}" style="margin-top:4px">✏️ Düzelt</button>`;
+      if(s)return `<td${ek}><div style="font-size:.78rem">${s}</div>${sd[k]==="hata"?`<div><button class="small" type="button" data-m="tekrar" data-k="${esc(k)}" style="margin-top:4px">↻ Tekrar gönder</button></div>`:""}${sd[k]==="hata"||sd[k]==="red"?`<div>${dz}</div>`:""}</td>`;
+      if(h.durum==="hazir"&&gonderildi)return `<td${ek}><div style="font-size:.78rem;color:var(--accent,#17624d);font-weight:600">hazır</div><button class="small primary" type="button" data-m="tekrar" data-k="${esc(k)}" style="margin-top:4px">🚀 Gönder</button></td>`;
+      if(h.durum==="hazir")return `<td${ek}><label style="display:flex;gap:4px;align-items:center;font-size:.78rem;color:var(--accent,#17624d);font-weight:600"><input type="checkbox" data-tac="${esc(k)}" checked> hazır</label></td>`;
       if(h.durum==="var")return `<td class="muted" style="font-size:.78rem">● zaten var</td>`;
       if(h.durum==="once")return `<td class="muted" style="font-size:.78rem">daha önce gönderildi</td>`;
-      return `<td class="neg" style="font-size:.75rem;max-width:180px">${esc(h.ek.join(", "))}</td>`}).join("")}</tr>`).join("")}</tbody></table></div>`;
+      return `<td${ek}><div class="neg" style="font-size:.75rem;max-width:180px">${esc(h.ek.join(", "))}</div>${dz}</td>`}).join("")}</tr>`).join("")}</tbody></table></div>`;
   openModal(`<div class="section-head"><h2>🚀 Pazaryerlerinde toplu aç</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div id="taIc"><div class="muted">${urunler.length} ürün × ${pzl.length} pazaryeri hazırlanıyor…</div></div>`,
-  root=>{const ic=root.querySelector("#taIc");let gonderildi=false,sonuc={};
-    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;
-      if(b.dataset.m==="close")return closeModal();
-      if(b.dataset.m==="tumu"){const l=[...root.querySelectorAll("[data-tac]")];const hep=l.every(x=>x.checked);l.forEach(x=>x.checked=!hep);return}
-      if(b.dataset.m!=="gonder"||gonderildi)return;
-      const sec=[...root.querySelectorAll("[data-tac]:checked")].map(x=>x.dataset.tac.split("|"));
-      if(!sec.length){root.querySelector("#taErr").textContent="Gönderilecek bir şey seçilmedi.";return}
-      // Deneme listesine ekle (en fazla PZ_DENEME_UST)
-      const ay=(state.ayarEk||{}).pazaryeriTest||{},kodlar=[...(ay.kodlar||[])];
-      const yeni=[...new Set(sec.map(s=>s[0]))].map(id=>urunler.find(u=>u.id===id)).filter(u=>!kodlar.some(x=>pzKimlik(x)===pzKimlik(u.kod)||pzKimlik(x)===pzKimlik(u.barkod)));
-      if(kodlar.length+yeni.length>PZ_DENEME_UST){root.querySelector("#taErr").innerHTML=`Deneme listesine sığmıyor: listede ${kodlar.length} ürün var, ${yeni.length} ürün daha eklenmesi gerekiyor (en fazla ${PZ_DENEME_UST}). Daha az ürün seçin.`;return}
-      gonderildi=true;b.disabled=true;root.querySelectorAll("[data-tac],[data-m=tumu]").forEach(x=>x.disabled=true);
-      if(yeni.length){kodlar.push(...yeni.map(u=>u.kod||u.barkod));await api.setDoc("ayar","pazaryeriTest",{...ay,kodlar,guncelleme:Date.now()})}
-      const kayit={};
-      for(const [id,p] of sec){const u=urunler.find(x=>x.id===id),h=hucre.find(x=>x.u.id===id&&x.p===p),k=id+"|"+p;
-        sonuc[k]=`<span class="muted">gönderiliyor…</span>`;ic.querySelector("#taTablo").innerHTML=tablo(sonuc);
-        let s;
+  root=>{root.style.maxWidth="1100px";const ic=root.querySelector("#taIc");let takipVar=false,sonPzr=0;
+    const ciz=()=>{const t=ic.querySelector("#taTablo");if(t)t.innerHTML=tablo();const o=ic.querySelector("#taOzet");if(o)o.textContent=ozet()};
+    const yaz=async yk=>{const t=acKayit(),n={...t};for(const id of Object.keys(yk))n[id]={...(t[id]||{}),...yk[id]};await api.setDoc("ayar","pzUrunAc",n)};
+    // Tek ürünü tek pazaryerinde açar. Pazarama ~10 sn'de bir istek kabul ediyor: istekler arasında beklenir, 429 gelirse 12 sn bekleyip bir kez daha denenir.
+    const gonderBir=async(id,p)=>{const u=urunler.find(x=>x.id===id),h=hucre.find(x=>x.u.id===id&&x.p===p),k=id+"|"+p;
+      sonuc[k]=`<span class="muted">gönderiliyor…</span>`;sd[k]="";ciz();let s;
+      for(let d=0;d<2;d++){
+        if(p==="pazarama"){const bek=sonPzr+11000-Date.now();if(bek>0){sonuc[k]=`<span class="muted">Pazarama sırası bekleniyor…</span>`;ciz();await new Promise(r=>setTimeout(r,bek))}sonPzr=Date.now()}
         try{const r=await pzCagir({islem:"urunAc",pazaryeri:p,kod:u.kod||u.barkod,govde:h.govde});
-          if(r.durum==="zatenVar"){s={durum:"zatenVar",mesaj:r.mesaj||"",zaman:Date.now()};sonuc[k]=`<span class="muted">● zaten var</span>`}
-          else{s={durum:"gonderildi",id:String(r.id||""),zaman:Date.now()};sonuc[k]=`<span class="muted">⏳ gönderildi, onay bekleniyor</span>`}}
-        catch(err){s={durum:"hata",mesaj:String(err.message||err).slice(0,300),zaman:Date.now()};sonuc[k]=`<span class="neg">✕ ${esc(s.mesaj)}</span>`}
-        (kayit[id]=kayit[id]||{})[p]=s;ic.querySelector("#taTablo").innerHTML=tablo(sonuc)}
-      const yaz=async yk=>{const t=acKayit(),n={...t};for(const id of Object.keys(yk))n[id]={...(t[id]||{}),...yk[id]};await api.setDoc("ayar","pzUrunAc",n)};
-      await yaz(kayit);
-      ic.querySelector("#taDurum").innerHTML=`Gönderim bitti. Pazaryerlerinin onay sonuçları 20 saniyede bir soruluyor (pencere açık kaldıkça). Pencereyi kapatırsanız sonuçları her ürünün kartında görebilirsiniz.`;
-      // Sonuç takibi
-      for(let tur=0;tur<15;tur++){await new Promise(r=>setTimeout(r,20000));if(!root.isConnected)break;
-        const t=acKayit(),bek=[];for(const id of Object.keys(kayit))for(const p of Object.keys(kayit[id]))if(((t[id]||{})[p]||{}).durum==="gonderildi")bek.push([id,p]);
+          if(r.durum==="zatenVar"){s={durum:"zatenVar",mesaj:r.mesaj||"",zaman:Date.now()};sonuc[k]=`<span class="muted">● zaten var</span>`;sd[k]="zatenVar"}
+          else{s={durum:"gonderildi",id:String(r.id||""),zaman:Date.now()};sonuc[k]=`<span class="muted">⏳ gönderildi, onay bekleniyor</span>`;sd[k]="gonderildi"}
+          break}
+        catch(err){const m=String(err.message||err).slice(0,300);s={durum:"hata",mesaj:m,zaman:Date.now()};sonuc[k]=`<span class="neg">✕ ${esc(m)}</span>`;sd[k]="hata";
+          if(d===0&&/\(429\)|çok fazla istek|too many/i.test(m)){sonuc[k]=`<span class="muted">${esc(PZ_ADLAR[p])} yoğun, 12 sn sonra yeniden deneniyor…</span>`;sd[k]="";ciz();await new Promise(r=>setTimeout(r,12000));continue}
+          break}}
+      ciz();return s};
+    // Deneme listesine ekleme (en fazla PZ_DENEME_UST); sığmazsa hata metni döner
+    const listeyeEkle=async ids=>{const ay=(state.ayarEk||{}).pazaryeriTest||{},kodlar=[...(ay.kodlar||[])];
+      const yeni=[...new Set(ids)].map(id=>urunler.find(u=>u.id===id)).filter(u=>u&&!kodlar.some(x=>pzKimlik(x)===pzKimlik(u.kod)||pzKimlik(x)===pzKimlik(u.barkod)));
+      if(kodlar.length+yeni.length>PZ_DENEME_UST)return `Deneme listesine sığmıyor: listede ${kodlar.length} ürün var, ${yeni.length} ürün daha eklenmesi gerekiyor (en fazla ${PZ_DENEME_UST}). Daha az ürün seçin.`;
+      if(yeni.length){kodlar.push(...yeni.map(u=>u.kod||u.barkod));await api.setDoc("ayar","pazaryeriTest",{...ay,kodlar,guncelleme:Date.now()})}
+      return ""};
+    // Onay sonuçları: pencere açık kaldıkça 20 sn'de bir (en çok 15 tur)
+    const takip=async()=>{if(takipVar)return;takipVar=true;
+      try{for(let tur=0;tur<15;tur++){await new Promise(r=>setTimeout(r,20000));if(!root.isConnected)break;
+        const t=acKayit(),bek=[];for(const u of urunler)for(const p of pzl)if(sd[u.id+"|"+p]==="gonderildi"&&((t[u.id]||{})[p]||{}).durum==="gonderildi")bek.push([u.id,p]);
         if(!bek.length)break;const yk={};
-        for(const [id,p] of bek){const u=urunler.find(x=>x.id===id),o=t[id][p];
+        for(const [id,p] of bek){const u=urunler.find(x=>x.id===id),o=t[id][p],k=id+"|"+p;
           try{const r=await pzCagir({islem:"urunSonuc",pazaryeri:p,kod:u.kod||u.barkod,id:o.id||""});
             if(r.durum==="tamam"||r.durum==="hata"){(yk[id]=yk[id]||{})[p]={...o,durum:r.durum,mesaj:String(r.mesaj||"").slice(0,300),zaman:Date.now()};
-              sonuc[id+"|"+p]=r.durum==="tamam"?`<span style="color:var(--accent,#17624d);font-weight:600">✓ açıldı / onaya düştü</span>`:`<span class="neg">✕ reddedildi: ${esc(String(r.mesaj||"").slice(0,200))}</span>`}}
+              if(r.durum==="tamam"){sonuc[k]=`<span style="color:var(--accent,#17624d);font-weight:600">✓ açıldı / onaya düştü</span>`;sd[k]="tamam"}
+              else{sonuc[k]=`<span class="neg">✕ reddedildi: ${esc(String(r.mesaj||"").slice(0,200))}</span>`;sd[k]="red"}}}
           catch(err){/* sonraki turda yeniden sorulur */}}
-        if(Object.keys(yk).length){await yaz(yk);if(root.isConnected)ic.querySelector("#taTablo").innerHTML=tablo(sonuc)}}
+        if(Object.keys(yk).length){await yaz(yk);if(root.isConnected)ciz()}}}
+      finally{takipVar=false}};
+    /* ---- Yerinde düzeltme: ürün bilgileri, kategori / marka eşleştirmesi, zorunlu özellikler, N11 kargo şablonu ---- */
+    let D=null;// {id,p,katListe,katSec,mkSec,oz:[...zorunlu özellikler]}
+    const alanEksik=(h,ad)=>h.ek.some(x=>x===ad||x.startsWith(ad));
+    const duzeltAc=async k=>{const [id,p]=k.split("|"),u=urunler.find(x=>x.id===id),h=hucre.find(x=>x.u.id===id&&x.p===p);if(!u||!h)return;
+      duz=k;ciz();D={id,p,katSec:null,mkSec:null,oz:[]};const alan=ic.querySelector("#taDuzelt");
+      const kat=String(u.kategori||"").trim(),mk=String(u.marka||"").trim(),eK=kat?pzEsKat(kat,p):null,eM=mk?pzEsMarka(mk,p):null;
+      const kirmizi=ad=>h.ek.some(x=>x===ad||(ad==="görsel"&&x.startsWith("görsel")))?"border-color:var(--neg,#c0392b);":"";
+      const katlar=[...new Set(state.urunler.map(x=>String(x.kategori||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
+      const markalar=[...new Set(state.urunler.map(x=>String(x.marka||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
+      const n11Sablon=p==="n11"&&!String((pzUrunAyar().n11||{}).sablon||"").trim();
+      const neden=sonuc[k]&&(sd[k]==="hata"||sd[k]==="red")?sonuc[k]:`<span class="neg">${esc(h.ek.join(", "))}</span>`;
+      alan.innerHTML=`<div style="border:1px solid var(--accent,#17624d);border-radius:10px;padding:10px 12px;margin-top:8px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>✏️ ${esc(u.ad)} → ${esc(PZ_ADLAR[p])}</b><span style="flex:1"></span><button class="small ghost" type="button" data-m="dkapat">Kapat</button></div>
+        <div style="font-size:.8rem">Sorun: ${neden}</div>
+        <div class="grid2">
+          <div class="field"><label for="tdAd">Ürün adı</label><input id="tdAd" value="${esc(u.ad||"")}" style="${kirmizi("ürün adı")}"></div>
+          <div class="field"><label for="tdFiyat">Satış fiyatı (KDV dahil)</label><input id="tdFiyat" type="number" step="0.01" min="0" value="${esc(String(u.satisFiyat??""))}" style="${kirmizi("satış fiyatı")}"></div>
+          <div class="field"><label for="tdBarkod">Barkod</label><input id="tdBarkod" value="${esc(u.barkod||"")}" style="${kirmizi("barkod")}"></div>
+          <div class="field"><label for="tdKod">Stok kodu</label><input id="tdKod" value="${esc(u.kod||"")}" style="${kirmizi("stok kodu")}"></div>
+          <div class="field"><label for="tdDesi">Desi</label><input id="tdDesi" type="number" step="0.1" min="0" value="${esc(String(u.desi??""))}" style="${kirmizi("desi")}"></div>
+          <div class="field"><label for="tdKat">Kategori (programdaki)</label><input id="tdKat" list="tdKatDl" value="${esc(kat)}" style="${kirmizi("kategori")}"><datalist id="tdKatDl">${katlar.map(x=>`<option value="${esc(x)}"></option>`).join("")}</datalist></div>
+          <div class="field"><label for="tdMarka">Marka (programdaki)</label><input id="tdMarka" list="tdMkDl" value="${esc(mk)}" style="${kirmizi("marka")}"><datalist id="tdMkDl">${markalar.map(x=>`<option value="${esc(x)}"></option>`).join("")}</datalist></div>
+        </div>
+        <div class="field"><label for="tdAcik">Açıklama (en az 20 karakter)</label><textarea id="tdAcik" rows="3" style="${kirmizi("açıklama")}">${esc(u.aciklama||"")}</textarea></div>
+        <div class="field"><label for="tdGorsel">Görsel adresleri (her satıra bir https:// adresi)</label><textarea id="tdGorsel" rows="2" style="${kirmizi("görsel")}">${esc((u.gorseller||[]).join("\n"))}</textarea></div>
+        ${p==="shopify"?"":`<div style="font-size:.85rem"><b>${esc(PZ_ADLAR[p])} kategorisi:</b> ${eK?`${esc(eK.yol||eK.id)} <a href="#" data-m="dkatdeg">değiştir</a>`:`<span class="neg">eşleştirilmemiş</span>`}
+          <div id="tdKatAlan" style="${eK?"display:none":""}"><input id="tdKatAra" placeholder="${esc(PZ_ADLAR[p])} kategorisi ara (en alt kategori)" value="${esc(eK?"":kat)}" style="width:100%;margin-top:4px"><div id="tdKatSonuc" style="max-height:160px;overflow:auto;font-size:.82rem"><div class="muted">Kategori ağacı yükleniyor…</div></div></div></div>
+        <div style="font-size:.85rem"><b>${esc(PZ_ADLAR[p])} markası:</b> ${eM?`${esc(eM.ad||eM.id)} <a href="#" data-m="dmkdeg">değiştir</a>`:`<span class="neg">eşleştirilmemiş</span>`}
+          <div id="tdMkAlan" style="${eM&&!alanEksik(h,"N11 marka")?"display:none":""}"><div class="filters" style="margin-top:4px"><input id="tdMkAra" value="${esc(mk)}" style="flex:1;min-width:160px"><button class="small" type="button" data-m="dmara">${esc(PZ_ADLAR[p])}'da ara</button></div><div id="tdMkSonuc" style="max-height:160px;overflow:auto;font-size:.82rem"></div></div></div>
+        <div id="tdOz" style="display:flex;flex-direction:column;gap:6px"></div>`}
+        ${n11Sablon?`<div class="field"><label for="tdSablon">N11 kargo şablonu adı (bütün ürünler için)</label><input id="tdSablon" placeholder="N11 › Hesabım › Teslimat Bilgilerim'deki şablon adı" style="border-color:var(--neg,#c0392b)"></div>`:""}
+        <div class="err" id="tdErr"></div>
+        <div class="filters"><button class="small primary" type="button" data-m="dkaydet">Kaydet ve yeniden kontrol et</button><span class="muted" style="font-size:.78rem">Ürün bilgileri bütün pazaryerleri için kaydedilir; eşleştirmeler aynı kategori / markadaki bütün ürünlerde kullanılır.</span></div></div>`;
+      alan.scrollIntoView({block:"nearest"});
+      if(p==="shopify")return;
+      const katAraCiz=()=>{const ka=ic.querySelector("#tdKatSonuc");if(!ka||!D||!D.katListe)return;const q=_norm(ic.querySelector("#tdKatAra").value).split(" ").filter(Boolean);
+        const l=(q.length?D.katListe.filter(x=>q.every(w=>x.n.includes(w))):D.katListe).slice(0,50);
+        ka.innerHTML=l.length?l.map(x=>`<div><a href="#" data-dkat="${esc(x.id)}">${esc(x.yol)}</a></div>`).join(""):`<div class="muted">Sonuç yok; daha kısa ya da farklı bir kelime deneyin.</div>`};
+      D.katAraCiz=katAraCiz;
+      if(!eK)pzKategoriler(p).then(l=>{if(D&&D.id===id&&D.p===p){D.katListe=l;katAraCiz()}}).catch(e=>{const ka=ic.querySelector("#tdKatSonuc");if(ka)ka.innerHTML=`<div class="err">${esc(e.message||String(e))}</div>`});
+      if(!eM||alanEksik(h,"N11 marka"))markaAra();
+      ozCiz()};
+    const markaAra=async()=>{if(!D)return;const {p,id}=D,ms=ic.querySelector("#tdMkSonuc"),ad=String((ic.querySelector("#tdMkAra")||{}).value||"").trim();if(!ms)return;
+      if(ad.length<2){ms.innerHTML=`<div class="muted">En az 2 harf yazın.</div>`;return}
+      ms.innerHTML=`<div class="muted">Aranıyor…</div>`;
+      try{const g={islem:"markaAra",pazaryeri:p,ad};if(p==="n11"){const u=urunler.find(x=>x.id===id),e=D.katSec||pzEsKat(String(u.kategori||"").trim(),p);if(e&&e.id)g.kategoriId=e.id}
+        const r=await pzCagir(g);if(!D||D.id!==id||D.p!==p)return;const l=r.markalar||[];
+        ms.innerHTML=(l.length?l.slice(0,40).map(x=>`<div><a href="#" data-dmk="${esc(x.id)}" data-ad="${esc(x.ad)}">${esc(x.ad)}</a> <span class="muted">(${esc(x.id)})</span></div>`).join(""):`<div class="muted">${esc(r.not||"Bulunamadı; farklı yazımla deneyin.")}</div>`)
+          +(p==="n11"&&r.serbest&&!l.some(x=>_norm(x.ad)===_norm(ad))?`<div style="margin-top:6px"><a href="#" data-dmk="" data-ad="${esc(ad)}" data-serbest="1">“${esc(ad)}” olarak serbest yaz</a></div>`:"")}
+      catch(e){ms.innerHTML=`<div class="err">${esc(e.message||String(e))}</div>`}};
+    const ozCiz=async()=>{if(!D)return;const {p,id}=D,alan=ic.querySelector("#tdOz");if(!alan)return;
+      const u=urunler.find(x=>x.id===id),kat=String(u.kategori||"").trim(),eK=kat?pzEsKat(kat,p):null,kid=(D.katSec&&D.katSec.id)||(eK&&eK.id);
+      if(!kid){alan.innerHTML=`<div class="muted" style="font-size:.82rem">Zorunlu özellikler kategori seçilince gösterilir.</div>`;D.oz=[];return}
+      alan.innerHTML=`<div class="muted" style="font-size:.82rem">Zorunlu özellikler okunuyor…</div>`;let l;
+      try{l=await pzOzellikler(p,kid)}catch(e){alan.innerHTML=`<div class="err">${esc(e.message||String(e))}</div>`;return}
+      if(!D||D.id!==id||D.p!==p)return;
+      const z=l.filter(o=>o.zorunlu&&!pzMarkaOz(o));D.oz=z;
+      const varsay=(D.katSec?{}:((eK&&eK.ozellik)||{})),urunOz=((u.pzOzellik||{})[p])||{};
+      alan.innerHTML=z.length?`<div style="font-size:.85rem"><b>Zorunlu özellikler</b> <span class="muted">— boş bıraktığınız alanlar kategorinin varsayılanını kullanır</span></div><div class="grid2">${z.map(o=>{const v=(urunOz[o.id]||{}).deger||"",vs=(varsay[o.id]||{}).deger||"",dl="tddl_"+String(o.id).replace(/\W/g,"");
+          const bos=!v&&!vs;
+          return `<div class="field"><label for="tdoz_${esc(o.id)}">${esc(o.ad)}${o.serbest?' <span class="muted">· serbest</span>':""}</label><input id="tdoz_${esc(o.id)}" data-tdoz="${esc(o.id)}" list="${dl}" value="${esc(v)}" placeholder="${vs?"varsayılan: "+esc(vs):(o.degerler.length?"Listeden seçin":"Değer yazın")}" style="${bos?"border-color:var(--neg,#c0392b)":""}"><datalist id="${dl}">${o.degerler.slice(0,3000).map(x=>`<option value="${esc(x.ad)}"></option>`).join("")}</datalist></div>`}).join("")}</div>
+        <label style="font-size:.82rem;display:flex;gap:6px;align-items:center"><input type="checkbox" id="tdOzVars" checked> Girdiğim değerleri bu kategorinin varsayılanı yap (aynı kategorideki diğer ürünler için de geçerli olsun)</label>`
+        :`<div class="muted" style="font-size:.82rem">Bu kategoride (marka dışında) zorunlu özellik yok.</div>`};
+    const duzeltKaydet=async b=>{if(!D)return;const {id,p}=D,er=ic.querySelector("#tdErr");er.textContent="";
+      const v=s=>String((ic.querySelector(s)||{}).value??"").trim();
+      const i=urunler.findIndex(x=>x.id===id);const eski=state.urunler.find(x=>x.id===id)||urunler[i];
+      const fiyat=Number(v("#tdFiyat").replace(",",".")),desi=v("#tdDesi")===""?0:Number(v("#tdDesi").replace(",","."));
+      if(!(fiyat>0)){er.textContent="Satış fiyatı sıfırdan büyük olmalı.";return}
+      if(!(desi>=0)){er.textContent="Desi geçerli bir sayı olmalı.";return}
+      const gorseller=v("#tdGorsel").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+      if(gorseller.some(x=>!/^https?:\/\//i.test(x))){er.textContent="Görsel adresleri http:// ya da https:// ile başlamalı.";return}
+      const yeniKat=v("#tdKat"),yeniMk=v("#tdMarka");
+      // Zorunlu özellikler
+      const ozDeg={};
+      for(const o of D.oz||[]){const t=ic.querySelector(`[data-tdoz="${CSS.escape(String(o.id))}"]`);const x=String((t||{}).value||"").trim();if(!x)continue;
+        const d=o.degerler.find(y=>_norm(y.ad)===_norm(x));if(!d&&!o.serbest&&o.degerler.length){er.textContent=`“${o.ad}” için listedeki değerlerden birini seçin (“${x}” listede yok).`;return}
+        ozDeg[o.id]={ad:o.ad,degerId:d?d.id:"",deger:d?d.ad:x}}
+      const varsayilan=!!(ic.querySelector("#tdOzVars")||{}).checked;
+      b.disabled=true;
+      try{
+        // 1) Ürün
+        const {id:_,...rest}=eski;const pzOz=JSON.parse(JSON.stringify(rest.pzOzellik||{}));
+        if(!varsayilan&&Object.keys(ozDeg).length)pzOz[p]={...(pzOz[p]||{}),...ozDeg};
+        const doc={...rest,ad:v("#tdAd")||rest.ad,barkod:v("#tdBarkod"),kod:v("#tdKod"),satisFiyat:r2(fiyat),desi,kategori:yeniKat,marka:yeniMk,aciklama:v("#tdAcik"),gorseller,pzOzellik:pzOz};
+        await api.setDoc("urunler",id,doc);
+        // 2) Eşleştirmeler (kategori, marka, kategori varsayılan özellikleri)
+        const kSec=D.katSec,mSec=D.mkSec;
+        if(p!=="shopify"&&(kSec||mSec||(varsayilan&&Object.keys(ozDeg).length))){
+          await pzEsKaydet(es=>{
+            if(kSec&&yeniKat){const z=D.oz||[];(es.kategori[yeniKat]=es.kategori[yeniKat]||{})[p]={id:kSec.id,yol:kSec.yol,ozellik:varsayilan?ozDeg:{},zorunluSay:z.length,zaman:Date.now()}}
+            else if(varsayilan&&Object.keys(ozDeg).length&&yeniKat&&es.kategori[yeniKat]&&es.kategori[yeniKat][p]){const e=es.kategori[yeniKat][p];e.ozellik={...(e.ozellik||{}),...ozDeg};e.zorunluSay=(D.oz||[]).length}
+            if(mSec&&yeniMk)(es.marka[yeniMk]=es.marka[yeniMk]||{})[p]=Object.assign({id:mSec.id,ad:mSec.ad,zaman:Date.now()},mSec.serbest?{serbest:true}:{})})}
+        // 3) N11 kargo şablonu
+        const sab=v("#tdSablon");if(sab){const ay=pzUrunAyar(),n=ay.n11||{};await api.setDoc("ayar","pzUrunAyar",{...ay,n11:{...n,sablon:sab.slice(0,100),hazirlik:n.hazirlik??1}})}
+        // 4) Bu ürünün bütün pazaryerlerini yeniden kontrol et (gönderilmiş / zaten var olanlara dokunmadan)
+        const uYeni={...doc,id};urunler[i]=uYeni;
+        for(const q of pzl){const j=hucre.findIndex(x=>x.u.id===id&&x.p===q),kk=id+"|"+q,eskiH=hucre[j];
+          if(eskiH&&(eskiH.durum==="var"||eskiH.durum==="once")){eskiH.u=uYeni;continue}
+          if(sonuc[kk]&&sd[kk]!=="hata"&&sd[kk]!=="red"){if(eskiH)eskiH.u=uYeni;continue}
+          const yeniH=await hesapla(uYeni,q,null);if(j>=0)hucre[j]=yeniH;else hucre.push(yeniH);
+          if(yeniH.durum==="hazir"){delete sonuc[kk];delete sd[kk]}}
+        const h=hucre.find(x=>x.u.id===id&&x.p===p);
+        if(h&&h.durum==="hazir"){D=null;duz="";ic.querySelector("#taDuzelt").innerHTML=`<div class="notice" style="font-size:.85rem;margin-top:8px">✓ ${esc(uYeni.ad)} → ${esc(PZ_ADLAR[p])} artık gönderime hazır.${gonderildi?" Tablodaki <b>🚀 Gönder</b> ile gönderebilirsiniz.":" Gönderirken işaretli olarak gelir."}</div>`;ciz()}
+        else{ciz();await duzeltAc(id+"|"+p);const e2=ic.querySelector("#tdErr");if(e2)e2.textContent="Kaydedildi, ama hâlâ eksik var: "+(h?h.ek.join(", "):"")}}
+      catch(err){er.textContent=errMsg(err)}
+      finally{b.disabled=false}};
+    root.addEventListener("input",e=>{if(e.target.id==="tdKatAra"&&D&&D.katAraCiz)D.katAraCiz()});
+    root.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="tdMkAra"){e.preventDefault();markaAra()}});
+    root.addEventListener("click",async e=>{
+      const ka=e.target.closest("[data-dkat]");if(ka&&D){e.preventDefault();const x=(D.katListe||[]).find(y=>String(y.id)===ka.dataset.dkat);if(!x)return;D.katSec={id:x.id,yol:x.yol};
+        ic.querySelector("#tdKatSonuc").innerHTML=`<div>Seçilen: <b>${esc(x.yol)}</b> <a href="#" data-m="dkatdeg">değiştir</a></div>`;ozCiz();return}
+      const ma=e.target.closest("[data-dmk]");if(ma&&D){e.preventDefault();D.mkSec={id:ma.dataset.dmk,ad:ma.dataset.ad,serbest:!!ma.dataset.serbest};
+        ic.querySelector("#tdMkSonuc").innerHTML=`<div>Seçilen: <b>${esc(ma.dataset.ad)}</b></div>`;return}
+      const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
+      if(m==="close")return closeModal();
+      if(m==="dkapat"){e.preventDefault();D=null;duz="";ic.querySelector("#taDuzelt").innerHTML="";ciz();return}
+      if(m==="dkatdeg"){e.preventDefault();if(!D)return;const a=ic.querySelector("#tdKatAlan");if(a)a.style.display="";D.katSec=null;
+        if(!D.katListe){const {id,p}=D;pzKategoriler(p).then(l=>{if(D&&D.id===id&&D.p===p){D.katListe=l;D.katAraCiz()}}).catch(()=>{})}else D.katAraCiz();return}
+      if(m==="dmkdeg"){e.preventDefault();const a=ic.querySelector("#tdMkAlan");if(a)a.style.display="";markaAra();return}
+      if(m==="dmara")return markaAra();
+      if(m==="dkaydet")return duzeltKaydet(b);
+      if(m==="duzelt")return duzeltAc(b.dataset.k);
+      if(m==="tumu"){const l=[...root.querySelectorAll("[data-tac]")];const hep=l.every(x=>x.checked);l.forEach(x=>x.checked=!hep);return}
+      if(m==="tekrar"){const [id,p]=String(b.dataset.k||"").split("|");if(!id||!p)return;b.disabled=true;
+        const hata=await listeyeEkle([id]);if(hata){toast(hata);b.disabled=false;return}
+        const s=await gonderBir(id,p);await yaz({[id]:{[p]:s}});if(s.durum==="gonderildi")takip();return}
+      if(m!=="gonder"||gonderildi)return;
+      const sec=[...root.querySelectorAll("[data-tac]:checked")].map(x=>x.dataset.tac.split("|"));
+      if(!sec.length){root.querySelector("#taErr").textContent="Gönderilecek bir şey seçilmedi.";return}
+      const hata=await listeyeEkle(sec.map(s=>s[0]));if(hata){root.querySelector("#taErr").innerHTML=esc(hata);return}
+      gonderildi=true;b.disabled=true;root.querySelectorAll("[data-m=tumu]").forEach(x=>x.disabled=true);
+      for(const [id,p] of sec){sonuc[id+"|"+p]=`<span class="muted">sırada…</span>`;sd[id+"|"+p]=""}ciz();
+      const kayit={};
+      for(const [id,p] of sec){const s=await gonderBir(id,p);(kayit[id]=kayit[id]||{})[p]=s}
+      await yaz(kayit);
+      ic.querySelector("#taDurum").innerHTML=`Gönderim bitti. Hata alanlarda <b>↻ Tekrar gönder</b>, eksik ya da reddedilenlerde <b>✏️ Düzelt</b> kullanabilirsiniz. Onay sonuçları 20 saniyede bir soruluyor (pencere açık kaldıkça); pencereyi kapatırsanız sonuçları her ürünün kartında görebilirsiniz.`;
+      takip();
     });
     (async()=>{const k=acKayit();
-      for(const u of urunler){const uu={...u,miktar:stokMiktar(u)};
-        for(const p of pzl){const h={u,p,ek:[],govde:null,durum:"eksik"};
-          if(pzIlanDurum(u,p))h.durum="var";
-          else if(((k[u.id]||{})[p]||{}).durum&&/^(gonderildi|tamam)$/.test(k[u.id][p].durum))h.durum="once";
-          else{try{const r=await pzUrunGovde(uu,p);h.ek=r.ek||[];h.govde=r.govde}catch(err){h.ek=[err.message||String(err)]}h.durum=h.ek.length||!h.govde?"eksik":"hazir"}
-          hucre.push(h)}}
+      for(const u of urunler)for(const p of pzl)hucre.push(await hesapla(u,p,k));
       if(!root.isConnected)return;
       const ilanYok=!PZ_ILAN.some(p=>pzIlan.veri[p]);
       ic.innerHTML=`<div class="notice" style="font-size:.85rem">Fiyat: ürünün satış fiyatı (üstü çizili fiyat da aynı) · stok: programdaki stok. Pazaryerleri ürünleri kendi onayından geçirir.${ilanYok?`<br>⚠ Pazaryeri durumları okunmamış; zaten açık ürünleri pazaryeri kendisi "zaten var" diye bildirir.`:""}</div>
-        <div class="muted" style="font-size:.85rem;margin:6px 0">${ozet()}</div><div id="taTablo">${tablo(null)}</div>
-        <div class="muted" id="taDurum" style="font-size:.82rem;margin-top:6px">Eksik bilgisi olanlar gönderilmez; eksikleri ürün kartından ya da Pazaryeri › Eşleştirme'den tamamlayıp yeniden deneyin.</div>
+        <div class="muted" id="taOzet" style="font-size:.85rem;margin:6px 0">${ozet()}</div><div id="taTablo">${tablo()}</div>
+        <div id="taDuzelt"></div>
+        <div class="muted" id="taDurum" style="font-size:.82rem;margin-top:6px">Eksik bilgisi olan hücrelerde <b>✏️ Düzelt</b> ile eksikleri burada tamamlayabilirsiniz.</div>
         <div class="err" id="taErr"></div>
-        <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button>${hucre.some(h=>h.durum==="hazir")?`<button type="button" data-m="tumu">Seçimi tersine çevir</button><button type="button" class="primary" data-m="gonder">Evet, işaretlileri aç</button>`:""}</div>`})()})}
+        <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" data-m="tumu">Seçimi tersine çevir</button><button type="button" class="primary" data-m="gonder">Evet, işaretlileri aç</button></div>`})()})}
 function pzEslesmeHtml(tur){
   const marka=tur==="marka";const ara=_norm((marka?ui.esMarkaAra:ui.esAra)||"");
   const say=(alan)=>{const m={};for(const u of state.urunler){const v=String(u[alan]||"").trim();if(v)m[v]=(m[v]||0)+1}return Object.entries(m).sort((a,b)=>b[1]-a[1])};
