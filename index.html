@@ -4466,7 +4466,9 @@ function pzIlanBilgi(){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(pzIlanIs)ret
   if(!l.length)return "";const en=Math.min(...l.map(p=>pzIlan.veri[p].zaman||0));
   return `<div class="muted" style="font-size:.78rem">Pazaryeri rozetleri: <b style="color:var(--fg)">●</b> aktif (satışta) · ○ pasif / onay bekliyor · rozet yoksa o pazaryerinde ilan yok. Programdan açılan ürünlerin rozeti kendiliğinden güncellenir (~30 dakikada bir); pazaryeri panelinden eklenenler için ara sıra baştan okuyun. Son baştan okuma ${new Date(en).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · ${l.map(p=>`${esc(PZ_ADLAR[p])} ${(pzIlan.veri[p].adet||0).toLocaleString("tr-TR")}${pzIlan.veri[p].hata?" ⚠":""}`).join(" · ")}</div>`}
 async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
-  const bagli=(await pzBagliAl()).filter(k=>PZ_ILAN_OKU.includes(k));if(!bagli.length){toast("Bağlı pazaryeri bulunamadı");return}
+  // Not: pzBagliAl otomatik işlemeden hariç tutulanları (ör. Amazon) çıkarır; ilan okuma (yalnızca okuma) tüm bağlı pazaryerlerini kapsar
+  let tum=null;try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:f});tum=(data||[]).map(x=>x.pazaryeri)}catch(e){}
+  const bagli=(tum||await pzBagliAl()).filter(k=>PZ_ILAN_OKU.includes(k)).sort((a,b)=>PZ_ILAN_OKU.indexOf(a)-PZ_ILAN_OKU.indexOf(b));if(!bagli.length){toast("Bağlı pazaryeri bulunamadı");return}
   const veri={...pzIlan.veri},hatalar=[];
   try{for(const p of bagli){pzIlanIs={pz:p,adet:0};render();const m={};let imlec=null,adet=0,onceki="",hata="";
       try{for(let i=0;i<600;i++){let l,sonraki;
