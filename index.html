@@ -5670,7 +5670,8 @@ async function veriBaslat(){
     .on("postgres_changes",{event:"DELETE",schema:"public",table:"kayitlar"},p=>{const o=p.old||{};if(o.firma_id===firmaId&&o.koleksiyon)uzakUygula(o.koleksiyon,o.id,null)})
     .subscribe();
   render();
-  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId)veriYenile()});
+  // Uygulama öne gelince (telefonda arka plandan dönüş) veriler ve öteki bilgisayarlardan gelen ilan / öneri bilgileri yenilenir
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId){veriYenile();if(pzIlan.firma===firmaId)pzIlanOrtakCek(firmaId).catch(()=>{});if(pzOE.firma===firmaId)pzOEOrtakCek().then(d=>{if(d)pzOEAyikla()}).catch(()=>{})}});
   yengecHazirBildir();
   setTimeout(()=>efatSenk(false),4000);
   if(!window._efatZamanlayici)window._efatZamanlayici=setInterval(()=>efatSenk(false),15*60*1000);
@@ -5753,7 +5754,21 @@ async function uygulamaBaslat(){
   await guvenlikKapisi();
 }
 window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();kurulumOlayi=e});
-if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
+// Yeni program sürümü: telefonda (yüklü uygulama) ve bilgisayarda kendiliğinden gelir. Uygulama öne geldiğinde ve 5 dakikada bir
+// kontrol edilir; yeni sürüm hazır olunca açık pencere / yazılan alan yoksa sayfa yenilenir, varsa altta "Yenile" bandı çıkar.
+if("serviceWorker" in navigator&&location.protocol==="https:"){
+  const vardi=!!navigator.serviceWorker.controller;let bekleyen=false,yenilendi=false;
+  const mesgul=()=>{const m=document.getElementById("modalRoot"),a=document.activeElement;return !!((m&&m.children.length)||(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))};
+  const bant=()=>{if(document.getElementById("surumBandi"))return;const d=document.createElement("div");d.id="surumBandi";
+    d.style.cssText="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:9999;background:#1f5f4a;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;font-size:.9rem;max-width:calc(100vw - 32px)";
+    d.innerHTML='<span>Programın yeni sürümü hazır.</span><button type="button" style="background:#fff;color:#1f5f4a;border:0;border-radius:8px;padding:6px 12px;font-weight:600">Yenile</button>';
+    d.querySelector("button").onclick=()=>{yenilendi=true;location.reload()};document.body.appendChild(d)};
+  const uygula=()=>{if(!bekleyen||yenilendi)return;if(!mesgul()){yenilendi=true;location.reload()}else bant()};
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!vardi)return;bekleyen=true;uygula()});
+  navigator.serviceWorker.register("sw.js").then(reg=>{const kontrol=()=>{reg.update().catch(()=>{})};
+    document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){uygula();kontrol()}});
+    setInterval(()=>{if(!document.hidden)kontrol()},5*60000)}).catch(()=>{});
+}
 document.getElementById("hesapBtn").addEventListener("click",()=>{if(oturum)hesapModal()});
 document.getElementById("yedekBtn").remove();
 
