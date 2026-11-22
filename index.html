@@ -4245,18 +4245,21 @@ function pzOzVarsayilan(ozl,p){const z=ozl.filter(o=>o.zorunlu&&!pzMarkaOz(o)),o
 // sayfa yenilenirse "Devam et" ile kalan kısımdan sürer. Kaydedilen satırlar listeden düşer.
 const pzOE={firma:null,yuklendi:false,satir:[],ayar:null,bitti:false,calisiyor:false,dur:false,kayit:false,kayitDurum:"",araI:null,araQ:"",araMarka:null,araMarkaDurum:"",katListe:{},durum:"",hata:"",sPz:"",sTur:"kategori",sFil:"",ciz:null};
 const pzOEAnahtar=()=>"otoEs-"+firmaId;
+// Eşleşmesi zaten kayıtlı olan satırlar (başka bilgisayarda ya da sonradan kaydedilenler) listeden çıkarılır: kaydedilirse mevcut özellik ayarları silinirdi
+function pzOEKayitli(r){const es=pzEs()||{},g=((r.tur==="kategori"?es.kategori:es.marka)||{})[r.ad];const x=g&&g[r.p];return !!(x&&(x.id||x.ad))}
+function pzOEAyikla(){const once=pzOE.satir.length;pzOE.satir=pzOE.satir.filter(r=>!pzOEKayitli(r));return once-pzOE.satir.length}
 async function pzOEYukle(){
-  if(pzOE.firma===firmaId&&pzOE.yuklendi)return;
+  if(pzOE.firma===firmaId&&pzOE.yuklendi){pzOEAyikla();return}
   if(pzOE.calisiyor)pzOE.dur=true;
   Object.assign(pzOE,{firma:firmaId,yuklendi:true,satir:[],ayar:null,bitti:false,calisiyor:false,dur:false,durum:"",hata:""});
   const d=await pzDepo.al(pzOEAnahtar());
   if(d&&Array.isArray(d.satir)){pzOE.satir=d.satir;pzOE.ayar=d.ayar||null;pzOE.bitti=!!d.bitti;pzOE.zaman=d.zaman||0;
     pzOE.durum=d.bitti?"Önceki tarama tamamlanmıştı; önerileri kontrol edip kaydedin.":"Önceki tarama yarım kaldı; “Devam et” ile kalan kısım taranır."}
-  await pzOEOrtakCek()}
+  await pzOEOrtakCek();pzOEAyikla()}
 // Başka bir bilgisayarda daha yeni öneri listesi kaydedildiyse onu alır (tarama ya da kayıt sürerken dokunmaz)
 async function pzOEOrtakCek(){const f=pzOE.firma;if(!f||pzOE.calisiyor||pzOE.kayit)return false;
   const s=await pzOrtak.al(f,"otoEs");if(!s||!s.veri||!(Number(s.zaman)>(pzOE.zaman||0))||pzOE.firma!==f||pzOE.calisiyor||pzOE.kayit)return false;
-  const v=s.veri;pzOE.satir=Array.isArray(v.satir)?v.satir:[];pzOE.ayar=v.ayar||null;pzOE.bitti=!!v.bitti;pzOE.zaman=Number(s.zaman);
+  const v=s.veri;pzOE.satir=Array.isArray(v.satir)?v.satir:[];pzOEAyikla();pzOE.ayar=v.ayar||null;pzOE.bitti=!!v.bitti;pzOE.zaman=Number(s.zaman);
   pzOE.durum=!pzOE.satir.length?"":v.bitti?"Önceki tarama tamamlanmıştı; önerileri kontrol edip kaydedin.":"Önceki tarama yarım kaldı; “Devam et” ile kalan kısım taranır.";
   pzDepo.koy("otoEs-"+f,{satir:pzOE.satir,ayar:pzOE.ayar,bitti:pzOE.bitti,zaman:pzOE.zaman});return true}
 let _pzOEYazZ=0,_pzOEOrtakZ=null;
@@ -4316,7 +4319,9 @@ function pzOEAraHtml(r){
 function pzOEAraSec(j){const r=pzOE.satir[pzOE.araI];if(!r)return;const a=(pzOEAraSonuclar(r)||[])[j];if(!a)return;
   let k=r.aday.findIndex(x=>String(x.id)===String(a.id)&&(r.tur==="kategori"||x.ad===a.ad));if(k<0){r.aday.unshift(a);k=0;if(r.sec!=="")r.sec=Number(r.sec)+1}
   r.sec=k;r.elle=true;pzOE.araI=null;pzOE.araQ="";pzOEYaz(true)}
-async function pzOEKaydet(){  if(pzOE.kayit)return;const f=firmaId;const sec=pzOE.satir.filter(r=>r.sec!=="");if(!sec.length)return;
+async function pzOEKaydet(){  if(pzOE.kayit)return;const f=firmaId;
+  const atla=pzOEAyikla();if(atla){pzOEYaz(true);toast(`${atla} satır zaten eşleştirilmişti; listeden çıkarıldı, mevcut ayarlarına dokunulmadı.`)}
+  const sec=pzOE.satir.filter(r=>r.sec!=="");if(!sec.length){pzOECiz();return}
   const yapilan=[];// {r,a,o}: bu çalıştırmada kaydedilenler (her yazışta yeniden uygulanır; ayar belgesi gecikmeli güncellense de kaybolmaz)
   const uygula=es=>{for(const {r,a,o} of yapilan){
     if(r.tur==="kategori")(es.kategori[r.ad]=es.kategori[r.ad]||{})[r.p]=Object.assign({id:a.id,yol:a.yol,ozellik:o?o.oz:{},zaman:Date.now(),oto:true},o?{zorunluSay:o.zorunluSay}:{});
