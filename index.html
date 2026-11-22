@@ -3657,7 +3657,7 @@ function pzStokHtml(){
    Bu aşamada pazaryerlerine hiçbir şey yazılmaz (yalnızca okuma). N11'de marka kategorinin "Marka" özelliğidir; Shopify'da
    ürün türü = kategori adı, satıcı = marka adı (serbest). */
 // Amazon: kategori yerine "ürün türü" eşleştirilir; marka serbest yazıdır (programdaki marka adı), marka eşleştirmesi istemez
-const PZ_ES_PZ=["trendyol","n11","pazarama","idefix","amazon"],PZ_ES_MARKA=PZ_ES_PZ.filter(p=>p!=="amazon");
+const PZ_ES_PZ=["trendyol","n11","pazarama","idefix","amazon","hepsiburada"],PZ_ES_MARKA=PZ_ES_PZ.filter(p=>p!=="amazon"&&p!=="hepsiburada");
 const pzEs=()=>JSON.parse(JSON.stringify((state.ayarEk||{}).pzEslesme||{kategori:{},marka:{}}));
 const pzEsKat=(kat,p)=>((((state.ayarEk||{}).pzEslesme||{}).kategori||{})[kat]||{})[p]||null;
 const pzEsMarka=(m,p)=>((((state.ayarEk||{}).pzEslesme||{}).marka||{})[m]||{})[p]||null;
@@ -3671,7 +3671,11 @@ async function pzOzellikler(p,id){const k=p+":"+id;if(_pzOzOnb[k])return _pzOzOn
 const pzMarkaOz=o=>/^marka$/i.test(String(o.ad||"").trim());
 /* Ürün açmaya hazırlık: bir ürünün bir pazaryerinde açılabilmesi için eksikleri (boş liste = hazır).
    Ürüne özel zorunlu özellik değerleri urun.pzOzellik[pz][attrId]={ad,degerId,deger}; boşsa kategori eşleştirmesindeki varsayılan kullanılır. */
-const PZ_ACMA=["trendyol","n11","pazarama","idefix","shopify"],PZ_DESI_ZORUNLU=["trendyol","pazarama","idefix"];
+const PZ_ACMA=["trendyol","n11","pazarama","idefix","shopify","amazon","hepsiburada"],PZ_DESI_ZORUNLU=["trendyol","pazarama","idefix","hepsiburada"];
+// EAN/GTIN kontrol hanesi (Amazon geçersiz barkodu reddeder)
+const pzEanGecerli=s=>{s=String(s||"").trim();if(!/^\d{8,14}$/.test(s))return false;const d=s.split("").map(Number),c=d.pop();return (10-d.reverse().reduce((a,x,i)=>a+x*(i%2?1:3),0)%10)%10===c};
+// Ürün adındaki adet ("12'li", "8 Adet", "3lü") — yoksa 1
+const pzAdet=ad=>{const m=/(\d{1,3})\s*(?:'?\s*l[iıuü](?![a-zçğıöşü])|adet(?![a-zçğıöşü])|pcs)/i.exec(String(ad||""));return m?Math.max(1,Number(m[1])):1};
 function pzHazirlik(u,p){const ek=[];
   if(!String(u.ad||"").trim())ek.push("ürün adı");
   if(!String(u.barkod||"").trim())ek.push("barkod");
@@ -3683,7 +3687,8 @@ function pzHazirlik(u,p){const ek=[];
   if(p==="shopify")return ek;
   const kat=String(u.kategori||"").trim(),mk=String(u.marka||"").trim(),e=kat?pzEsKat(kat,p):null;
   if(!kat)ek.push("kategori");else if(!e)ek.push("kategori eşleştirmesi");
-  if(!mk)ek.push("marka");else if(!pzEsMarka(mk,p))ek.push("marka eşleştirmesi");
+  if(!mk)ek.push("marka");else if(PZ_ES_MARKA.includes(p)&&!pzEsMarka(mk,p))ek.push("marka eşleştirmesi");
+  if(p==="amazon"&&String(u.barkod||"").trim()&&!pzEanGecerli(u.barkod))ek.push("barkod geçersiz (son hane tutmuyor)");
   if(e){const oz={...(e.ozellik||{}),...(((u.pzOzellik||{})[p])||{})};const dolu=Object.values(oz).filter(x=>x&&(x.degerId||x.deger)).length,z=Number(e.zorunluSay)||0;if(dolu<z)ek.push(`${z-dolu} zorunlu özellik`)}
   return ek}
 /* Ürün açma gövdesi (yalnızca hazırlar, GÖNDERMEZ): pazaryerinin resmi ürün oluşturma isteğinin birebir gövdesi + eksikler.
@@ -3708,6 +3713,27 @@ async function pzUrunGovde(u,p){
   const markaOz=liste.find(pzMarkaOz);
   for(const o of liste.filter(o=>o.zorunlu&&!pzMarkaOz(o))){const v=oz[o.id];if(!v||!(v.degerId||v.deger))ek.push(`“${o.ad}” özelliği`);else if(p==="pazarama"&&!v.degerId)ek.push(`“${o.ad}” listeden seçilmeli`)}
   const ozl=Object.entries(oz).filter(([,v])=>v&&(v.degerId||v.deger));
+  if(p==="amazon"){const M="A33AVAJ2PDY3EV",ay=pzUrunAyar().amazon||{},mkAd=String(u.marka||"").trim(),adet=pzAdet(ad);
+    // Ürün Amazon kataloğunda barkodla bulunursa sunucu yalnızca teklif alanlarını (fiyat, stok, durum) gönderir
+    const L=v=>[{value:v,language_tag:"tr_TR",marketplace_id:M}],V=v=>[{value:v,marketplace_id:M}];
+    const madde=acik.split(/(?<=[.!?;])\s+|\r?\n/).map(s=>s.trim()).filter(s=>s.length>3).slice(0,5).map(s=>s.slice(0,500));
+    const at={item_name:L(String(u.ad||"").trim().slice(0,200)),brand:L(mkAd),manufacturer:L(mkAd),product_description:L(acik.slice(0,2000)),
+      bullet_point:(madde.length?madde:[ad]).map(s=>({value:s,language_tag:"tr_TR",marketplace_id:M})),
+      externally_assigned_product_identifier:[{type:"ean",value:bk,marketplace_id:M}],condition_type:V("new_new"),part_number:V(kod||bk),model_number:V(kod||bk),
+      number_of_items:V(adet),unit_count:[{value:adet,type:{value:"count",language_tag:"tr_TR"},marketplace_id:M}],
+      warranty_description:L(String(ay.garanti||"Garanti bulunmamaktadır").slice(0,500)),
+      purchasable_offer:[{currency:"TRY",marketplace_id:M,our_price:[{schedule:[{value_with_tax:fiyat}]}]}],
+      fulfillment_availability:[{fulfillment_channel_code:"DEFAULT",quantity:stok}]};
+    if(gor[0])at.main_product_image_locator=[{media_location:gor[0],marketplace_id:M}];
+    gor.slice(1,9).forEach((x,i)=>at["other_product_image_locator_"+(i+1)]=[{media_location:x,marketplace_id:M}]);
+    for(const [id,v] of ozl)at[id]=[{value:v.degerId||v.deger,marketplace_id:M}];
+    return {ek,govde:{mod:"gonder",sku:kod,barkod:bk,productType:e&&e.id,attributes:at}}}
+  if(p==="hepsiburada"){const ay=pzUrunAyar().hepsiburada||{};
+    const at={merchantSku:kod,VaryantGroupID:ana,Barcode:bk,UrunAdi:ad,UrunAciklamasi:acikHtml,Marka:String(u.marka||"").trim(),GarantiSuresi:Number(ay.garanti)||0,
+      kg:String(Math.max(1,Math.ceil(desi))),tax_vat_rate:String(kdv),price:String(fiyat).replace(".",","),stock:String(stok)};
+    gor.slice(0,5).forEach((x,i)=>at["Image"+(i+1)]=x);
+    for(const [id,v] of ozl)at[id]=v.degerId||v.deger;
+    return {ek,govde:{urunler:[{categoryId:sayi(e&&e.id),attributes:at}]}}}
   if(p==="trendyol")return {ek,govde:{items:[{barcode:bk,title:ad,productMainId:ana,brandId:sayi(mk&&mk.id),categoryId:sayi(e&&e.id),quantity:stok,stockCode:kod,dimensionalWeight:desi,description:acikHtml,currencyType:"TRY",listPrice:fiyat,salePrice:fiyat,vatRate:kdv,
     images:gor.map(url=>({url})),attributes:ozl.map(([id,v])=>v.degerId?{attributeId:sayi(id),attributeValueId:sayi(v.degerId)}:{attributeId:sayi(id),customAttributeValue:v.deger})}]}};
   if(p==="n11"){const ay=pzUrunAyar().n11||{};if(!String(ay.sablon||"").trim())ek.push("N11 kargo şablonu adı (Ürün açma ayarları)");
@@ -3733,11 +3759,14 @@ function pzUrunAyarModal(){const ay=pzUrunAyar(),n=ay.n11||{},i=ay.idefix||{};
     <div class="field"><label for="uaN11">N11 kargo şablonu adı</label><input id="uaN11" value="${esc(n.sablon||"")}" placeholder="N11 › Hesabım › Teslimat Bilgilerim'deki şablon adı"></div>
     <div class="grid2"><div class="field"><label for="uaN11H">N11 hazırlık süresi (gün)</label><input id="uaN11H" type="number" min="0" max="30" step="1" value="${esc(String(n.hazirlik??1))}"></div>
       <div class="field"><label for="uaIdx">İdefix kargoya teslim süresi (gün)</label><input id="uaIdx" type="number" min="0" max="30" step="1" value="${esc(String(i.teslim??1))}"></div></div>
+    <div class="grid2"><div class="field"><label for="uaAmzG">Amazon garanti açıklaması</label><input id="uaAmzG" maxlength="200" value="${esc((ay.amazon||{}).garanti||"Garanti bulunmamaktadır")}"></div>
+      <div class="field"><label for="uaHbG">Hepsiburada garanti süresi (ay)</label><input id="uaHbG" type="number" min="0" max="120" step="1" value="${esc(String((ay.hepsiburada||{}).garanti??0))}"></div></div>
     <div class="err" id="uaErr"></div><div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">Kaydet</button></div>`,
   root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="kaydet")return;
     const v=id=>root.querySelector("#"+id).value.trim(),h=Number(v("uaN11H")),t=Number(v("uaIdx"));
     if(!(h>=0&&h<=30)||!(t>=0&&t<=30)){root.querySelector("#uaErr").textContent="Gün sayıları 0 ile 30 arasında olmalı.";return}
-    b.disabled=true;await api.setDoc("ayar","pzUrunAyar",{...ay,n11:{sablon:v("uaN11").slice(0,100),hazirlik:h},idefix:{teslim:t}});closeModal();toast("Ürün açma ayarları kaydedildi")}))}
+    const hg=Number(v("uaHbG"));if(!(hg>=0&&hg<=120)){root.querySelector("#uaErr").textContent="Hepsiburada garanti süresi 0 ile 120 ay arasında olmalı.";return}
+    b.disabled=true;await api.setDoc("ayar","pzUrunAyar",{...ay,n11:{sablon:v("uaN11").slice(0,100),hazirlik:h},idefix:{teslim:t},amazon:{...(ay.amazon||{}),garanti:v("uaAmzG").slice(0,200)||"Garanti bulunmamaktadır"},hepsiburada:{...(ay.hepsiburada||{}),garanti:hg}});closeModal();toast("Ürün açma ayarları kaydedildi")}))}
 /* Toplu ürün açma: seçili ürünleri bağlı pazaryerlerinde tek seferde açar.
    Ürün kartındaki tek tek açmayla aynı kurallar: önce her ürün × pazaryeri için hazır mı tablosu, onay, deneme listesine ekleme (en fazla PZ_DENEME_UST), sırayla gönderim, sonuç takibi.
    Rozetine göre pazaryerinde zaten olan ya da daha önce gönderilmiş ürün o pazaryerine gönderilmez. */
@@ -3746,7 +3775,9 @@ async function pzTopluAcModal(){
   const urunler=[...urunSecim].map(id=>state.urunler.find(u=>u.id===id)).filter(Boolean);
   if(!urunler.length){toast("Önce ürün seçin");return}
   if(urunler.length>PZ_DENEME_UST){toast("Tek seferde en fazla "+PZ_DENEME_UST+" ürün açılabilir ("+urunler.length+" seçili)");return}
-  const bagli=(await pzBagliAl()).filter(p=>PZ_ACMA.includes(p));const pzl=PZ_ACMA.filter(p=>bagli.includes(p));
+  // pzBagliAl otomatik işlemeden hariç tutulanları (Amazon, Hepsiburada) çıkarır; ürün açmada bütün bağlı pazaryerleri gösterilir
+  let tumB=null;try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:firmaId});tumB=(data||[]).map(x=>x.pazaryeri)}catch(e){}
+  const bagli=(tumB||await pzBagliAl()).filter(p=>PZ_ACMA.includes(p));const pzl=PZ_ACMA.filter(p=>bagli.includes(p));
   if(!pzl.length){toast("Ürün açılabilecek bağlı pazaryeri yok");return}
   const acKayit=()=>((state.ayarEk||{}).pzUrunAc||{});
   let hucre=[];// {u,p,ek[],govde,durum:"hazir"|"var"|"once"|"eksik"}
@@ -4079,8 +4110,8 @@ function pzEslesmeHtml(tur){
       <select id="f${on}Boy" data-filter="esBoy" aria-label="Sayfada" title="Sayfa başına satır">${[10,50,100,500].map(n=>`<option value="${n}" ${BOY===n?"selected":""}>${n} satır</option>`).join("")}</select>
       <span class="muted" style="font-size:.85rem">${satirlar.length.toLocaleString("tr-TR")} ${marka?"marka":"kategori"} listeleniyor · ${tamSay}/${tumSatir.length} tüm pazaryerlerinde eşleşmiş</span></div>`;
   const ad=marka?"marka":"kategori",hucre=marka?markaHucre:katHucre;
-  return bilgi+filtre+`<div class="tscroll"><table><thead><tr><th>Programdaki ${ad}</th>${pzListe.map(p=>`<th ${fPz&&fPz!==p?'style="opacity:.45"':""}>${esc(PZ_ADLAR[p])}${p==="amazon"?`<div class="muted" style="font-size:.68rem;font-weight:400">ürün türü</div>`:""}</th>`).join("")}${marka?"<th>Amazon</th>":""}<th>Shopify</th></tr></thead><tbody>
-      ${gorunen.map(([x,n])=>`<tr><td><b>${esc(x)}</b><div class="muted" style="font-size:.75rem">${n.toLocaleString("tr-TR")} ürün · <a href="#" data-act="esUrunler" data-k="${esc(x)}" data-p="${marka?"marka":"kategori"}">ürünleri gör</a></div></td>${pzListe.map(p=>`<td>${hucre(x,p)}</td>`).join("")}${marka?`<td class="muted" style="font-size:.75rem">otomatik (serbest yazı)</td>`:""}<td class="muted" style="font-size:.75rem">otomatik</td></tr>`).join("")||`<tr><td colspan="8" class="empty">Filtreye uyan ${ad} yok.</td></tr>`}
+  return bilgi+filtre+`<div class="tscroll"><table><thead><tr><th>Programdaki ${ad}</th>${pzListe.map(p=>`<th ${fPz&&fPz!==p?'style="opacity:.45"':""}>${esc(PZ_ADLAR[p])}${p==="amazon"?`<div class="muted" style="font-size:.68rem;font-weight:400">ürün türü</div>`:""}</th>`).join("")}${marka?"<th>Amazon</th><th>Hepsiburada</th>":""}<th>Shopify</th></tr></thead><tbody>
+      ${gorunen.map(([x,n])=>`<tr><td><b>${esc(x)}</b><div class="muted" style="font-size:.75rem">${n.toLocaleString("tr-TR")} ürün · <a href="#" data-act="esUrunler" data-k="${esc(x)}" data-p="${marka?"marka":"kategori"}">ürünleri gör</a></div></td>${pzListe.map(p=>`<td>${hucre(x,p)}</td>`).join("")}${marka?`<td class="muted" style="font-size:.75rem">otomatik (serbest yazı)</td><td class="muted" style="font-size:.75rem">otomatik (serbest yazı)</td>`:""}<td class="muted" style="font-size:.75rem">otomatik</td></tr>`).join("")||`<tr><td colspan="8" class="empty">Filtreye uyan ${ad} yok.</td></tr>`}
     </tbody></table></div>`+sayfalar}
 // Bir kategorinin / markanın içindeki ürünler (eşleştirme yaparken neye karşılık geldiğini görmek için)
 function pzEsUrunlerModal(tur,ad){
