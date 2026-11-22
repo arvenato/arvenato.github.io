@@ -3753,6 +3753,10 @@ async function pzUrunGovde(u,p){
       if(id.includes(".")){const [a,k]=id.split(".");const g=(ust[a]=ust[a]||{marketplace_id:M});g[k]=o.dizi?[icerik]:icerik}
       else at[id]=[{...icerik,marketplace_id:M}]}
     for(const [a,g] of Object.entries(ust))at[a]=[g];
+    // Kitaplarda dil ve konu kodu "type" ister; liste fiyatı (kitaplarda zorunlu) satış fiyatıdır
+    if(at.language)at.language=at.language.map(x=>({...x,type:x.type||"published"}));
+    if(at.subject_code)at.subject_code=at.subject_code.map(x=>({...x,type:x.type||"bisac_subject_code"}));
+    if(!at.list_price)at.list_price=[{currency:"TRY",value_with_tax:fiyat,marketplace_id:M}];
     return {ek,govde:{mod:"gonder",sku:kod,barkod:bk,ad:String(u.ad||"").trim(),productType:e&&e.id,attributes:at}}}
   if(p==="hepsiburada"){const ay=pzUrunAyar().hepsiburada||{};
     const at={merchantSku:kod,VaryantGroupID:ana,Barcode:bk,UrunAdi:ad,UrunAciklamasi:acikHtml,Marka:String(u.marka||"").trim(),GarantiSuresi:Number(ay.garanti)||0,
