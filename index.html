@@ -3674,6 +3674,18 @@ const pzMarkaOz=o=>/^marka$/i.test(String(o.ad||"").trim());
 const PZ_ACMA=["trendyol","n11","pazarama","idefix","shopify","amazon","hepsiburada"],PZ_DESI_ZORUNLU=["trendyol","pazarama","idefix","hepsiburada"];
 // EAN/GTIN kontrol hanesi (Amazon geçersiz barkodu reddeder)
 const pzEanGecerli=s=>{s=String(s||"").trim();if(!/^\d{8,14}$/.test(s))return false;const d=s.split("").map(Number),c=d.pop();return (10-d.reverse().reduce((a,x,i)=>a+x*(i%2?1:3),0)%10)%10===c};
+/* Amazon: ürüne özel zorunlu alanları ürünün kendi bilgisinden doldurur (yalnızca boş ve zorunlu olanları; kategori varsayılanı / ürüne özel değer önceliklidir).
+   Renk ve boyut ürün adından; bulunamazsa renk "Çok Renkli", boyut "Tek Ebat". Kağıt boyutu ve çizgi kalınlığı yalnızca adda geçiyorsa. */
+const _PZ_RENK=["Siyah","Beyaz","Kırmızı","Mavi","Lacivert","Yeşil","Sarı","Turuncu","Mor","Lila","Pembe","Gri","Kahverengi","Turkuaz","Bordo","Bej","Krem","Altın","Gümüş","Şeffaf","Füme","Neon"];
+function pzAmzOto(u,oz,liste){const ad=String(u.ad||"").trim(),n=_norm(ad);
+  const renk=()=>{const r=_PZ_RENK.filter(c=>(" "+n+" ").includes(" "+_norm(c)+" "));return r.length===1?r[0]:"Çok Renkli"};
+  const bul={color:renk,"ink.color":renk,
+    size:()=>{const m=/(\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?(?:\s*[x×]\s*\d+(?:[.,]\d+)?)?\s*(?:cm|mm|m)?|\d+(?:[.,]\d+)?\s*(?:cm|mm|ml|lt|gr|g|kg|m)\b|\b[AB][3-6]\b)/i.exec(ad);return m?m[1].trim():"Tek Ebat"},
+    paper_size:()=>{const m=/\b([AB][3-6])\b/i.exec(ad)||/(\d+\s*[x×]\s*\d+\s*(?:cm)?)/i.exec(ad);return m?m[1].toUpperCase().replace(/\s+/g,""):""},
+    line_size:()=>{const m=/(\d+[.,]\d+)\s*mm/i.exec(ad);return m?m[1].replace(",",".")+" mm":""},
+    included_components:()=>ad.slice(0,100),model_name:()=>String(u.kod||u.barkod||"").trim(),item_type_name:()=>String(u.kategori||"").trim(),
+    generic_keyword:()=>[String(u.kategori||""),String(u.marka||"")].join(" ").trim()};
+  for(const o of liste.filter(o=>o.zorunlu)){const m=oz[o.id];if((m&&(m.degerId||m.deger))||!bul[o.id])continue;const v=bul[o.id]();if(v)oz[o.id]={ad:o.ad,degerId:"",deger:v}}}
 // Ürün adındaki adet ("12'li", "8 Adet", "3lü") — yoksa 1
 const pzAdet=ad=>{const m=/(\d{1,3})\s*(?:'?\s*l[iıuü](?![a-zçğıöşü])|adet(?![a-zçğıöşü])|pcs)/i.exec(String(ad||""));return m?Math.max(1,Number(m[1])):1};
 function pzHazirlik(u,p){const ek=[];
@@ -3689,7 +3701,10 @@ function pzHazirlik(u,p){const ek=[];
   if(!kat)ek.push("kategori");else if(!e)ek.push("kategori eşleştirmesi");
   if(!mk)ek.push("marka");else if(PZ_ES_MARKA.includes(p)&&!pzEsMarka(mk,p))ek.push("marka eşleştirmesi");
   if(p==="amazon"&&String(u.barkod||"").trim()&&!pzEanGecerli(u.barkod))ek.push("barkod geçersiz (son hane tutmuyor)");
-  if(e){const oz={...(e.ozellik||{}),...(((u.pzOzellik||{})[p])||{})};const dolu=Object.values(oz).filter(x=>x&&(x.degerId||x.deger)).length,z=Number(e.zorunluSay)||0;if(dolu<z)ek.push(`${z-dolu} zorunlu özellik`)}
+  if(e){const oz={...(e.ozellik||{}),...(((u.pzOzellik||{})[p])||{})};
+    // Amazon: zorunlu alan listesi eşleştirmede saklanır; ürün adından dolanlar (renk, boyut…) eksik sayılmaz
+    if(p==="amazon"&&Array.isArray(e.zorunluIds)){pzAmzOto(u,oz,e.zorunluIds.map(id=>({id,ad:id,zorunlu:true})));const eks=e.zorunluIds.filter(id=>!(oz[id]&&(oz[id].degerId||oz[id].deger)));if(eks.length)ek.push(`${eks.length} zorunlu özellik`)}
+    else{const dolu=Object.values(oz).filter(x=>x&&(x.degerId||x.deger)).length,z=Number(e.zorunluSay)||0;if(dolu<z)ek.push(`${z-dolu} zorunlu özellik`)}}
   return ek}
 /* Ürün açma gövdesi (yalnızca hazırlar, GÖNDERMEZ): pazaryerinin resmi ürün oluşturma isteğinin birebir gövdesi + eksikler.
    Fiyat kuralı: liste (üstü çizili) fiyat = satış fiyatı = Arvenato satış fiyatı. Ayarlar: ayar/pzUrunAyar {n11:{sablon,hazirlik}, idefix:{teslim}} */
@@ -3710,6 +3725,7 @@ async function pzUrunGovde(u,p){
   // Özellikler: kategorinin varsayılanları + ürüne özel değerler; zorunluluk pazaryerinin güncel listesinden denetlenir
   const oz={...((e&&e.ozellik)||{}),...(((u.pzOzellik||{})[p])||{})};let liste=[];
   if(e){try{liste=await pzOzellikler(p,e.id)}catch(err){ek.push("özellik listesi okunamadı: "+(err.message||err))}}
+  if(p==="amazon")pzAmzOto(u,oz,liste);
   const markaOz=liste.find(pzMarkaOz);
   for(const o of liste.filter(o=>o.zorunlu&&!pzMarkaOz(o))){const v=oz[o.id];if(!v||!(v.degerId||v.deger))ek.push(`“${o.ad}” özelliği`);else if(p==="pazarama"&&!v.degerId)ek.push(`“${o.ad}” listeden seçilmeli`)}
   const ozl=Object.entries(oz).filter(([,v])=>v&&(v.degerId||v.deger));
@@ -3726,7 +3742,17 @@ async function pzUrunGovde(u,p){
       fulfillment_availability:[{fulfillment_channel_code:"DEFAULT",quantity:stok}]};
     if(gor[0])at.main_product_image_locator=[{media_location:gor[0],marketplace_id:M}];
     gor.slice(1,9).forEach((x,i)=>at["other_product_image_locator_"+(i+1)]=[{media_location:x,marketplace_id:M}]);
-    for(const [id,v] of ozl)at[id]=[{value:v.degerId||v.deger,marketplace_id:M}];
+    // Evet/Hayır alanları Amazon'da true/false (mantıksal), yaş alanları sayı olarak gider
+    const _amzDeger=(id,x)=>x==="true"?true:x==="false"?false:(/^(manufacturer_minimum_age|manufacturer_maximum_age|number_of_items|number_of_compartments|number_of_sets|pages)$/.test(id)&&/^\d+$/.test(String(x))?Number(x):x);
+    // Birimli alanlar "12 cm" → {value:12, unit:"centimeters"}; iç içe alanlar ("ink.base") → ink:[{base:[…]}]
+    const meta=Object.fromEntries(liste.map(o=>[String(o.id),o])),BIRIM={cm:"centimeters",mm:"millimeters",m:"meters",g:"grams",gr:"grams",kg:"kilograms",ml:"milliliters",l:"liters",lt:"liters"};
+    const birimle=x=>{const m=/^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-ZğüşıöçĞÜŞİÖÇ]+)?\s*$/.exec(String(x));return m?{value:Number(m[1].replace(",",".")),unit:BIRIM[(m[2]||"").toLowerCase()]||m[2]||"centimeters"}:{value:x}};
+    const ust={};
+    for(const [id,v] of ozl){const x=_amzDeger(id,v.degerId||v.deger),o=meta[id]||{},yazi=typeof x==="string"&&!v.degerId;
+      const icerik=o.birim?birimle(x):(yazi?{value:x,language_tag:"tr_TR"}:{value:x});
+      if(id.includes(".")){const [a,k]=id.split(".");const g=(ust[a]=ust[a]||{marketplace_id:M});g[k]=o.dizi?[icerik]:icerik}
+      else at[id]=[{...icerik,marketplace_id:M}]}
+    for(const [a,g] of Object.entries(ust))at[a]=[g];
     return {ek,govde:{mod:"gonder",sku:kod,barkod:bk,ad:String(u.ad||"").trim(),productType:e&&e.id,attributes:at}}}
   if(p==="hepsiburada"){const ay=pzUrunAyar().hepsiburada||{};
     const at={merchantSku:kod,VaryantGroupID:ana,Barcode:bk,UrunAdi:ad,UrunAciklamasi:acikHtml,Marka:String(u.marka||"").trim(),GarantiSuresi:Number(ay.garanti)||0,
