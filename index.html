@@ -3727,7 +3727,7 @@ async function pzUrunGovde(u,p){
     if(gor[0])at.main_product_image_locator=[{media_location:gor[0],marketplace_id:M}];
     gor.slice(1,9).forEach((x,i)=>at["other_product_image_locator_"+(i+1)]=[{media_location:x,marketplace_id:M}]);
     for(const [id,v] of ozl)at[id]=[{value:v.degerId||v.deger,marketplace_id:M}];
-    return {ek,govde:{mod:"gonder",sku:kod,barkod:bk,productType:e&&e.id,attributes:at}}}
+    return {ek,govde:{mod:"gonder",sku:kod,barkod:bk,ad:String(u.ad||"").trim(),productType:e&&e.id,attributes:at}}}
   if(p==="hepsiburada"){const ay=pzUrunAyar().hepsiburada||{};
     const at={merchantSku:kod,VaryantGroupID:ana,Barcode:bk,UrunAdi:ad,UrunAciklamasi:acikHtml,Marka:String(u.marka||"").trim(),GarantiSuresi:Number(ay.garanti)||0,
       kg:String(Math.max(1,Math.ceil(desi))),tax_vat_rate:String(kdv),price:String(fiyat).replace(".",","),stock:String(stok)};
@@ -4058,7 +4058,7 @@ function pzOzOtoModal(){
         for(const o of z){const m0=mev[o.id];if(m0&&(m0.degerId||m0.deger))continue;
           const d=o.degerler||[];let v=null,kaynak="",urunOz=[];
           if(d.length===1){v=d[0];kaynak="tek seçenek"}
-          else{const vs=d.find(x=>_ES_VARSAY.includes(_norm(x.ad)));if(vs){v=vs;kaynak="“"+vs.ad+"” seçeneği"}}
+          else if(is.p!=="amazon"){const vs=d.find(x=>_ES_VARSAY.includes(_norm(x.ad)));if(vs){v=vs;kaynak="“"+vs.ad+"” seçeneği"}}
           if(!v&&d.length&&adlar.length){// ürün adlarında geçen değerler (uzun değer önce: "Açık Mavi" "Mavi"den önce)
             const aday=d.filter(degerAnlamli).map(x=>({x,k:kelime(x.ad)})).sort((a,b)=>b.k.length-a.k.length),say=new Map(),urunDeger=[];
             for(const {u,n} of adlar){const h=aday.find(a=>n.includes(a.k));if(h){say.set(h.x,(say.get(h.x)||0)+1);urunDeger.push({u,v:h.x})}}
@@ -4211,8 +4211,9 @@ function pzKatOner(kat,liste){
   const net=!!l[0]&&(l[0].x._ln===kn||(l[0].s>=0.99&&(!l[1]||l[1].s<l[0].s-0.15)));
   return {aday:l.map(o=>o.x),net}}
 const _ES_VARSAY=["belirtilmemis","diger","standart","yok"];
-function pzOzVarsayilan(ozl){const z=ozl.filter(o=>o.zorunlu&&!pzMarkaOz(o)),oz={};
-  for(const o of z){const d=(o.degerler||[]);const v=d.length===1?d[0]:d.find(x=>_ES_VARSAY.includes(_norm(x.ad)));if(v)oz[o.id]={ad:o.ad,degerId:v.id,deger:v.ad}}
+// Amazon'da "Diğer / Belirtilmemiş" gibi yer tutucular yanlış beyan olur (ör. Tehlikeli Mal = Diğer): yalnızca tek seçenekli alanlar kendiliğinden dolar
+function pzOzVarsayilan(ozl,p){const z=ozl.filter(o=>o.zorunlu&&!pzMarkaOz(o)),oz={};
+  for(const o of z){const d=(o.degerler||[]);const v=d.length===1?d[0]:(p==="amazon"?null:d.find(x=>_ES_VARSAY.includes(_norm(x.ad))));if(v)oz[o.id]={ad:o.ad,degerId:v.id,deger:v.ad}}
   return {oz,zorunluSay:z.length}}
 // Otomatik eşleştirme işi pencereden bağımsızdır: pencere kapansa da arka planda sürer; sonuçlar bu bilgisayarda (firma başına) saklanır,
 // sayfa yenilenirse "Devam et" ile kalan kısımdan sürer. Kaydedilen satırlar listeden düşer.
@@ -4304,7 +4305,7 @@ async function pzOEKaydet(){  if(pzOE.kayit)return;const f=firmaId;const sec=pzO
     for(let i=0;i<kt.length;i+=10){if(firmaId!==f)return;
       const parca=kt.slice(i,i+10).filter(r=>r.sec!==""&&r.aday[r.sec]);
       for(const [j,r] of parca.entries()){pzOE.kayitDurum=`Zorunlu özellikler okunuyor… ${i+j+1}/${kt.length}`;pzOECiz();const a=r.aday[r.sec];let o=null;
-        try{o=pzOzVarsayilan(await pzOzellikler(r.p,a.id))}catch(_){}
+        try{o=pzOzVarsayilan(await pzOzellikler(r.p,a.id),r.p)}catch(_){}
         if(!o||Object.keys(o.oz).length<o.zorunluSay)eksik++;yapilan.push({r,a,o})}
       pzOE.kayitDurum=`Kaydediliyor… ${Math.min(i+10,kt.length)}/${kt.length}`;pzOECiz();await yaz(parca);kSay+=parca.length;pzOECiz()}
     toast(`${kSay} kategori, ${mSay} marka eşleştirmesi kaydedildi`+(eksik?` · ${eksik} kategoride doldurulmamış zorunlu özellik var (Kategori eşleştirme › Durum: Zorunlu özelliği eksik)`:""))}
