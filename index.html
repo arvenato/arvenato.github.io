@@ -4188,11 +4188,20 @@ async function pzOEYukle(){
   if(pzOE.calisiyor)pzOE.dur=true;
   Object.assign(pzOE,{firma:firmaId,yuklendi:true,satir:[],ayar:null,bitti:false,calisiyor:false,dur:false,durum:"",hata:""});
   const d=await pzDepo.al(pzOEAnahtar());
-  if(d&&Array.isArray(d.satir)){pzOE.satir=d.satir;pzOE.ayar=d.ayar||null;pzOE.bitti=!!d.bitti;
-    pzOE.durum=d.bitti?"Önceki tarama tamamlanmıştı; önerileri kontrol edip kaydedin.":"Önceki tarama yarım kaldı; “Devam et” ile kalan kısım taranır."}}
-let _pzOEYazZ=0;
-function pzOEYaz(hemen){const f=pzOE.firma,v={satir:pzOE.satir,ayar:pzOE.ayar,bitti:pzOE.bitti,zaman:Date.now()};
-  if(!hemen&&Date.now()-_pzOEYazZ<5000)return;_pzOEYazZ=Date.now();pzDepo.koy("otoEs-"+f,v)}
+  if(d&&Array.isArray(d.satir)){pzOE.satir=d.satir;pzOE.ayar=d.ayar||null;pzOE.bitti=!!d.bitti;pzOE.zaman=d.zaman||0;
+    pzOE.durum=d.bitti?"Önceki tarama tamamlanmıştı; önerileri kontrol edip kaydedin.":"Önceki tarama yarım kaldı; “Devam et” ile kalan kısım taranır."}
+  await pzOEOrtakCek()}
+// Başka bir bilgisayarda daha yeni öneri listesi kaydedildiyse onu alır (tarama ya da kayıt sürerken dokunmaz)
+async function pzOEOrtakCek(){const f=pzOE.firma;if(!f||pzOE.calisiyor||pzOE.kayit)return false;
+  const s=await pzOrtak.al(f,"otoEs");if(!s||!s.veri||!(Number(s.zaman)>(pzOE.zaman||0))||pzOE.firma!==f||pzOE.calisiyor||pzOE.kayit)return false;
+  const v=s.veri;pzOE.satir=Array.isArray(v.satir)?v.satir:[];pzOE.ayar=v.ayar||null;pzOE.bitti=!!v.bitti;pzOE.zaman=Number(s.zaman);
+  pzOE.durum=!pzOE.satir.length?"":v.bitti?"Önceki tarama tamamlanmıştı; önerileri kontrol edip kaydedin.":"Önceki tarama yarım kaldı; “Devam et” ile kalan kısım taranır.";
+  pzDepo.koy("otoEs-"+f,{satir:pzOE.satir,ayar:pzOE.ayar,bitti:pzOE.bitti,zaman:pzOE.zaman});return true}
+let _pzOEYazZ=0,_pzOEOrtakZ=null;
+function pzOEYaz(hemen){const f=pzOE.firma,z=Date.now(),v={satir:pzOE.satir,ayar:pzOE.ayar,bitti:pzOE.bitti,zaman:z};
+  if(!hemen&&z-_pzOEYazZ<5000)return;_pzOEYazZ=z;pzOE.zaman=z;pzDepo.koy("otoEs-"+f,v);
+  // Ortak kopya: art arda değişikliklerde en fazla 3 saniyede bir gönderilir (son hal kaybolmaz)
+  clearTimeout(_pzOEOrtakZ);_pzOEOrtakZ=setTimeout(()=>{if(pzOE.firma===f)pzOrtak.koy(f,"otoEs",{satir:pzOE.satir,ayar:pzOE.ayar,bitti:pzOE.bitti},pzOE.zaman)},3000)}
 const pzOECiz=()=>{if(pzOE.ciz)pzOE.ciz()};
 function pzOEN11Kat(marka){const kats=((state.ayarEk||{}).pzEslesme||{}).kategori||{};
   const yeni=k=>{const r=pzOE.satir.find(x=>x.tur==="kategori"&&x.p==="n11"&&x.ad===k&&x.sec!=="");return r?r.aday[r.sec].id:""};
@@ -4265,10 +4274,11 @@ async function pzOEKaydet(){  if(pzOE.kayit)return;const f=firmaId;const sec=pzO
     toast(`${kSay} kategori, ${mSay} marka eşleştirmesi kaydedildi`+(eksik?` · ${eksik} kategoride doldurulmamış zorunlu özellik var (Kategori eşleştirme › Durum: Zorunlu özelliği eksik)`:""))}
   catch(e){pzOE.hata="Kaydetme yarıda kaldı: "+(e.message||String(e))+" · kaydedilmeyenler seçili duruyor, yeniden “Seçilenleri kaydet”e basın."}
   finally{if(firmaId===f){pzOE.kayit=false;pzOE.kayitDurum="";pzOECiz();if(!pzOE.ciz&&/eslesme/.test(pz.sekme||""))render()}}}
-async function pzOtoEsModal(){  await pzOEYukle();const A=pzOE.ayar||{pzl:PZ_ES_PZ.slice(),kat:true,mk:true};
-  // Ürünü kalmamış (birleştirilmiş / boşaltılmış) kategori ve markaların öneri satırları listeden çıkarılır (kayıtlı eşleştirmelere dokunulmaz)
+async function pzOtoEsModal(){  await pzOEYukle();await pzOEOrtakCek();const A=pzOE.ayar||{pzl:PZ_ES_PZ.slice(),kat:true,mk:true};
+  // Ürünü kalmamış (birleştirilmiş / boşaltılmış) kategori ve markaların öneri satırları listeden çıkarılır (kayıtlı eşleştirmelere dokunulmaz).
+  // Öneriler bu bilgisayarda saklandığı için, başka bir bilgisayarda (ya da elle) eşleştirilmiş satırlar da burada listeden düşer.
   if(!pzOE.calisiyor&&!pzOE.kayit){const var_={kategori:new Set(),marka:new Set()};for(const u of state.urunler){const k=String(u.kategori||"").trim(),m=String(u.marka||"").trim();if(k)var_.kategori.add(k);if(m)var_.marka.add(m)}
-    const once=pzOE.satir.length;for(let j=pzOE.satir.length-1;j>=0;j--){const r=pzOE.satir[j];if(var_[r.tur]&&!var_[r.tur].has(r.ad))pzOE.satir.splice(j,1)}
+    const once=pzOE.satir.length;for(let j=pzOE.satir.length-1;j>=0;j--){const r=pzOE.satir[j];if((var_[r.tur]&&!var_[r.tur].has(r.ad))||(r.tur==="kategori"?pzEsKat(r.ad,r.p):pzEsMarka(r.ad,r.p)))pzOE.satir.splice(j,1)}
     if(pzOE.satir.length!==once)pzOEYaz(true)}
   openModal(`<div class="section-head"><h2>🤖 Otomatik eşleştirme</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">Henüz eşleşmemiş kategori ve markalar için pazaryerlerinde öneri aranır. Tarama <b>arka planda</b> sürer: bu pencereyi kapatıp programda çalışmaya devam edebilirsiniz; bitince haber verilir. Sonuçlar bu bilgisayarda saklanır. <b>Kaydet</b>'e basana kadar eşleştirme kaydedilmez; pazaryerlerine hiçbir şey gönderilmez.</div>
@@ -4448,6 +4458,14 @@ const pzDepo=(()=>{let p=null;const ac=()=>p||(p=new Promise((ok,red)=>{const r=
     koy:async(k,v)=>{try{const db=await ac();await new Promise((ok,red)=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").put(v,k);t.oncomplete=()=>ok();t.onerror=()=>red(t.error)})}catch(e){}},
     sil:async k=>{try{const db=await ac();await new Promise(ok=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").delete(k);t.oncomplete=()=>ok();t.onerror=()=>ok()})}catch(e){}},
     temizle:async()=>{try{const db=await ac();await new Promise(ok=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").clear();t.oncomplete=()=>ok();t.onerror=()=>ok()})}catch(e){}}}})();
+/* Ortak önbellek (Supabase "ortak_onbellek" tablosu, firma + anahtar): pazaryeri ilan durumları ve otomatik eşleştirme önerileri
+   hangi bilgisayardan açılırsa açılsın aynı olsun diye burada da saklanır. Bu cihazdaki kopya hız içindir; "zaman"ı yeni olan kullanılır.
+   Tablo canlı eşitlemeye (realtime) bağlı değildir; program açılışta ve birkaç dakikada bir yenilerini sorar. */
+const pzOrtak={
+  async zamanlar(f,onek){try{const {data,error}=await sb.from("ortak_onbellek").select("anahtar,zaman").eq("firma_id",f).like("anahtar",onek+"%");return error?null:(data||[])}catch(e){return null}},
+  async al(f,anahtar){try{const {data,error}=await sb.from("ortak_onbellek").select("veri,zaman").eq("firma_id",f).eq("anahtar",anahtar).maybeSingle();return error?null:(data||null)}catch(e){return null}},
+  async koy(f,anahtar,veri,zaman){if(!sb||!f||state.readonly)return false;
+    try{const {error}=await sb.from("ortak_onbellek").upsert({firma_id:f,anahtar,veri,zaman:Math.round(zaman||Date.now()),guncelleme:new Date().toISOString()});return !error}catch(e){return false}}};
 /* Pazaryeri ilan durumu (yalnızca okuma): pazaryerlerindeki ilanlar barkod / stok koduyla ürünlere bağlanır ve Ürünler listesinde rozet olarak görünür.
    Bu cihazda saklanır (arvenato-pz / ilan-<firma>): {pz:{zaman, adet, m:{kimlik:[aktif 1/0, stok, durum]}}} */
 const PZ_ILAN=["trendyol","hepsiburada","n11","pazarama","idefix","amazon","shopify"],PZ_ILAN_OKU=["trendyol","n11","pazarama","idefix","shopify","amazon"];
@@ -4455,7 +4473,13 @@ const PZ_KISA={trendyol:"TY",n11:"N11",pazarama:"PZR",idefix:"İDX",shopify:"SHP
 const PZ_ILAN_RENK={trendyol:"#f27a1a",n11:"#6a2c91",pazarama:"#1a56c4",idefix:"#d0103a",shopify:"#5e8e3e",amazon:"#232f3e",hepsiburada:"#ff6000"};
 let pzIlan={firma:null,veri:{}},pzIlanIs=null;
 function pzIlanHazirla(){if(pzIlan.firma===firmaId)return;const f=firmaId;pzIlan={firma:f,veri:{}};
-  pzDepo.al("ilan-"+f).then(v=>{if(v&&pzIlan.firma===f&&Object.keys(v).length){pzIlan.veri=v;render();setTimeout(()=>{if(pzIlan.firma===f)pzIlanYeni(true)},8000)}})}
+  pzDepo.al("ilan-"+f).then(v=>{if(v&&pzIlan.firma===f&&Object.keys(v).length){pzIlan.veri=v;render();setTimeout(()=>{if(pzIlan.firma===f)pzIlanYeni(true)},8000)}}).then(()=>pzIlanOrtakCek(f))}
+// Ortak kopya: başka bir bilgisayarda daha yeni okunan / güncellenen pazaryerlerinin ilan durumları alınır
+async function pzIlanOrtakCek(f){if(pzIlanIs||!sb||!f||pzIlan.firma!==f)return;const l=await pzOrtak.zamanlar(f,"ilan-");if(!l||pzIlan.firma!==f)return;let n=0;
+  for(const r of l){const p=String(r.anahtar).slice(5),y=pzIlan.veri[p];if(!PZ_ILAN.includes(p)||(y&&(y.degis||y.zaman||0)>=Number(r.zaman)))continue;
+    const s=await pzOrtak.al(f,r.anahtar);if(pzIlan.firma!==f||pzIlanIs)return;if(!s||!s.veri||!s.veri.m)continue;pzIlan.veri[p]=Object.assign({},s.veri,{degis:Number(s.zaman)});n++}
+  if(n){await pzDepo.koy("ilan-"+f,pzIlan.veri);render()}}
+function pzIlanOrtakGonder(f,pzl){for(const p of pzl){const d=pzIlan.veri[p];if(d&&d.m&&pzIlan.firma===f)pzOrtak.koy(f,"ilan-"+p,d,d.degis||d.zaman||Date.now())}}
 function pzIlanDurum(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return null;const b=pzKimlik(u.barkod),k=pzKimlik(u.kod);return (b&&d.m[b])||(k&&d.m[k])||null}
 function pzIlanRozet(u){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(!l.length)return "";const h=[];
   for(const p of l){const d=pzIlanDurum(u,p);if(!d)continue;const ak=d[0]===1,r=PZ_ILAN_RENK[p];
@@ -4483,15 +4507,18 @@ async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
           adet+=l.length;pzIlanIs.adet=adet;const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=pzIlanBilgi();
           if(sonraki==null||(p!=="trendyol"&&!l.length))break;imlec=sonraki}}
       catch(err){hata=err.message||String(err);hatalar.push(PZ_ADLAR[p]+": "+hata)}
-      if(adet||!hata)veri[p]={zaman:Date.now(),adet,m,hata};if(pzIlan.firma!==f)return}
-    pzIlan.veri=veri;await pzDepo.koy("ilan-"+f,veri)}
+      if(adet||!hata)veri[p]={zaman:Date.now(),degis:Date.now(),adet,m,hata};if(pzIlan.firma!==f)return}
+    pzIlan.veri=veri;await pzDepo.koy("ilan-"+f,veri);pzIlanOrtakGonder(f,bagli.filter(p=>veri[p]&&veri[p].degis>Date.now()-6*3600000))}
   finally{pzIlanIs=null;render()}
   toast(hatalar.length?"Bazı pazaryerleri okunamadı: "+hatalar.join(" · ").slice(0,300):"Pazaryeri ilan durumları güncellendi")}
 // Tek ürünün bir pazaryerindeki rozetini günceller (yalnız o pazaryeri en az bir kez baştan okunduysa); değiştiyse true
 function pzIlanYaz(u,p,v){const d=pzIlan.veri[p];if(!d||!d.m||pzIlan.firma!==firmaId)return false;const o=pzIlanDurum(u,p);
-  for(const key of [pzKimlik(u.barkod),pzKimlik(u.kod)])if(key)d.m[key]=v;return !o||o[0]!==v[0]||o[1]!==v[1]||o[2]!==v[2]}
-let _pzIlanKayZ=null;
-function pzIlanSakla(){clearTimeout(_pzIlanKayZ);const f=firmaId;_pzIlanKayZ=setTimeout(()=>{if(pzIlan.firma===f)pzDepo.koy("ilan-"+f,pzIlan.veri)},500)}
+  for(const key of [pzKimlik(u.barkod),pzKimlik(u.kod)])if(key)d.m[key]=v;const deg=!o||o[0]!==v[0]||o[1]!==v[1]||o[2]!==v[2];
+  if(deg){d.degis=Date.now();_pzIlanDegisen.add(p)}return deg}
+let _pzIlanKayZ=null,_pzIlanOrtakZ=null;const _pzIlanDegisen=new Set();
+function pzIlanSakla(){clearTimeout(_pzIlanKayZ);const f=firmaId;_pzIlanKayZ=setTimeout(()=>{if(pzIlan.firma===f)pzDepo.koy("ilan-"+f,pzIlan.veri)},500);
+  // Tek tek güncellenen rozetler ortak kopyaya toplu gönderilir (20 saniye sessizlikten sonra)
+  clearTimeout(_pzIlanOrtakZ);_pzIlanOrtakZ=setTimeout(()=>{if(pzIlan.firma!==f)return;const l=[..._pzIlanDegisen];_pzIlanDegisen.clear();pzIlanOrtakGonder(f,l)},20000)}
 /* Yeni açılanları kontrol: baştan okumak yerine yalnız programdan açılmış (gönderildi / açıldı) ama rozeti henüz aktif olmayan ürünler
    tek tek sorulur. Program açıkken kendiliğinden ~30 dakikada bir çalışır; "↻ Yenileri kontrol et" ile hemen çalıştırılabilir. */
 let _pzYeniIs=false,_pzYeniSon=0;
@@ -4514,6 +4541,7 @@ async function pzIlanYeni(sessiz){if(_pzYeniIs||pzIlanIs||state.readonly||!sb||!
   finally{_pzYeniIs=false;if(pzIlan.firma===f)render()}
   if(!sessiz)toast(bakilan?`${bakilan} yeni açılmış ürün kontrol edildi · ${n} rozet güncellendi`:"Kontrol edilecek yeni açılmış ürün yok")}
 setInterval(()=>{if(sb&&firmaId&&pzIlan.firma===firmaId&&Object.keys(pzIlan.veri).length&&Date.now()-_pzYeniSon>25*60000)pzIlanYeni(true)},5*60000);
+setInterval(()=>{if(sb&&firmaId&&pzIlan.firma===firmaId&&!document.hidden)pzIlanOrtakCek(firmaId)},5*60000);
 const PZ_TAM_YENILE=6*3600000;
 async function pzSiparisleriOku(ilk,zorla,pzAd){pzAd=pzAd||"trendyol";const simdi=Date.now(),GUN=86400000;const anahtar=pzAd==="trendyol"?"siparis-"+firmaId:"siparis-"+pzAd+"-"+firmaId;let n=0;const ekA={pazaryeri:pzAd};
   const ilerle=k=>{n+=k;pz.yuk=`Siparişler okunuyor… (${n.toLocaleString("tr-TR")})`;renderSonra()};
