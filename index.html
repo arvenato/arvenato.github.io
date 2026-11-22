@@ -3906,6 +3906,88 @@ async function pzTopluAcModal(){
         <div class="muted" id="taDurum" style="font-size:.82rem;margin-top:6px">Eksik bilgisi olan hücrelerde <b>✏️ Düzelt</b> ile eksikleri burada tamamlayabilirsiniz.</div>
         <div class="err" id="taErr"></div>
         <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" data-m="tumu">Seçimi tersine çevir</button><button type="button" class="primary" data-m="gonder">Evet, işaretlileri aç</button></div>`})()})}
+/* Zorunlu özellikleri otomatik doldurma (yalnızca programdaki eşleştirmelere ve ürünlere yazar; pazaryerlerine hiçbir şey göndermez).
+   Eşleşmiş her kategori × pazaryeri için eksik zorunlu özellikler okunur ve öneri çıkarılır:
+   1) tek değerli ya da "Belirtilmemiş / Diğer / Standart / Yok" seçeneği olan özellik → o değer
+   2) değer, kategorideki ürün adlarında geçiyorsa (ör. Renk: "Mavi") → en sık geçen değer kategorinin varsayılanı olur; adında başka değer geçen ürüne ayrıca kendi değeri yazılır
+   3) kalanlar özellik adına göre gruplanır (ör. "Menşei" 120 kategoride): kullanıcı bir kez seçer, o değerin bulunduğu bütün kategorilere uygulanır.
+   Hiçbir şey onaysız kaydedilmez. */
+function pzOzOtoModal(){
+  if(state.readonly){toast("Bu firmada yalnızca görüntüleme yetkiniz var");return}
+  const urunByKat={};for(const u of state.urunler){const k=String(u.kategori||"").trim();if(k)(urunByKat[k]=urunByKat[k]||[]).push(u)}
+  const isler=[];for(const k of Object.keys(urunByKat))for(const p of PZ_ES_PZ){const e=pzEsKat(k,p);if(!e||!e.id)continue;
+    const dolu=Object.values(e.ozellik||{}).filter(x=>x&&(x.degerId||x.deger)).length;if(e.zorunluSay!=null&&dolu>=e.zorunluSay)continue;isler.push({k,p,e})}
+  let oto=[],grup={},hata=[],bitti=false;// oto: {k,p,o,v,kaynak,urunOz:[{u,v}]} · grup: {normAd:{ad,items:[{k,p,o}]}}
+  const kelime=s=>" "+_norm(s)+" ";
+  const degerAnlamli=v=>{const n=_norm(v.ad);return n.length>=3||(/[a-z]/.test(n)&&n.length>=2)};
+  openModal(`<div class="section-head"><h2>🧩 Zorunlu özellikleri doldur</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.85rem">Eşleşmiş kategorilerin pazaryerlerinde zorunlu olan ama boş kalan özelliklerine değer önerir. Önce önerileri görürsünüz; onaylamadan hiçbir şey kaydedilmez. Pazaryerlerine hiçbir şey gönderilmez.</div>
+    <div id="ooIc"><div class="muted">${isler.length?`${isler.length} kategori × pazaryeri taranıyor… <span id="ooIl">0</span>/${isler.length}`:"Eksik zorunlu özelliği olan eşleşmiş kategori yok."}</div></div>`,
+  root=>{root.style.maxWidth="1000px";const ic=root.querySelector("#ooIc");
+    const ciz=()=>{
+      const grl=Object.values(grup).sort((a,b)=>b.items.length-a.items.length);
+      const pzAd=l=>[...new Set(l.map(x=>PZ_ADLAR[x.p]))].join(", ");
+      ic.innerHTML=`<div class="notice" style="font-size:.85rem;margin-top:6px">${isler.length} kategori × pazaryeri tarandı · <b>${oto.length}</b> özellik için öneri bulundu · <b>${grl.reduce((s,g)=>s+g.items.length,0)}</b> özellik sizin seçiminizi bekliyor (${grl.length} farklı özellik adı)${hata.length?` · <span class="neg">${hata.length} kategori okunamadı</span>`:""}</div>
+        ${oto.length?`<details open style="margin-top:6px"><summary><b>Otomatik bulunanlar (${oto.length})</b> <span class="muted" style="font-size:.8rem">— istemediklerinizin işaretini kaldırın</span></summary>
+          <div class="filters" style="margin:4px 0"><button class="small" type="button" data-m="otoTumu">Seçimi tersine çevir</button></div>
+          <div class="tscroll" style="max-height:38vh"><table><thead><tr><th></th><th>Kategori</th><th>Pazaryeri</th><th>Özellik</th><th>Önerilen</th><th>Neden</th></tr></thead><tbody>
+          ${oto.map((r,i)=>`<tr><td><input type="checkbox" data-oo="${i}" checked aria-label="Seç"></td><td style="font-size:.8rem">${esc(r.k)}</td><td style="font-size:.8rem">${esc(PZ_ADLAR[r.p])}</td><td style="font-size:.8rem">${esc(r.o.ad)}</td><td style="font-size:.8rem"><b>${esc(r.v.ad)}</b>${r.urunOz.length?`<div class="muted" style="font-size:.72rem">+ ${r.urunOz.length} üründe adındaki değer</div>`:""}</td><td class="muted" style="font-size:.75rem">${esc(r.kaynak)}</td></tr>`).join("")}</tbody></table></div></details>`:""}
+        ${grl.length?`<details open style="margin-top:8px"><summary><b>Sizin seçmeniz gerekenler (${grl.length} özellik adı)</b> <span class="muted" style="font-size:.8rem">— bir kez seçin, o değerin bulunduğu bütün kategorilere uygulanır; boş bırakılanlar değişmez</span></summary>
+          <div class="tscroll" style="max-height:38vh"><table><thead><tr><th>Özellik</th><th>Kaç kategoride</th><th>Değer</th></tr></thead><tbody>
+          ${grl.map((g,i)=>{const say={};for(const it of g.items)for(const d of (it.o.degerler||[]))say[d.ad]=(say[d.ad]||0)+1;
+            const secenek=Object.entries(say).sort((a,b)=>b[1]-a[1]).slice(0,400);const serbest=g.items.some(it=>it.o.serbest||!(it.o.degerler||[]).length);
+            return `<tr><td><b style="font-size:.85rem">${esc(g.ad)}</b><div class="muted" style="font-size:.72rem">${esc(pzAd(g.items))}</div></td><td class="num">${g.items.length}<div class="muted" style="font-size:.7rem">${esc([...new Set(g.items.map(x=>x.k))].slice(0,3).join(", "))}${new Set(g.items.map(x=>x.k)).size>3?"…":""}</div></td>
+              <td><input data-oog="${i}" list="oodl${i}" placeholder="${secenek.length?"Listeden seçin"+(serbest?" ya da yazın":""):"Değer yazın"}" style="min-width:200px"><datalist id="oodl${i}">${secenek.map(([ad,n])=>`<option value="${esc(ad)}">${n} kategoride var</option>`).join("")}</datalist><div class="muted" data-oogs="${i}" style="font-size:.72rem"></div></td></tr>`}).join("")}</tbody></table></div></details>`:""}
+        <div class="err" id="ooErr"></div><div class="muted" id="ooDurum" style="font-size:.82rem"></div>
+        <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button>${oto.length||grl.length?`<button type="button" class="primary" data-m="kaydet">Seçilenleri kaydet</button>`:""}</div>`;
+      ic._grl=grl};
+    // Grup değeri yazıldıkça kaç kategoride uygulanacağını göster
+    root.addEventListener("input",e=>{const t=e.target;if(!t.dataset||t.dataset.oog==null)return;const g=(ic._grl||[])[Number(t.dataset.oog)];if(!g)return;
+      const v=t.value.trim(),s=root.querySelector(`[data-oogs="${t.dataset.oog}"]`);if(!v){s.textContent="";return}
+      const n=g.items.filter(it=>(it.o.degerler||[]).some(d=>_norm(d.ad)===_norm(v))||it.o.serbest||!(it.o.degerler||[]).length).length;
+      s.textContent=`${n}/${g.items.length} kategoriye uygulanacak`+(n<g.items.length?" (diğerlerinde bu değer listede yok)":"")});
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
+      if(m==="close")return closeModal();
+      if(m==="otoTumu"){const l=[...root.querySelectorAll("[data-oo]")];const hep=l.every(x=>x.checked);l.forEach(x=>x.checked=!hep);return}
+      if(m!=="kaydet"||!bitti)return;
+      const er=root.querySelector("#ooErr"),du=root.querySelector("#ooDurum");er.textContent="";
+      // Kategori varsayılanları: {k:{p:{oid:{ad,degerId,deger}}}} · ürüne özel değerler: {uid:{p:{oid:{...}}}}
+      const katYaz={},urunYaz={};let katSay=0,atla=0;
+      const katKoy=(k,p,o,v)=>{((katYaz[k]=katYaz[k]||{})[p]=katYaz[k][p]||{})[o.id]={ad:o.ad,degerId:v.id!=null?String(v.id):"",deger:v.ad};katSay++};
+      for(const x of root.querySelectorAll("[data-oo]:checked")){const r=oto[Number(x.dataset.oo)];if(!r)continue;katKoy(r.k,r.p,r.o,r.v);
+        for(const {u,v} of r.urunOz){const mev=(((u.pzOzellik||{})[r.p])||{})[r.o.id];if(mev&&(mev.degerId||mev.deger))continue;((urunYaz[u.id]=urunYaz[u.id]||{})[r.p]=urunYaz[u.id][r.p]||{})[r.o.id]={ad:r.o.ad,degerId:v.id!=null?String(v.id):"",deger:v.ad}}}
+      for(const t of root.querySelectorAll("[data-oog]")){const v=t.value.trim();if(!v)continue;const g=(ic._grl||[])[Number(t.dataset.oog)];if(!g)continue;
+        for(const it of g.items){const d=(it.o.degerler||[]).find(x=>_norm(x.ad)===_norm(v));
+          if(d)katKoy(it.k,it.p,it.o,d);else if(it.o.serbest||!(it.o.degerler||[]).length)katKoy(it.k,it.p,it.o,{id:"",ad:v});else atla++}}
+      if(!katSay){er.textContent="Kaydedilecek bir şey seçilmedi.";return}
+      b.disabled=true;
+      try{du.textContent="Eşleştirmeler kaydediliyor…";
+        await pzEsKaydet(es=>{for(const k of Object.keys(katYaz))for(const p of Object.keys(katYaz[k])){const e=(es.kategori[k]||{})[p];if(!e)continue;
+          e.ozellik={...(e.ozellik||{}),...katYaz[k][p]};const is=isler.find(x=>x.k===k&&x.p===p);if(is&&is.zorunluSay!=null)e.zorunluSay=is.zorunluSay}});
+        const ids=Object.keys(urunYaz);
+        if(ids.length){const satir=[];for(const id of ids){const u=state.urunler.find(x=>x.id===id);if(!u)continue;const {id:_,...rest}=u;const pzOz=JSON.parse(JSON.stringify(rest.pzOzellik||{}));
+            for(const p of Object.keys(urunYaz[id]))pzOz[p]={...(pzOz[p]||{}),...urunYaz[id][p]};satir.push({col:"urunler",id,veri:{...rest,pzOzellik:pzOz}})}
+          await topluYaz(satir,(n,t)=>{du.textContent=`Ürünlere özel değerler kaydediliyor… ${n.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`})}
+        closeModal();toast(`${katSay} kategori özelliği kaydedildi`+(ids.length?` · ${ids.length} ürüne kendi değeri yazıldı`:"")+(atla?` · ${atla} kategoride seçilen değer listede yoktu`:""))}
+      catch(err){er.textContent=errMsg(err);b.disabled=false}});
+    if(!isler.length)return;
+    (async()=>{let i=0;
+      for(const is of isler){if(!root.isConnected)return;i++;const il=root.querySelector("#ooIl");if(il)il.textContent=String(i);
+        let l;try{l=await pzOzellikler(is.p,is.e.id)}catch(err){hata.push(is.k+" / "+PZ_ADLAR[is.p]);continue}
+        const z=l.filter(o=>o.zorunlu&&!pzMarkaOz(o));is.zorunluSay=z.length;const mev=is.e.ozellik||{};
+        const urunler=urunByKat[is.k]||[],adlar=urunler.map(u=>({u,n:kelime(u.ad)}));
+        for(const o of z){const m0=mev[o.id];if(m0&&(m0.degerId||m0.deger))continue;
+          const d=o.degerler||[];let v=null,kaynak="",urunOz=[];
+          if(d.length===1){v=d[0];kaynak="tek seçenek"}
+          else{const vs=d.find(x=>_ES_VARSAY.includes(_norm(x.ad)));if(vs){v=vs;kaynak="“"+vs.ad+"” seçeneği"}}
+          if(!v&&d.length&&adlar.length){// ürün adlarında geçen değerler (uzun değer önce: "Açık Mavi" "Mavi"den önce)
+            const aday=d.filter(degerAnlamli).map(x=>({x,k:kelime(x.ad)})).sort((a,b)=>b.k.length-a.k.length),say=new Map(),urunDeger=[];
+            for(const {u,n} of adlar){const h=aday.find(a=>n.includes(a.k));if(h){say.set(h.x,(say.get(h.x)||0)+1);urunDeger.push({u,v:h.x})}}
+            if(say.size){const [enX,enN]=[...say.entries()].sort((a,b)=>b[1]-a[1])[0];
+              if(enN>=Math.max(1,Math.ceil(urunler.length*0.3))){v=enX;kaynak=`ürün adlarından (${enN}/${urunler.length} üründe geçiyor)`;urunOz=urunDeger.filter(x=>x.v!==enX)}}}
+          if(v)oto.push({k:is.k,p:is.p,o,v,kaynak,urunOz});
+          else{const g=_norm(o.ad)||String(o.id);(grup[g]=grup[g]||{ad:o.ad,items:[]}).items.push({k:is.k,p:is.p,o})}}}
+      bitti=true;if(root.isConnected)ciz()})()})}
 function pzEslesmeHtml(tur){
   const marka=tur==="marka";const ara=_norm((marka?ui.esMarkaAra:ui.esAra)||"");
   const say=(alan)=>{const m={};for(const u of state.urunler){const v=String(u[alan]||"").trim();if(v)m[v]=(m[v]||0)+1}return Object.entries(m).sort((a,b)=>b[1]-a[1])};
@@ -3915,7 +3997,7 @@ function pzEslesmeHtml(tur){
     return `<a href="#" data-act="esKat" data-k="${esc(k)}" data-p="${p}" style="font-size:.8rem" title="${esc(e.yol)}">${esc(String(e.yol).split(" › ").slice(-2).join(" › "))}</a><div class="${z!=null&&n<z?"neg":"muted"}" style="font-size:.72rem">${z!=null?`özellik ${n}/${z}`:""}</div>`};
   const markaHucre=(m,p)=>{const e=pzEsMarka(m,p);
     return e?`<a href="#" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" style="font-size:.8rem">${esc(e.ad)}</a>${e.serbest?`<div class="muted" style="font-size:.72rem">serbest yazı</div>`:""}`:`<button class="small" data-act="esMarka" data-k="${esc(m)}" data-p="${p}" type="button">Eşleştir</button>`};
-  const bilgi=`<div class="notice" style="font-size:.85rem"><b>Ürün açmanın temeli:</b> ${marka?"programdaki her markayı pazaryerlerindeki karşılığıyla bir kez eşleştirin. N11'de seçilen marka, ürün açılırken kategorinin “Marka” özelliğine yazılır.":"programdaki her kategoriyi pazaryerlerindeki karşılığıyla bir kez eşleştirin ve kategorinin zorunlu özellikleri için varsayılan değer seçin."} Bu ekran pazaryerlerine hiçbir şey göndermez. Shopify'da ${marka?"marka":"kategori"} serbest metindir, otomatik kullanılır. <button class="small primary" data-act="pzOtoEs" type="button">🤖 Otomatik eşleştir (kategori + marka + özellik)${pzOE.calisiyor?" · ⏳ arka planda taranıyor":""}</button> <button class="small" data-act="pzUrunAyar" type="button">⚙️ Ürün açma ayarları</button></div>`;
+  const bilgi=`<div class="notice" style="font-size:.85rem"><b>Ürün açmanın temeli:</b> ${marka?"programdaki her markayı pazaryerlerindeki karşılığıyla bir kez eşleştirin. N11'de seçilen marka, ürün açılırken kategorinin “Marka” özelliğine yazılır.":"programdaki her kategoriyi pazaryerlerindeki karşılığıyla bir kez eşleştirin ve kategorinin zorunlu özellikleri için varsayılan değer seçin."} Bu ekran pazaryerlerine hiçbir şey göndermez. Shopify'da ${marka?"marka":"kategori"} serbest metindir, otomatik kullanılır. <button class="small primary" data-act="pzOtoEs" type="button">🤖 Otomatik eşleştir (kategori + marka + özellik)${pzOE.calisiyor?" · ⏳ arka planda taranıyor":""}</button> <button class="small" data-act="pzOzOto" type="button" title="Eşleşmiş kategorilerin boş zorunlu özelliklerine değer önerir (önce gösterir, onayla kaydeder)">🧩 Zorunlu özellikleri doldur</button> <button class="small" data-act="pzUrunAyar" type="button">⚙️ Ürün açma ayarları</button></div>`;
   // Filtre: pazaryeri (tümü ya da tek) × durum (eşleşmiş / eşleşmemiş / zorunlu özelliği eksik); sayfa başına 50
   const on=marka?"esM":"esK",pzListe=PZ_ES_PZ;
   const fPz=pzListe.includes(ui[on+"Pz"])?ui[on+"Pz"]:"",fDurum=ui[on+"Durum"]||"";
@@ -5033,6 +5115,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="tyGorsel")tyGorselAl();
   else if(a==="tyGorselSecili")tyGorselAl(new Set(urunSecim));
   else if(a==="pzUrunAyar")pzUrunAyarModal();
+  else if(a==="pzOzOto")pzOzOtoModal();
   else if(a==="pzOtoEs")pzOtoEsModal();
   else if(a==="fatSec"){if(b.checked)fatSecim.add(id);else fatSecim.delete(id);render()}
   else if(a==="fatHepsi"){const hepsi=fatListeSon.length&&fatListeSon.every(x=>fatSecim.has(x));if(hepsi)fatListeSon.forEach(x=>fatSecim.delete(x));else fatListeSon.forEach(x=>fatSecim.add(x));render()}
