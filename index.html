@@ -4450,7 +4450,7 @@ const pzDepo=(()=>{let p=null;const ac=()=>p||(p=new Promise((ok,red)=>{const r=
     temizle:async()=>{try{const db=await ac();await new Promise(ok=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").clear();t.oncomplete=()=>ok();t.onerror=()=>ok()})}catch(e){}}}})();
 /* Pazaryeri ilan durumu (yalnızca okuma): pazaryerlerindeki ilanlar barkod / stok koduyla ürünlere bağlanır ve Ürünler listesinde rozet olarak görünür.
    Bu cihazda saklanır (arvenato-pz / ilan-<firma>): {pz:{zaman, adet, m:{kimlik:[aktif 1/0, stok, durum]}}} */
-const PZ_ILAN=["trendyol","hepsiburada","n11","pazarama","idefix","amazon","shopify"],PZ_ILAN_OKU=["trendyol","n11","pazarama","idefix","shopify"];
+const PZ_ILAN=["trendyol","hepsiburada","n11","pazarama","idefix","amazon","shopify"],PZ_ILAN_OKU=["trendyol","n11","pazarama","idefix","shopify","amazon"];
 const PZ_KISA={trendyol:"TY",n11:"N11",pazarama:"PZR",idefix:"İDX",shopify:"SHP",amazon:"AMZ",hepsiburada:"HB"};
 const PZ_ILAN_RENK={trendyol:"#f27a1a",n11:"#6a2c91",pazarama:"#1a56c4",idefix:"#d0103a",shopify:"#5e8e3e",amazon:"#232f3e",hepsiburada:"#ff6000"};
 let pzIlan={firma:null,veri:{}},pzIlanIs=null;
@@ -4462,7 +4462,7 @@ function pzIlanRozet(u){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(!l.length)r
     h.push(`<span title="${esc(PZ_ADLAR[p])}: ${ak?"aktif (satışta)":"pasif"}${d[2]?" · "+esc(d[2]):""} · pazaryerindeki stok ${esc(String(d[1]))}" style="display:inline-flex;align-items:center;gap:3px;font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:999px;line-height:1.5;${ak?`background:${r};color:#fff;border:1px solid ${r}`:`background:transparent;color:var(--muted,#888);border:1px dashed var(--muted,#999)`}">${ak?"●":"○"} ${PZ_KISA[p]}</span>`)}
   return h.length?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">${h.join("")}</div>`:""}
 function pzIlanFiltre(u,f){if(!f)return true;const [p,t]=f.split(":");const d=pzIlanDurum(u,p);return t==="yok"?!d:t==="ak"?!!d&&d[0]===1:!!d&&d[0]!==1}
-function pzIlanBilgi(){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(pzIlanIs)return `<div class="muted" style="font-size:.82rem">🛒 ${esc(PZ_ADLAR[pzIlanIs.pz]||"")} ilanları okunuyor… ${pzIlanIs.adet.toLocaleString("tr-TR")}</div>`;
+function pzIlanBilgi(){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(pzIlanIs)return `<div class="muted" style="font-size:.82rem">🛒 ${esc(PZ_ADLAR[pzIlanIs.pz]||"")} ilanları okunuyor… ${pzIlanIs.not?esc(pzIlanIs.not)+" · birkaç dakika sürebilir":pzIlanIs.adet.toLocaleString("tr-TR")}</div>`;
   if(!l.length)return "";const en=Math.min(...l.map(p=>pzIlan.veri[p].zaman||0));
   return `<div class="muted" style="font-size:.78rem">Pazaryeri rozetleri: <b style="color:var(--fg)">●</b> aktif (satışta) · ○ pasif / onay bekliyor · rozet yoksa o pazaryerinde ilan yok. Programdan açılan ürünlerin rozeti kendiliğinden güncellenir (~30 dakikada bir); pazaryeri panelinden eklenenler için ara sıra baştan okuyun. Son baştan okuma ${new Date(en).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · ${l.map(p=>`${esc(PZ_ADLAR[p])} ${(pzIlan.veri[p].adet||0).toLocaleString("tr-TR")}${pzIlan.veri[p].hata?" ⚠":""}`).join(" · ")}</div>`}
 async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
@@ -4471,7 +4471,11 @@ async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
   try{for(const p of bagli){pzIlanIs={pz:p,adet:0};render();const m={};let imlec=null,adet=0,onceki="",hata="";
       try{for(let i=0;i<600;i++){let l,sonraki;
           if(p==="trendyol"){const r=await pzCagir({islem:"urunler",sayfa:i,sonrakiToken:imlec});l=(r.urunler||[]).map(x=>({b:x.barkod,k:x.stokKodu,a:x.satista,s:x.stok,d:x.satista?"":"satışta değil / arşiv",f:x.fiyat}));sonraki=(i+1>=(r.toplamSayfa||1)&&!(r.sonrakiToken&&i>=99))?null:(i>=99?(r.sonrakiToken||null):"")}
-          else{const r=await pzCagir({islem:"ilanListe",pazaryeri:p,imlec});l=r.ilanlar||[];sonraki=r.sonraki}
+          else{const r=await pzCagir({islem:"ilanListe",pazaryeri:p,imlec});l=r.ilanlar||[];sonraki=r.sonraki;
+            // Amazon: ilan raporu hazırlanırken boş döner ve beklenmesi istenir (en fazla ~15 dakika)
+            if(r.bekle&&sonraki&&!l.length&&i<60){pzIlanIs.not=r.not||"";const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=pzIlanBilgi();
+              await new Promise(z=>setTimeout(z,Math.min(60,Number(r.bekle)||15)*1000));if(pzIlan.firma!==f)return;imlec=sonraki;continue}
+            pzIlanIs.not=""}
           const imza=l.slice(0,3).map(x=>x.b+"|"+x.k).join(",");if(l.length&&imza===onceki)break;onceki=imza;
           for(const x of l){const v=[x.a?1:0,Number(x.s)||0,String(x.d||""),Number(x.f)||0];for(const key of [pzKimlik(x.b),pzKimlik(x.k)]){if(!key)continue;const e=m[key];if(!e||(v[0]&&!e[0]))m[key]=v}}
           adet+=l.length;pzIlanIs.adet=adet;const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=pzIlanBilgi();
@@ -4492,7 +4496,7 @@ let _pzYeniIs=false,_pzYeniSon=0;
 async function pzIlanYeni(sessiz){if(_pzYeniIs||pzIlanIs||state.readonly||!sb||!firmaId)return;const f=firmaId;
   const ac=(state.ayarEk||{}).pzUrunAc||{};_pzYeniIs=true;_pzYeniSon=Date.now();let n=0,bakilan=0;
   if(!sessiz){const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=`<div class="muted" style="font-size:.82rem">↻ Yeni açılan ürünler kontrol ediliyor…</div>`}
-  try{const bagli=(await pzBagliAl()).filter(k=>PZ_ILAN_OKU.includes(k)&&pzIlan.veri[k]);
+  try{const bagli=(await pzBagliAl()).filter(k=>PZ_ILAN_OKU.includes(k)&&k!=="amazon"&&pzIlan.veri[k]);
     for(const p of bagli){
       const aday=state.urunler.filter(u=>{const r=(ac[u.id]||{})[p];if(!r||!/^(gonderildi|tamam)$/.test(r.durum))return false;const d=pzIlanDurum(u,p);return !d||d[0]!==1}).slice(0,100);
       if(!aday.length)continue;
