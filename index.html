@@ -2210,17 +2210,20 @@ function hizliDuzenle(uid,alan){
   const goster=v=>stokMu?fmtMiktar(v)+" "+esc(u.birim||"Adet"):money(v);
   const deneme=pzDenemeKodlar().some(k=>pzKimlik(k)===pzKimlik(u.kod)||pzKimlik(k)===pzKimlik(u.barkod));
   let yeni=null,adim=1;
+  // Ürünün ilanı olan (yazılabilen) pazaryerleri: satış fiyatı / stok değişince bunlara da gönderilir (gönderim sırası)
+  const listeli=alan!=="alis"&&firmaRol==="sahip"&&!state.readonly&&sb?PZ_FS_YAZ.filter(k=>pzIlanDurum(u,k)):[];let pzGonder=true;
   const ciz=root=>{const f=root.querySelector("#hdGovde");
     if(adim===1)f.innerHTML=`<div class="field"><label for="hdDeger">Yeni ${ad.toLocaleLowerCase("tr")}${stokMu?" ("+esc(u.birim||"Adet")+")":" (₺, KDV dahil)"}</label>
         <input id="hdDeger" type="number" ${stokMu?'step="1"':'step="0.01" min="0"'} inputmode="decimal" value="${esc(String(eski))}"></div>
       <div class="muted" style="font-size:.85rem">Şu an: <b style="color:var(--fg)">${goster(eski)}</b>${stokMu?" · fark sayım hareketi olarak kaydedilir":""}</div>
-      ${stokMu&&deneme&&pzStokOtoAcik()?`<div class="notice" style="font-size:.85rem">Bu ürün deneme listesinde: yeni stok birkaç saniye içinde bağlı pazaryerlerine de gönderilir.</div>`:""}
+      ${stokMu&&deneme&&pzStokOtoAcik()&&!listeli.length?`<div class="notice" style="font-size:.85rem">Bu ürün deneme listesinde: yeni stok birkaç saniye içinde bağlı pazaryerlerine de gönderilir.</div>`:""}
       <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="devam">Devam</button></div>`;
     else{const fark=r2(yeni-eski),oran=eski>0?yeni/eski:null;
       const asiri=!stokMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
       const degisim=stokMu?`${fark>0?"+":""}${fmtMiktar(fark)}`:(oran!=null?`%${(Math.abs(oran-1)*100).toLocaleString("tr-TR",{maximumFractionDigits:1})} ${yeni>=eski?"artış":"düşüş"}`:"");
       f.innerHTML=`<table><tbody><tr><td>${ad}</td><td class="num">${goster(eski)} → <b>${goster(yeni)}</b></td></tr>${degisim?`<tr><td>Değişim</td><td class="num">${degisim}</td></tr>`:""}</tbody></table>
-        ${alan==="satis"&&pzFiyatGider(u)?`<div class="notice" style="font-size:.85rem"><b>Pazaryerlerine de gidecek:</b> bu ürün deneme listesinde; yeni fiyat bağlı bütün pazaryerlerine gönderilir; üstü çizili (piyasa) fiyat da satış fiyatı da bu fiyat olur.</div>`:""}
+        ${listeli.length?`<label class="notice" style="font-size:.85rem;display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="hdPz" ${pzGonder?"checked":""} style="margin-top:3px"> <span><b>Pazaryerlerine de gönder:</b> ${esc(listeli.map(k=>PZ_ADLAR[k]).join(", "))}. ${stokMu?"Yeni stok":"Yeni fiyat (üstü çizili fiyat da)"} gönderim sırasına alınır; sonucu Fiyat / Stok farkı raporunda görünür.</span></label>`:""}
+        ${alan==="satis"&&pzFiyatGider(u)&&!listeli.length?`<div class="notice" style="font-size:.85rem"><b>Pazaryerlerine de gidecek:</b> bu ürün deneme listesinde; yeni fiyat bağlı bütün pazaryerlerine gönderilir; üstü çizili (piyasa) fiyat da satış fiyatı da bu fiyat olur.</div>`:""}
         ${adim===3?`<div class="notice" style="border-color:var(--neg,#b42318)"><b>İkinci onay:</b> fiyat ${yeni<eski?"yarısından daha fazla düşüyor":"iki katından fazla artıyor"} (${goster(eski)} → ${goster(yeni)}). Yanlış yazılmadığından emin olun.</div>`
           :asiri?`<div class="notice"><b>Dikkat:</b> fiyat ${yeni<eski?"yarısından fazla düşüyor":"iki katından fazla artıyor"}; onaydan sonra bir kez daha sorulacak.</div>`:""}
         <div class="err" id="hdErr" role="alert"></div>
@@ -2232,6 +2235,7 @@ function hizliDuzenle(uid,alan){
       root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
         if(m==="close")return closeModal();
         if(m==="geri"){adim=1;ciz(root);return}
+        if(m==="onay"){const c=root.querySelector("#hdPz");if(c)pzGonder=c.checked}
         if(m==="devam"){const v=Number(String(root.querySelector("#hdDeger").value).replace(",","."));
           if(!isFinite(v)||(!stokMu&&v<0)){toast("Geçerli bir sayı girin");return}
           yeni=stokMu?v:r2(v);if(yeni===eski){closeModal();return}adim=2;ciz(root);return}
@@ -2242,8 +2246,13 @@ function hizliDuzenle(uid,alan){
         try{if(stokMu){const guncel=stokMiktar(u),fark=r2(yeni-guncel);
             if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(u.alisFiyat)||0,aciklama:"Ürünler ekranından düzeltme",hareketId:"",olusturma:Date.now()})}
           else{const x=state.urunler.find(y=>y.id===uid)||u;const {id:_,...rest}=x;await api.setDoc("urunler",uid,{...rest,[alan==="alis"?"alisFiyat":"satisFiyat"]:yeni})}
-          closeModal();toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni)));
-          if(alan==="satis"&&pzFiyatGider(u))pzFiyatGonder(u,yeni,asiri).catch(err=>toast("Fiyat pazaryerlerine gönderilemedi: "+(err.message||err)))}
+          closeModal();
+          if(listeli.length&&pzGonder){
+            const is=listeli.map(k=>stokMu?{u,p:k,islem:"stokGonder",stok:Math.max(0,Math.floor(yeni))}:{u,p:k,islem:"fiyatGonder",satis:yeni,buyuk:true});
+            try{const n=await pzFsSiraya(is);toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni))+" · "+n+" pazaryeri gönderimi sıraya alındı")}
+            catch(err){toast(ad+" kaydedildi ama pazaryerlerine gönderilemedi: "+(err.message||err))}}
+          else{toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni)));
+            if(alan==="satis"&&pzFiyatGider(u))pzFiyatGonder(u,yeni,asiri).catch(err=>toast("Fiyat pazaryerlerine gönderilemedi: "+(err.message||err)))}}
         catch(err){b.disabled=false;const er=root.querySelector("#hdErr");if(er)er.textContent=errMsg(err)}})})}
 function stokHareketForm(uid,tip){
   const u=state.urunler.find(x=>x.id===uid);if(!u)return;
