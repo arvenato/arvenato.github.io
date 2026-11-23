@@ -367,7 +367,9 @@ function render(){
   const f=m.querySelectorAll("[data-filter]");
   f.forEach(el=>el.addEventListener("input",()=>{ui[el.dataset.filter]=el.value;rerenderKeepFocus(el.id);
     // Pazaryeri dönemi değişince sipariş listesi kayıtlı veriden yeniden süzülür / gerekirse okunur
-    if(el.dataset.filter==="pzGun"&&view==="pazaryeri"&&pz.sekme==="siparis"&&!pz.yuk)pzGetir()}));
+    if(/^(pzGun|pzBas|pzBit)$/.test(el.dataset.filter)&&view==="pazaryeri"){
+      if(pz.sekme==="siparis"&&!pz.yuk)pzGetir();
+      else if(pz.sekme==="rapor"&&pzRapor.veri&&!pzRapor.yuk&&pzIlk()<pzRapor.ilk-86400000)pzRaporGetir(false)}}));
   if(view==="satis")posBagla();
 }
 function rerenderKeepFocus(id){
@@ -4860,9 +4862,12 @@ async function pzSiparisleriOku(ilk,zorla,pzAd){pzAd=pzAd||"trendyol";const simd
    Sayfa açık ve görünürken seçili pazaryerinin son 3 günü her dakika okunur; yeni siparişler eklenir,
    durumu değişenler güncellenir ve bu oturumda yeni gelenler listede "Yeni" olarak işaretlenir. */
 const pzDepoAnahtari=pzAd=>pzAd==="trendyol"?"siparis-"+firmaId:"siparis-"+pzAd+"-"+firmaId;
-const pzIlk=()=>ui.pzGun==="bugun"?new Date().setHours(0,0,0,0):ui.pzGun==="dun"?new Date().setHours(0,0,0,0)-86400000:Date.now()-Math.min(90,Math.max(1,Number(ui.pzGun)||14))*86400000;
-// Dönem sonu: "Dün" seçiliyse bugünün başı (dünün siparişleri), diğerlerinde sınır yok
-const pzSon=()=>ui.pzGun==="dun"?new Date().setHours(0,0,0,0):Infinity;
+// Tarih aralığı: ui.pzBas / ui.pzBit ("YYYY-MM-DD"); ters girilirse yer değiştirir
+const pzAralik=()=>{const g=s=>{const t=new Date(String(s||"")+"T00:00:00").getTime();return isFinite(t)?t:null};let a=g(ui.pzBas),b=g(ui.pzBit);
+  if(a==null)a=new Date().setHours(0,0,0,0)-7*86400000;if(b==null)b=new Date().setHours(0,0,0,0);if(b<a)[a,b]=[b,a];return [a,b+86400000]};
+const pzIlk=()=>ui.pzGun==="bugun"?new Date().setHours(0,0,0,0):ui.pzGun==="dun"?new Date().setHours(0,0,0,0)-86400000:ui.pzGun==="aralik"?pzAralik()[0]:Date.now()-Math.min(90,Math.max(1,Number(ui.pzGun)||14))*86400000;
+// Dönem sonu: "Dün" seçiliyse bugünün başı, tarih aralığında bitiş gününün sonu, diğerlerinde sınır yok
+const pzSon=()=>ui.pzGun==="dun"?new Date().setHours(0,0,0,0):ui.pzGun==="aralik"?pzAralik()[1]:Infinity;
 const pzDonemde=x=>{const t=Number(x.siparisTarihi);return t>=pzIlk()&&t<pzSon()};
 const pzCanli={zaman:0,hata:"",calisiyor:false,aciliyor:false,yeniler:new Set()};
 async function pzOtoAc(){
@@ -5148,7 +5153,8 @@ function vPazaryeri(){
   const deneme=ty?`<div class="notice"><b>Deneme modu:</b> Trendyol'a yalnızca deneme ürünlerinin stok ve fiyatı gönderilebilir. Siparişlerden yalnızca deneme ürünlerinin satırları programa işlenir; diğer siparişler yalnızca görüntülenir.</div>`
     :`<div class="notice"><b>Deneme modu:</b> ${esc(PZ_ADLAR[pzAd])} siparişlerinden yalnızca deneme ürünlerinin satırları programa işlenir. ${esc(PZ_ADLAR[pzAd])}'e yalnızca deneme ürünlerinin stok adedi gönderilir (otomatik gönderim açıksa; ayarı Trendyol › Deneme ürünleri sekmesinde).</div>`;
   const ust=`<section class="section-head"><h2>Pazaryeri</h2><div class="filters">
-      <select id="fPzGun" data-filter="pzGun" aria-label="Dönem"><option value="bugun" ${ui.pzGun==="bugun"?"selected":""}>Bugün</option><option value="dun" ${ui.pzGun==="dun"?"selected":""}>Dün</option>${[7,14,30,60,90].map(g=>`<option value="${g}" ${Number(ui.pzGun||14)===g?"selected":""}>Son ${g} gün</option>`).join("")}</select>
+      <select id="fPzGun" data-filter="pzGun" aria-label="Dönem"><option value="bugun" ${ui.pzGun==="bugun"?"selected":""}>Bugün</option><option value="dun" ${ui.pzGun==="dun"?"selected":""}>Dün</option>${[7,14,30,60,90].map(g=>`<option value="${g}" ${Number(ui.pzGun||14)===g?"selected":""}>Son ${g} gün</option>`).join("")}<option value="aralik" ${ui.pzGun==="aralik"?"selected":""}>Tarih aralığı…</option></select>
+      ${ui.pzGun==="aralik"?(()=>{const [a,b]=pzAralik(),gs=t=>{const d=new Date(t);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};return `<input id="fPzBas" type="date" data-filter="pzBas" value="${gs(a)}" max="${gs(Date.now())}" aria-label="Başlangıç tarihi" style="width:auto"><span class="muted">–</span><input id="fPzBit" type="date" data-filter="pzBit" value="${gs(b-86400000)}" max="${gs(Date.now())}" aria-label="Bitiş tarihi" style="width:auto">`})():""}
       <button class="primary small" data-act="pzGetir" type="button" ${pz.yuk?"disabled":""}>📡 ${esc(PZ_ADLAR[pzAd]+PZ_EK[pzAd])} getir</button></div></section>
     <div class="filters" role="tablist" aria-label="Pazaryeri">${Object.entries(PZ_ADLAR).map(([k,v])=>`<button class="small ${k===pzAd?"primary":""}" data-act="pzSec" data-id="${k}" type="button" role="tab" aria-selected="${k===pzAd}">${esc(v)}</button>`).join("")}</div>`;
   const sekmeler=`<div class="filters"><button class="small ${pz.sekme==="rapor"?"primary":""}" data-act="pzSekme" data-id="rapor" type="button">📊 Tüm pazaryerleri raporu</button><button class="small ${pz.sekme==="siparis"?"primary":""}" data-act="pzSekme" data-id="siparis" type="button">Siparişler</button>${ty?`<button class="small ${pz.sekme==="hakedis"?"primary":""}" data-act="pzSekme" data-id="hakedis" type="button">Hakediş / komisyon</button><button class="small ${pz.sekme==="deneme"?"primary":""}" data-act="pzSekme" data-id="deneme" type="button">🧪 Deneme ürünleri · stok/fiyat</button>`:""}<button class="small ${pz.sekme==="eslesme"?"primary":""}" data-act="pzSekme" data-id="eslesme" type="button">🔗 Kategori eşleştirme</button><button class="small ${pz.sekme==="eslesmeMarka"?"primary":""}" data-act="pzSekme" data-id="eslesmeMarka" type="button">🏷️ Marka eşleştirme</button>
