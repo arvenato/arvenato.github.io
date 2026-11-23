@@ -5100,16 +5100,24 @@ async function pzRaporGetir(zorla){if(pzRapor.yuk)return;if(!sb||!oturum||!firma
   for(const p of pzl){if(firmaId!==f)return;pzRapor.yuk=`${PZ_ADLAR[p]} siparişleri okunuyor…`;renderSonra();
     try{const R=await pzSiparisleriOku(ilk,zorla,p);veri[p]={liste:R.liste||[]}}catch(e){veri[p]={liste:[],hata:e.message||String(e)}}
     pzRapor.veri={...pzRapor.veri,...veri}}
-  if(firmaId!==f)return;pz.yuk="";Object.assign(pzRapor,{yuk:"",veri,ilk,zaman:Date.now()});render()}
+  if(firmaId!==f)return;pz.yuk="";Object.assign(pzRapor,{yuk:"",veri,ilk,zaman:Date.now(),kayitli:false});render()}
+// Açılışta bu cihazda kayıtlı sipariş listeleriyle hemen gösterilir; kayıt 10 dakikadan eskiyse arka planda yenilenir
+async function pzRaporAc(){if(pzRapor.acildi)return;pzRapor.acildi=true;const f=firmaId,veri={};let ilk=Infinity,z=0;
+  for(const p of Object.keys(PZ_ADLAR)){try{const d=await pzDepo.al(pzDepoAnahtari(p));if(d&&Array.isArray(d.liste)&&d.liste.length){veri[p]={liste:d.liste};ilk=Math.min(ilk,Number(d.ilk)||Infinity);z=Math.max(z,Number(d.zaman)||0)}}catch(e){}}
+  if(firmaId!==f)return;
+  if(Object.keys(veri).length){Object.assign(pzRapor,{veri,ilk:isFinite(ilk)?ilk:0,zaman:z,kayitli:true});render()}
+  if(!z||Date.now()-z>10*60000||pzIlk()<(isFinite(ilk)?ilk:0)-86400000)pzRaporGetir(false)}
 function pzRaporOzet(l){const o={siparis:0,urun:0,ciro:0,teslim:0,yolda:0,sorun:0,iptal:0,iptalTutar:0,iade:0,iadeTutar:0};
   for(const s of l){const top=Number(s.toplam)||0,adet=(s.satirlar||[]).reduce((t,x)=>t+(Number(x.adet)||0),0);o.siparis++;
     if(PZR_IPTAL.test(s.durum)){o.iptal++;o.iptalTutar+=top}else if(PZR_IADE.test(s.durum)){o.iade++;o.iadeTutar+=top}
     else{o.ciro+=top;o.urun+=adet;if(s.durum==="Delivered")o.teslim++;else if(s.durum==="UnDelivered")o.sorun++;else o.yolda++}}
   return o}
 function pzRaporHtml(){
+  if(pzRapor.firma!==firmaId)Object.assign(pzRapor,{firma:firmaId,veri:null,acildi:false,zaman:0,ilk:0,kayitli:false});
   const ilk=pzIlk(),v=pzRapor.veri;
-  const bas=`<div class="filters" style="align-items:center"><button class="small primary" data-act="pzRaporYenile" type="button" ${pzRapor.yuk?"disabled":""}>↻ Raporu yenile</button>${pzRapor.zaman?`<span class="muted" style="font-size:.82rem">son okuma ${new Date(pzRapor.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})} · dönem üstteki seçimden</span>`:""}${pzRapor.yuk?`<span class="muted" style="font-size:.85rem">⏳ ${esc(pzRapor.yuk)}</span>`:""}</div>`;
-  if(!v){if(!pzRapor.yuk)setTimeout(()=>pzRaporGetir(false),0);return bas+`<div class="empty">Pazaryeri siparişleri okunuyor…</div>`}
+  const zs=t=>new Date(t).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const bas=`<div class="filters" style="align-items:center"><button class="small primary" data-act="pzRaporYenile" type="button" ${pzRapor.yuk?"disabled":""}>↻ Raporu yenile</button>${pzRapor.zaman?`<span class="muted" style="font-size:.82rem">${pzRapor.kayitli?"kayıtlı veri":"son okuma"} ${zs(pzRapor.zaman)} · dönem üstteki seçimden</span>`:""}${pzRapor.yuk?`<span class="muted" style="font-size:.85rem">⏳ ${esc(pzRapor.yuk)} (ekrandaki rakamlar bitince güncellenir)</span>`:""}</div>`;
+  if(!v){if(!pzRapor.acildi)setTimeout(()=>pzRaporAc(),0);return bas+`<div class="empty">Pazaryeri siparişleri okunuyor…</div>`}
   const eksikDonem=pzRapor.ilk>ilk+86400000;
   const satir=[],tum=[];for(const [p,d] of Object.entries(v)){const l=d.liste.filter(s=>Number(s.siparisTarihi)>=ilk);tum.push(...l.map(s=>({...s,_p:p})));satir.push({p,o:pzRaporOzet(l),hata:d.hata})}
   const T=pzRaporOzet(tum),yuzde=(a,b)=>b?"%"+(a/b*100).toLocaleString("tr-TR",{maximumFractionDigits:1}):"—";
