@@ -3978,11 +3978,20 @@ function pzGonderimHtml(){
       ${state.readonly?"":`<button class="small" data-act="gdSorgula" type="button" ${gdIs||!bek?"disabled":""} title="Onay bekleyenlerin sonucunu pazaryerlerine sorar">🔍 Onay durumlarını sorgula (${bek})</button><button class="small" data-act="gdTekrarHepsi" type="button" ${gdIs||!hat?"disabled":""}>↻ Hatalıları yeniden sıraya ekle (${hat})</button>`}</div>
     ${gdIs?`<div class="muted" style="font-size:.85rem">⏳ ${esc(gdIs)}</div>`:""}
     ${l.length?`<div class="tscroll"><table><thead><tr><th>Ürün</th><th>Pazaryeri</th><th>Durum</th><th>Açıklama</th><th>Zaman</th><th></th></tr></thead><tbody>
-      ${l.slice(0,1000).map(x=>{const [ad,cls]=GD_DURUM[x.durum];return `<tr><td><b style="font-size:.88rem">${esc(x.u.ad)}</b>${x.u.barkod?tdKucuk(x.u.barkod):""}</td><td>${esc(PZ_ADLAR[x.p]||x.p)}</td><td><span class="chip ${cls}">${ad}</span></td><td style="font-size:.8rem;max-width:380px">${esc(String(x.mesaj||"").slice(0,300))}</td><td class="date">${x.zaman?new Date(x.zaman).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
-        <td>${!state.readonly&&x.durum==="hata"?`<button class="small ghost" data-act="gdTekrar" data-id="${esc(x.id+"|"+x.p)}" type="button" ${gdIs?"disabled":""}>↻ Yeniden sıraya ekle</button>`:""}</td></tr>`}).join("")}
+      ${l.slice(0,1000).map(x=>{const [ad,cls]=GD_DURUM[x.durum],on=x.durum==="hata"?gdOneri(x):"";return `<tr><td><b style="font-size:.88rem">${esc(x.u.ad)}</b>${x.u.barkod?tdKucuk(x.u.barkod):""}</td><td>${esc(PZ_ADLAR[x.p]||x.p)}</td><td><span class="chip ${cls}">${ad}</span></td><td style="font-size:.8rem;max-width:380px">${on?`<div style="color:var(--accent,#17624d);font-weight:600;margin-bottom:3px">💡 ${esc(on)}</div>`:""}${esc(String(x.mesaj||"").slice(0,300))}</td><td class="date">${x.zaman?new Date(x.zaman).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
+        <td>${!state.readonly&&x.durum==="hata"?`<div style="display:flex;flex-direction:column;gap:4px"><button class="small" data-act="gdDuzelt" data-id="${esc(x.id+"|"+x.p)}" type="button" ${gdIs?"disabled":""}>✏️ Düzelt</button><button class="small ghost" data-act="gdTekrar" data-id="${esc(x.id+"|"+x.p)}" type="button" ${gdIs?"disabled":""}>↻ Yeniden sıraya ekle</button></div>`:""}</td></tr>`}).join("")}
     </tbody></table></div>${l.length>1000?`<div class="muted" style="font-size:.85rem">İlk 1.000 kayıt gösteriliyor.</div>`:""}`:`<div class="empty">${tum.length?"Bu filtrede kayıt yok.":"Henüz pazaryerine gönderilen ürün yok. Ürünler listesinde ürünleri seçip <b>🚀 Pazaryerlerinde toplu aç</b> ile gönderebilirsiniz."}</div>`}
     <div class="muted" style="font-size:.78rem">Sırada / gönderiliyor: sunucudaki gönderim sırası (dakikada bir işlenir). Onay bekleniyor: pazaryerine gönderildi, pazaryerinin onayı bekleniyor. Açıldı: pazaryeri ürünü kabul etti.</div>
   </section>`}
+// Hata metnine göre kısa öneri (ne yapılmalı)
+function gdOneri(x){const m=String(x.mesaj||"");
+  if(/onaylanmamıştır|Onay İsteyin|marka adı Amazon/i.test(m))return pzAmzMarka(x.u.marka)==="Generic"?"Marka artık “Generic” gönderiliyor: yeniden sıraya ekleyin.":"Bu marka Amazon'da onaylı değil: Ürün açma ayarlarında “Generic” markalara ekleyin ya da Amazon'dan marka onayı isteyin.";
+  if(/ASIN\s+B0[A-Z0-9]{8}/.test(m))return "Bu barkod Amazon'da zaten var: yeniden sıraya ekleyince mevcut ürüne teklif olarak bağlanır.";
+  if(/GS1|GTIN|marka kayıtlarımızla eşleşmiyor/i.test(m))return "Barkod GS1 / marka kaydıyla eşleşmiyor: ürünün gerçek barkodunu girin (Düzelt) ya da Amazon'dan GTIN muafiyeti alın.";
+  if(/gerekli ancak eksik|özelliği|eksik bilgi/i.test(m))return "Eksik bilgi: Düzelt ile tamamlayıp gönderin.";
+  if(/görsel|image/i.test(m))return "Görsel sorunu: Düzelt ile uygun bir görsel adresi girin.";
+  if(/kategori/i.test(m))return "Kategori sorunu: Düzelt ile kategori eşleştirmesini kontrol edin.";
+  return ""}
 // Deneme listesine ekleme (pazaryerine yazma yalnız bu listedeki ürünlere yapılır)
 async function pzDenemeEkle(urunler){const ay=(state.ayarEk||{}).pazaryeriTest||{},kodlar=[...(ay.kodlar||[])];
   const yeni=urunler.filter(u=>u&&!kodlar.some(x=>pzKimlik(x)===pzKimlik(u.kod)||pzKimlik(x)===pzKimlik(u.barkod)));
@@ -4005,14 +4014,14 @@ async function gdOnaySorgula(){if(gdIs)return;const f=firmaId,l=pzGonderimListe(
     await kaydet();toast(`${l.length} ürün soruldu · ${tamam} açıldı · ${red} reddedildi · ${l.length-tamam-red} hâlâ bekliyor`)}
   catch(e){toast(e.message||String(e))}
   finally{gdIs="";render()}}
-async function pzTopluAcModal(){
+async function pzTopluAcModal(op){op=op||{};// op: {ids, p (yalnız bu pazaryeri), duzelt ("id|p": açılınca düzeltme bölümü)}
   if(firmaRol!=="sahip"||state.readonly){toast("Pazaryerlerinde ürün açmak için firma sahibi olmalısınız");return}
-  const urunler=[...urunSecim].map(id=>state.urunler.find(u=>u.id===id)).filter(Boolean);
+  const urunler=(op.ids||[...urunSecim]).map(id=>state.urunler.find(u=>u.id===id)).filter(Boolean);
   if(!urunler.length){toast("Önce ürün seçin");return}
   if(urunler.length>PZ_DENEME_UST){toast("Tek seferde en fazla "+PZ_DENEME_UST+" ürün açılabilir ("+urunler.length+" seçili)");return}
   // pzBagliAl otomatik işlemeden hariç tutulanları (Amazon, Hepsiburada) çıkarır; ürün açmada bütün bağlı pazaryerleri gösterilir
   let tumB=null;try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:firmaId});tumB=(data||[]).map(x=>x.pazaryeri)}catch(e){}
-  const bagli=(tumB||await pzBagliAl()).filter(p=>PZ_ACMA.includes(p));const pzl=PZ_ACMA.filter(p=>bagli.includes(p));
+  const bagli=(tumB||await pzBagliAl()).filter(p=>PZ_ACMA.includes(p));const pzl=PZ_ACMA.filter(p=>bagli.includes(p)&&(!op.p||p===op.p));
   if(!pzl.length){toast("Ürün açılabilecek bağlı pazaryeri yok");return}
   const acKayit=()=>((state.ayarEk||{}).pzUrunAc||{});
   let hucre=[];// {u,p,ek[],govde,durum:"hazir"|"var"|"once"|"eksik"}
@@ -4245,7 +4254,7 @@ async function pzTopluAcModal(){
         <div id="taDuzelt"></div>
         <div class="muted" id="taDurum" style="font-size:.82rem;margin-top:6px">Eksik bilgisi olan hücrelerde <b>✏️ Düzelt</b> ile eksikleri burada tamamlayabilirsiniz.</div>
         <div class="err" id="taErr"></div><div id="taPzSec"></div>
-        <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" data-m="tumu">Seçimi tersine çevir</button><button type="button" class="primary" data-m="gonder">Evet, işaretlileri aç</button></div>`})()})}
+        <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" data-m="tumu">Seçimi tersine çevir</button><button type="button" class="primary" data-m="gonder">Evet, işaretlileri aç</button></div>`;if(op.duzelt)duzeltAc(op.duzelt)})()})}
 /* Zorunlu özellikleri otomatik doldurma (yalnızca programdaki eşleştirmelere ve ürünlere yazar; pazaryerlerine hiçbir şey göndermez).
    Eşleşmiş her kategori × pazaryeri için eksik zorunlu özellikler okunur ve öneri çıkarılır:
    1) tek değerli ya da "Belirtilmemiş / Diğer / Standart / Yok" seçeneği olan özellik → o değer
@@ -5592,6 +5601,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="gdYenile"){pzTIYenile().then(()=>render())}
   else if(a==="gdSorgula")gdOnaySorgula();
   else if(a==="gdTekrarHepsi"){const q=_norm(ui.gdAra||"");gdTekrarEkle(pzGonderimListe().filter(x=>x.durum==="hata"&&(!ui.gdPz||x.p===ui.gdPz)&&(!q||_norm([x.u.ad,x.u.barkod,x.u.kod,x.mesaj].join(" ")).includes(q))))}
+  else if(a==="gdDuzelt"){const [uid,p]=String(id||"").split("|");if(uid&&p)pzTopluAcModal({ids:[uid],p,duzelt:uid+"|"+p})}
   else if(a==="gdTekrar"){const x=pzGonderimListe().find(y=>y.id+"|"+y.p===id);if(x)gdTekrarEkle([x])}
   else if(a==="pzIlanOku")pzIlanOku();
   else if(a==="pzIlanYeni")pzIlanYeni(false);
