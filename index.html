@@ -3676,6 +3676,10 @@ const PZ_ACMA=["trendyol","n11","pazarama","idefix","shopify","amazon","hepsibur
 // EAN/GTIN kontrol hanesi (Amazon geçersiz barkodu reddeder)
 const pzEanGecerli=s=>{s=String(s||"").trim();if(!/^\d{8,14}$/.test(s))return false;const d=s.split("").map(Number),c=d.pop();return (10-d.reverse().reduce((a,x,i)=>a+x*(i%2?1:3),0)%10)%10===c};
 // Amazon için EAN: barkod alanı dükkan kodu olabilir ("SYF8693043145641", "SYF8684089398832-PEMBE"); içinde geçerli bir EAN/UPC varsa o kullanılır
+// Amazon'da onaylı olmayan (kendi) markalar "Generic" gönderilir; ayar yoksa varsayılan SEYFİKİRTASİYE
+const pzAmzGenericListe=()=>{const l=(pzUrunAyar().amazon||{}).generic;return Array.isArray(l)?l:["SEYFİKİRTASİYE"]};
+const _mkNorm=s=>String(s||"").toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/[^a-z0-9çğöşü]/g,"");
+const pzAmzMarka=mk=>{mk=String(mk||"").trim();return pzAmzGenericListe().some(x=>_mkNorm(x)&&_mkNorm(x)===_mkNorm(mk))?"Generic":mk};
 const pzAmzEan=s=>{s=String(s||"").replace(/\s+/g,"");if(pzEanGecerli(s))return s;const m=s.match(/\d{8,14}/g)||[];return m.find(x=>[8,12,13,14].includes(x.length)&&pzEanGecerli(x))||""};
 /* Amazon: ürüne özel zorunlu alanları ürünün kendi bilgisinden doldurur (yalnızca boş ve zorunlu olanları; kategori varsayılanı / ürüne özel değer önceliklidir).
    Renk ve boyut ürün adından; bulunamazsa renk "Çok Renkli", boyut "Tek Ebat". Kağıt boyutu ve çizgi kalınlığı yalnızca adda geçiyorsa. */
@@ -3732,7 +3736,7 @@ async function pzUrunGovde(u,p){
   const markaOz=liste.find(pzMarkaOz);
   for(const o of liste.filter(o=>o.zorunlu&&!pzMarkaOz(o))){const v=oz[o.id];if(!v||!(v.degerId||v.deger))ek.push(`“${o.ad}” özelliği`);else if(p==="pazarama"&&!v.degerId)ek.push(`“${o.ad}” listeden seçilmeli`)}
   const ozl=Object.entries(oz).filter(([,v])=>v&&(v.degerId||v.deger));
-  if(p==="amazon"){const M="A33AVAJ2PDY3EV",ay=pzUrunAyar().amazon||{},mkAd=String(u.marka||"").trim(),adet=pzAdet(ad),bk=pzAmzEan(u.barkod);
+  if(p==="amazon"){const M="A33AVAJ2PDY3EV",ay=pzUrunAyar().amazon||{},mkAd=pzAmzMarka(u.marka),adet=pzAdet(ad),bk=pzAmzEan(u.barkod);
     // Ürün Amazon kataloğunda barkodla bulunursa sunucu yalnızca teklif alanlarını (fiyat, stok, durum) gönderir
     const L=v=>[{value:v,language_tag:"tr_TR",marketplace_id:M}],V=v=>[{value:v,marketplace_id:M}];
     const madde=acik.split(/(?<=[.!?;])\s+|\r?\n/).map(s=>s.trim()).filter(s=>s.length>3).slice(0,5).map(s=>s.slice(0,500));
@@ -3794,12 +3798,13 @@ function pzUrunAyarModal(){const ay=pzUrunAyar(),n=ay.n11||{},i=ay.idefix||{};
       <div class="field"><label for="uaIdx">İdefix kargoya teslim süresi (gün)</label><input id="uaIdx" type="number" min="0" max="30" step="1" value="${esc(String(i.teslim??1))}"></div></div>
     <div class="grid2"><div class="field"><label for="uaAmzG">Amazon garanti açıklaması</label><input id="uaAmzG" maxlength="200" value="${esc((ay.amazon||{}).garanti||"Garanti bulunmamaktadır")}"></div>
       <div class="field"><label for="uaHbG">Hepsiburada garanti süresi (ay)</label><input id="uaHbG" type="number" min="0" max="120" step="1" value="${esc(String((ay.hepsiburada||{}).garanti??0))}"></div></div>
+    <div class="field"><label for="uaAmzGen">Amazon'da “Generic” (markasız) olarak gönderilecek markalar (virgülle ayırın)</label><input id="uaAmzGen" value="${esc(pzAmzGenericListe().join(", "))}"><div class="muted" style="font-size:.78rem">Amazon'da tescilli olmayan kendi markanız gibi: bu markalardaki ürünler Amazon'a marka ve üretici “Generic” yazılarak gönderilir.</div></div>
     <div class="err" id="uaErr"></div><div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">Kaydet</button></div>`,
   root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="kaydet")return;
     const v=id=>root.querySelector("#"+id).value.trim(),h=Number(v("uaN11H")),t=Number(v("uaIdx"));
     if(!(h>=0&&h<=30)||!(t>=0&&t<=30)){root.querySelector("#uaErr").textContent="Gün sayıları 0 ile 30 arasında olmalı.";return}
     const hg=Number(v("uaHbG"));if(!(hg>=0&&hg<=120)){root.querySelector("#uaErr").textContent="Hepsiburada garanti süresi 0 ile 120 ay arasında olmalı.";return}
-    b.disabled=true;await api.setDoc("ayar","pzUrunAyar",{...ay,n11:{sablon:v("uaN11").slice(0,100),hazirlik:h},idefix:{teslim:t},amazon:{...(ay.amazon||{}),garanti:v("uaAmzG").slice(0,200)||"Garanti bulunmamaktadır"},hepsiburada:{...(ay.hepsiburada||{}),garanti:hg}});closeModal();toast("Ürün açma ayarları kaydedildi")}))}
+    b.disabled=true;await api.setDoc("ayar","pzUrunAyar",{...ay,n11:{sablon:v("uaN11").slice(0,100),hazirlik:h},idefix:{teslim:t},amazon:{...(ay.amazon||{}),garanti:v("uaAmzG").slice(0,200)||"Garanti bulunmamaktadır",generic:v("uaAmzGen").split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean).slice(0,50)},hepsiburada:{...(ay.hepsiburada||{}),garanti:hg}});closeModal();toast("Ürün açma ayarları kaydedildi")}))}
 /* Toplu ürün açma: seçili ürünleri bağlı pazaryerlerinde tek seferde açar.
    Ürün kartındaki tek tek açmayla aynı kurallar: önce her ürün × pazaryeri için hazır mı tablosu, onay, deneme listesine ekleme (en fazla PZ_DENEME_UST), sırayla gönderim, sonuç takibi.
    Rozetine göre pazaryerinde zaten olan ya da daha önce gönderilmiş ürün o pazaryerine gönderilmez. */
