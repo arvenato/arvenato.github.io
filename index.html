@@ -1566,7 +1566,7 @@ function vStok(){
       <select id="fSDurum" data-filter="sDurum" aria-label="Durum"><option value="">Tüm durumlar</option><option value="ok" ${ui.sDurum==="ok"?"selected":""}>Yeterli</option><option value="kritik" ${ui.sDurum==="kritik"?"selected":""}>Kritik</option><option value="yok" ${ui.sDurum==="yok"?"selected":""}>Stokta yok</option></select>
       ${ilanPz.length?`<select id="fSPz" data-filter="sPz" aria-label="Pazaryeri durumu"><option value="">Tüm pazaryeri durumları</option>${ilanPz.map(p=>[["ak","'da aktif"],["pa","'da pasif"],["yok","'da yok"]].map(([t,ad])=>`<option value="${p}:${t}" ${ui.sPz===p+":"+t?"selected":""}>${esc(PZ_ADLAR[p])}${ad}</option>`).join("")).join("")}</select>`:""}
       <select id="fSSira" data-act-sayfa="sira" aria-label="Sıralama" title="Sıralama">${Object.entries(URUN_SIRA).map(([k,v])=>`<option value="${k}" ${(ui.sSira||"adAZ")===k?"selected":""}>↕ ${v[0]}</option>`).join("")}</select>
-      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}${ro?"":`<button class="small" data-act="pzIlanOku" type="button" ${pzIlanIs?"disabled":""} title="Bağlı pazaryerlerindeki ilanları okur (hiçbir şey göndermez); ürünlerin yanında hangi pazaryerinde aktif / pasif olduğu görünür">🛒 Pazaryeri durumlarını oku</button>${PZ_ILAN.some(p=>pzIlan.veri[p])?`<button class="small" data-act="pzIlanYeni" type="button" title="Yalnız programdan açılmış ama rozeti henüz aktif olmayan ürünleri sorar (hızlı). Program açıkken ~30 dakikada bir kendiliğinden de çalışır.">↻ Yenileri kontrol et</button>`:""}<button class="small" data-act="pzFiyatRapor" type="button" title="Pazaryerlerindeki fiyatı programdaki satış fiyatından farklı olan ürünleri listeler">💰 Fiyat farkı raporu</button>`}
+      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uListeSec" type="button" title="Barkod veya stok kodu listesini yapıştırın (Excel'den sütun kopyalayabilirsiniz); o ürünler seçilir">📋 Listeden seç</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}${ro?"":`<button class="small" data-act="pzIlanOku" type="button" ${pzIlanIs?"disabled":""} title="Bağlı pazaryerlerindeki ilanları okur (hiçbir şey göndermez); ürünlerin yanında hangi pazaryerinde aktif / pasif olduğu görünür">🛒 Pazaryeri durumlarını oku</button>${PZ_ILAN.some(p=>pzIlan.veri[p])?`<button class="small" data-act="pzIlanYeni" type="button" title="Yalnız programdan açılmış ama rozeti henüz aktif olmayan ürünleri sorar (hızlı). Program açıkken ~30 dakikada bir kendiliğinden de çalışır.">↻ Yenileri kontrol et</button>`:""}<button class="small" data-act="pzFiyatRapor" type="button" title="Pazaryerlerindeki fiyatı programdaki satış fiyatından farklı olan ürünleri listeler">💰 Fiyat farkı raporu</button>`}
     </div>
     <div id="pzIlanBilgi">${pzIlanBilgi()}</div>
     ${!ro&&urunSecim.size?`<div class="toplu-bar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(23,98,77,.08));border:1px solid var(--accent,#17624d)">
@@ -3791,6 +3791,10 @@ const pzAmzGenericListe=()=>{const l=(pzUrunAyar().amazon||{}).generic;return Ar
 const _mkNorm=s=>String(s||"").toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/[^a-z0-9çğöşü]/g,"");
 const pzAmzMarka=mk=>{mk=String(mk||"").trim();return pzAmzGenericListe().some(x=>_mkNorm(x)&&_mkNorm(x)===_mkNorm(mk))?"Generic":mk};
 const pzAmzEan=s=>{s=String(s||"").replace(/\s+/g,"");if(pzEanGecerli(s))return s;const m=s.match(/\d{8,14}/g)||[];return m.find(x=>[8,12,13,14].includes(x.length)&&pzEanGecerli(x))||""};
+// Barkodsuz açma (GTIN muafiyeti): "Generic" giden kendi markalarımız (dükkan kodundaki EAN başka markanındır, Amazon o markaya bağlayıp reddeder) ve geçerli EAN'i olmayan ürünler
+const pzAmzMuaf=u=>pzAmzMarka(u.marka)==="Generic"||!pzAmzEan(u.barkod);
+// Amazon'da ürün adı: aynı adlı ürünler karışmasın diye sonuna barkodun son 4 hanesi eklenir
+const pzAmzAd=u=>{const ad=String(u.ad||"").trim(),s=String(u.barkod||u.kod||"").replace(/[^0-9A-Za-z]/g,"").slice(-4).toUpperCase();return (!s||ad.toUpperCase().endsWith(s)?ad:ad.slice(0,194)+" "+s).slice(0,200)};
 /* Amazon: ürüne özel zorunlu alanları ürünün kendi bilgisinden doldurur (yalnızca boş ve zorunlu olanları; kategori varsayılanı / ürüne özel değer önceliklidir).
    Renk ve boyut ürün adından; bulunamazsa renk "Çok Renkli", boyut "Tek Ebat". Kağıt boyutu ve çizgi kalınlığı yalnızca adda geçiyorsa. */
 const _PZ_RENK=["Siyah","Beyaz","Kırmızı","Mavi","Lacivert","Yeşil","Sarı","Turuncu","Mor","Lila","Pembe","Gri","Kahverengi","Turkuaz","Bordo","Bej","Krem","Altın","Gümüş","Şeffaf","Füme","Neon"];
@@ -3817,7 +3821,6 @@ function pzHazirlik(u,p){const ek=[];
   const kat=String(u.kategori||"").trim(),mk=String(u.marka||"").trim(),e=kat?pzEsKat(kat,p):null;
   if(!kat)ek.push("kategori");else if(!e)ek.push("kategori eşleştirmesi");
   if(!mk)ek.push("marka");else if(PZ_ES_MARKA.includes(p)&&!pzEsMarka(mk,p))ek.push("marka eşleştirmesi");
-  if(p==="amazon"&&String(u.barkod||"").trim()&&!pzAmzEan(u.barkod))ek.push(/^\d+$/.test(String(u.barkod).replace(/\s+/g,""))?"barkod geçersiz (son hane tutmuyor)":"Amazon için EAN barkodu yok (barkod alanında dükkan kodu var)");
   if(e){const oz={...(e.ozellik||{}),...(((u.pzOzellik||{})[p])||{})};
     // Amazon: zorunlu alan listesi eşleştirmede saklanır; ürün adından dolanlar (renk, boyut…) eksik sayılmaz
     if(p==="amazon"&&Array.isArray(e.zorunluIds)){pzAmzOto(u,oz,e.zorunluIds.map(id=>({id,ad:id,zorunlu:true})));const eks=e.zorunluIds.filter(id=>!(oz[id]&&(oz[id].degerId||oz[id].deger)));if(eks.length)ek.push(`${eks.length} zorunlu özellik`)}
@@ -3846,13 +3849,13 @@ async function pzUrunGovde(u,p){
   const markaOz=liste.find(pzMarkaOz);
   for(const o of liste.filter(o=>o.zorunlu&&!pzMarkaOz(o))){const v=oz[o.id];if(!v||!(v.degerId||v.deger))ek.push(`“${o.ad}” özelliği`);else if(p==="pazarama"&&!v.degerId)ek.push(`“${o.ad}” listeden seçilmeli`)}
   const ozl=Object.entries(oz).filter(([,v])=>v&&(v.degerId||v.deger));
-  if(p==="amazon"){const M="A33AVAJ2PDY3EV",ay=pzUrunAyar().amazon||{},mkAd=pzAmzMarka(u.marka),adet=pzAdet(ad),bk=pzAmzEan(u.barkod);
+  if(p==="amazon"){const M="A33AVAJ2PDY3EV",ay=pzUrunAyar().amazon||{},mkAd=pzAmzMarka(u.marka),adet=pzAdet(ad),muaf=pzAmzMuaf(u),bk=muaf?"":pzAmzEan(u.barkod);
     // Ürün Amazon kataloğunda barkodla bulunursa sunucu yalnızca teklif alanlarını (fiyat, stok, durum) gönderir
     const L=v=>[{value:v,language_tag:"tr_TR",marketplace_id:M}],V=v=>[{value:v,marketplace_id:M}];
     const madde=acik.split(/(?<=[.!?;])\s+|\r?\n/).map(s=>s.trim()).filter(s=>s.length>3).slice(0,5).map(s=>s.slice(0,500));
-    const at={item_name:L(String(u.ad||"").trim().slice(0,200)),brand:L(mkAd),manufacturer:L(mkAd),product_description:L(acik.slice(0,2000)),
+    const at={item_name:L(pzAmzAd(u)),brand:L(mkAd),manufacturer:L(mkAd),product_description:L(acik.slice(0,2000)),
       bullet_point:(madde.length?madde:[ad]).map(s=>({value:s,language_tag:"tr_TR",marketplace_id:M})),
-      externally_assigned_product_identifier:[{type:"ean",value:bk,marketplace_id:M}],condition_type:V("new_new"),part_number:V(kod||bk),model_number:V(kod||bk),
+      ...(muaf?{supplier_declared_has_product_identifier_exemption:V(true)}:{externally_assigned_product_identifier:[{type:"ean",value:bk,marketplace_id:M}]}),condition_type:V("new_new"),part_number:V(kod||bk),model_number:V(kod||bk),
       number_of_items:V(adet),unit_count:[{value:adet,type:{value:"count",language_tag:"tr_TR"},marketplace_id:M}],
       warranty_description:L(String(ay.garanti||"Garanti bulunmamaktadır").slice(0,500)),
       purchasable_offer:[{currency:"TRY",marketplace_id:M,our_price:[{schedule:[{value_with_tax:fiyat}]}]}],
@@ -4022,6 +4025,23 @@ async function gdOnaySorgula(){if(gdIs)return;const f=firmaId,l=pzGonderimListe(
     await kaydet();toast(`${l.length} ürün soruldu · ${tamam} açıldı · ${red} reddedildi · ${l.length-tamam-red} hâlâ bekliyor`)}
   catch(e){toast(e.message||String(e))}
   finally{gdIs="";render()}}
+// Barkod / stok kodu listesiyle ürün seçme (Excel'den yapıştırma): bulunanlar seçilir, bulunamayanlar gösterilir
+function urunListeSecModal(){
+  openModal(`<div class="section-head"><h2>📋 Listeden seç</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">Barkodları veya stok kodlarını yapıştırın (her satıra bir tane; Excel'den sütunu kopyalayabilirsiniz). Bulunan ürünler seçilir, ardından "🚀 Pazaryerlerinde aç" ile gönderebilirsiniz.</div>
+    <textarea id="lsMetin" rows="10" style="width:100%;font-family:monospace" placeholder="SYF0810157610560&#10;8692532065590&#10;…"></textarea>
+    <label style="display:flex;gap:6px;align-items:center;font-size:.88rem"><input type="checkbox" id="lsEkle"> Mevcut seçime ekle (işaretsizse seçim yenilenir)</label>
+    <div style="display:flex;gap:8px"><button type="button" class="primary" data-m="sec">Seç</button></div>
+    <div class="muted" id="lsDurum" role="status" style="font-size:.85rem;white-space:pre-wrap"></div>`,
+  root=>root.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;
+    if(b.dataset.m==="close")return closeModal();
+    const kodlar=[...new Set(String(root.querySelector("#lsMetin").value||"").split(/[\r\n\t;,]+/).map(pzKimlik).filter(Boolean))];
+    if(!kodlar.length){root.querySelector("#lsDurum").textContent="Liste boş.";return}
+    const idx=new Map();for(const u of state.urunler)for(const k of [pzKimlik(u.barkod),pzKimlik(u.kod)])if(k&&!idx.has(k))idx.set(k,u.id);
+    const bul=new Set(),yok=[];for(const k of kodlar){const id=idx.get(k)||idx.get(k.replace(/^SYF/,""));if(id)bul.add(id);else yok.push(k)}
+    if(!root.querySelector("#lsEkle").checked)urunSecim.clear();bul.forEach(id=>urunSecim.add(id));
+    root.querySelector("#lsDurum").textContent=bul.size.toLocaleString("tr-TR")+" ürün seçildi"+(yok.length?" · bulunamayan "+yok.length+": "+yok.slice(0,30).join(", ")+(yok.length>30?" …":""):"");
+    render();if(!yok.length){closeModal();toast(bul.size.toLocaleString("tr-TR")+" ürün seçildi")}}))}
 async function pzTopluAcModal(op){op=op||{};// op: {ids, p (yalnız bu pazaryeri), duzelt ("id|p": açılınca düzeltme bölümü)}
   if(firmaRol!=="sahip"||state.readonly){toast("Pazaryerlerinde ürün açmak için firma sahibi olmalısınız");return}
   const urunler=(op.ids||[...urunSecim]).map(id=>state.urunler.find(u=>u.id===id)).filter(Boolean);
@@ -5602,6 +5622,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uSec"){if(b.checked)urunSecim.add(id);else urunSecim.delete(id);render()}
   else if(a==="uHepsi"){const hepsi=stokListeSon.length&&stokListeSon.every(x=>urunSecim.has(x));if(hepsi)stokListeSon.forEach(x=>urunSecim.delete(x));else stokListeSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="uSecimKaldir"){urunSecim.clear();render()}
+  else if(a==="uListeSec")urunListeSecModal();
   else if(a==="uSecimListe"){const gor=new Set(stokListeSon);for(const id of [...urunSecim])if(!gor.has(id))urunSecim.delete(id);render()}
   else if(a==="uSayfaSec"){const hepsi=stokSayfaSon.length&&stokSayfaSon.every(x=>urunSecim.has(x));if(hepsi)stokSayfaSon.forEach(x=>urunSecim.delete(x));else stokSayfaSon.forEach(x=>urunSecim.add(x));render()}
   else if(a==="uSekme"){ui.uSekme=id;render();if(id==="gonderim")pzTIYenile().then(()=>{if(view==="stok"&&ui.uSekme==="gonderim")render()})}
