@@ -206,6 +206,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <a href="#satis">Satış</a>
       <a href="#stok">Ürünler</a>
       <a href="#tedarik">Tedarikçiler</a>
+      <a href="#siparis">Siparişler</a>
       <a href="#pazaryeri">Pazaryeri</a>
       <a href="#faturalar">Faturalar</a>
       <a href="#cariler">Cariler</a>
@@ -244,7 +245,7 @@ const GIDER_KAT=["Kargo","Pazaryeri komisyonu","Reklam","Kira","Personel","Elekt
 const KDV_ORAN=[20,10,1,0];
 const ODEME={acik:"Açık hesap",kasa:"Kasa (nakit)",banka:"Banka / POS",mahsup:"Maaştan mahsup",pazaryeri:"Pazaryeri (satış Trendyol carisinde)"};
 
-const state={cariler:[],hareketler:[],personeller:[],ekler:[],izinler:[],bankalar:[],virmanlar:[],urunler:[],stokHareketleri:[],teklifler:[],faturalar:[],ajanda:[],tedarikciler:[],tfiyatlar:[],firma:"",mode:"loading",readonly:false,stale:false,error:""};
+const state={cariler:[],hareketler:[],personeller:[],ekler:[],izinler:[],bankalar:[],virmanlar:[],urunler:[],stokHareketleri:[],teklifler:[],faturalar:[],ajanda:[],tedarikciler:[],tfiyatlar:[],tsiparisler:[],firma:"",mode:"loading",readonly:false,stale:false,error:""};
 let api=null; // {setDoc(col,id,obj), del(col,id), newId(col), setFirma(name)}
 let downloads=null;
 
@@ -311,7 +312,7 @@ function donemOzet(filter){
 }
 
 /* ---------- Görünümler ---------- */
-const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","satis","pazaryeri"];
+const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","siparis","satis","pazaryeri"];
 let view="ozet";
 const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sMarka:"",sSayfa:1,sKol:{},sSira:(()=>{try{return localStorage.getItem("urun-sira")||"adAZ"}catch(e){return "adAZ"}})(),sBoyut:(()=>{try{return Number(localStorage.getItem("urun-sayfa-boyut"))||100}catch(e){return 100}})(),sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",fCari:"",fAra:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",pzGun:"14",pzDurum:"",pzAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
 
@@ -358,6 +359,7 @@ function render(){
   else if(view==="faturalar")html+=vFaturalar();
   else if(view==="ajanda")html+=vAjanda();
   else if(view==="tedarik")html+=vTedarik();
+  else if(view==="siparis")html+=vSiparis();
   else if(view==="pazaryeri")html+=vPazaryeri();
   else if(view==="satis")html+=vSatis();
   else html+=vRapor();
@@ -3092,6 +3094,103 @@ function tdSonKaydet(id){tdSonTedarikci=id;try{localStorage.setItem("td-son",id)
 function tdYenile(){if(view!=="tedarik")return;const a=document.activeElement;if(a&&a.id==="fTdAra")rerenderKeepFocus("fTdAra");else render()}
 const tdKucuk=s=>`<div class="muted" style="font-size:.78rem;font-family:var(--font-num)">${esc(s)}</div>`;
 
+/* ---------- Siparişler (tedarikçiye verilen siparişler) ----------
+   Sipariş burada oluşturulur, WhatsApp'tan tedarikçiye iletilir (telefonda WhatsApp uygulaması, bilgisayarda WhatsApp masaüstü / Web).
+   "Teslim alındı" denince isteğe bağlı olarak programdaki ürünlere stok girişi yapılır. */
+const SIP_DURUM=["Taslak","Gönderildi","Teslim alındı","İptal"];
+const sipMobil=()=>/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||"");
+function yeniSiparisNo(){let n=0;for(const s of state.tsiparisler){const m=/^S-(\d+)$/.exec(String(s.no||""));if(m)n=Math.max(n,Number(m[1]))}return "S-"+String(n+1).padStart(4,"0")}
+const sipTedarikci=s=>(s.tedarikciId&&tedarikciById(s.tedarikciId))||null;
+const sipTedAd=s=>{const t=sipTedarikci(s);return t?t.ad:(s.tedarikciAd||"—")};
+const sipTutar=s=>r2((s.satirlar||[]).reduce((t,x)=>t+(Number(x.miktar)||0)*(Number(x.birimFiyat)||0),0));
+// Telefon → WhatsApp biçimi (90 5xx…)
+function sipTel(tel){let d=String(tel||"").replace(/\D/g,"");if(!d)return "";if(d.startsWith("00"))d=d.slice(2);if(d.startsWith("0"))d="90"+d.slice(1);else if(d.length===10&&d.startsWith("5"))d="90"+d;return d}
+function siparisMetin(s){const f=state.firma||"";
+  const l=(s.satirlar||[]).map((x,i)=>`${i+1}) ${x.ad}${x.barkod?" ("+x.barkod+")":""} — ${fmtMiktar(x.miktar)} ${x.birim||"Adet"}`);
+  return `Merhaba,${f?" "+f+" olarak":""} aşağıdaki ürünleri sipariş etmek istiyoruz:\n\n${l.join("\n")}\n${s.notlar?"\nNot: "+s.notlar+"\n":""}\nSipariş no: ${s.no} · ${trDate(s.tarih)}\nTeşekkürler.`}
+async function siparisWhatsapp(s,web){const tel=sipTel(s.tel||(sipTedarikci(s)||{}).tel),m=encodeURIComponent(siparisMetin(s));
+  const url=web?`https://web.whatsapp.com/send?${tel?"phone="+tel+"&":""}text=${m}`:sipMobil()?(tel?`https://wa.me/${tel}?text=${m}`:`https://wa.me/?text=${m}`):`whatsapp://send?${tel?"phone="+tel+"&":""}text=${m}`;
+  if(web||sipMobil())window.open(url,"_blank","noopener");else location.href=url;
+  if(s.durum==="Taslak"&&!state.readonly){try{const {id,...r}=s;await api.setDoc("tsiparisler",id,{...r,durum:"Gönderildi",gonderim:Date.now()})}catch(e){}}
+  if(!tel)toast("Tedarikçinin telefonu kayıtlı değil: WhatsApp'ta kişiyi siz seçin")}
+function vSiparis(){
+  const all=state.tsiparisler.slice().sort((a,b)=>(b.tarih||"").localeCompare(a.tarih||"")||(b.no||"").localeCompare(a.no||""));
+  const list=all.filter(s=>!ui.sipDurum||s.durum===ui.sipDurum),ro=state.readonly;
+  const acik=all.filter(s=>s.durum==="Taslak"||s.durum==="Gönderildi");
+  const chip=d=>`<span class="chip ${d==="Teslim alındı"?"ok":d==="İptal"?"":d==="Gönderildi"?"warn":""}">${esc(d)}</span>`;
+  return `<section class="section-head"><h2>Siparişler</h2>${ro?"":`<button class="primary small" data-act="newSiparis" type="button">+ Yeni sipariş</button>`}</section>
+  <section class="kpis">${kpi("Açık siparişler",String(acik.length),money(acik.reduce((t,s)=>t+sipTutar(s),0))+" tahmini")}${kpi("Teslim bekleyen",String(all.filter(s=>s.durum==="Gönderildi").length),"WhatsApp'tan iletilmiş")}</section>
+  <section class="panel">
+    <div class="filters"><select id="fSipDurum" data-filter="sipDurum" aria-label="Durum"><option value="">Tüm siparişler</option>${SIP_DURUM.map(d=>`<option ${ui.sipDurum===d?"selected":""}>${d}</option>`).join("")}</select></div>
+    ${list.length?`<div class="tscroll"><table><thead><tr><th>Sipariş no</th><th>Tarih</th><th>Tedarikçi</th><th class="num">Tahmini tutar</th><th>Durum</th><th></th></tr></thead><tbody>
+    ${list.map(s=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(s.no)}</b></td><td class="date">${trDate(s.tarih)}</td><td>${esc(sipTedAd(s))}<div class="muted" style="font-size:.78rem">${(s.satirlar||[]).length} kalem</div></td><td class="num">${sipTutar(s)?money(sipTutar(s)):"—"}</td><td>${chip(s.durum||"Taslak")}</td>
+      <td><div class="rowact">${ro?"":`<button class="small ghost" data-act="editSiparis" data-id="${s.id}" type="button">Aç</button>`}<button class="small primary" data-act="sipWa" data-id="${s.id}" type="button">🟢 WhatsApp'tan ilet</button>${sipMobil()?"":`<button class="small ghost" data-act="sipWa" data-web="1" data-id="${s.id}" type="button" title="WhatsApp masaüstü uygulaması yüklü değilse">WhatsApp Web</button>`}<button class="small ghost" data-act="sipKopya" data-id="${s.id}" type="button">Metni kopyala</button></div></td></tr>`).join("")}
+    </tbody></table></div>`:`<div class="empty">${all.length?"Bu filtrede sipariş yok.":"Henüz sipariş yok. <b>+ Yeni sipariş</b> ile tedarikçiye vereceğiniz siparişi hazırlayın, <b>WhatsApp'tan ilet</b> ile gönderin."}</div>`}
+  </section>`}
+function siparisForm(existing){
+  const yeniSatir=()=>({urunId:"",ad:"",barkod:"",miktar:1,birim:"Adet",birimFiyat:""});
+  const s=existing?JSON.parse(JSON.stringify(existing)):{no:yeniSiparisNo(),tedarikciId:"",tedarikciAd:"",tel:"",tarih:today(),durum:"Taslak",satirlar:[yeniSatir()],notlar:""};
+  if(!s.satirlar||!s.satirlar.length)s.satirlar=[yeniSatir()];
+  const tedOpts=()=>tedarikciListe().map(t=>`<option value="${t.id}" ${s.tedarikciId===t.id?"selected":""}>${esc(t.ad)}</option>`).join("");
+  const lines=()=>`<div class="tscroll"><table style="min-width:560px"><thead><tr><th>Ürün</th><th class="num">Miktar</th><th>Birim</th><th class="num">Alış fiyatı (isteğe bağlı)</th><th></th></tr></thead><tbody>
+    ${s.satirlar.map((x,i)=>{const u=x.urunId&&state.urunler.find(y=>y.id===x.urunId);return `<tr><td><input class="ln" data-i="${i}" data-f="ad" id="spAd${i}" list="spUrunList" value="${esc(x.ad)}" placeholder="Ürün adı ya da barkod" style="width:100%;min-width:200px">${u?`<div class="muted" style="font-size:.72rem">${x.barkod?esc(x.barkod)+" · ":""}stokta ${fmtMiktar(stokMiktar(u))} ${esc(u.birim||"")}</div>`:""}</td>
+      <td><input class="ln" data-i="${i}" data-f="miktar" type="number" min="0" step="1" value="${esc(x.miktar)}" style="width:80px;text-align:right"></td>
+      <td><input class="ln" data-i="${i}" data-f="birim" value="${esc(x.birim||"Adet")}" style="width:80px"></td>
+      <td><input class="ln" data-i="${i}" data-f="birimFiyat" id="spBf${i}" type="number" min="0" step="0.01" value="${esc(x.birimFiyat)}" style="width:110px;text-align:right"></td>
+      <td>${s.satirlar.length>1?`<button class="small ghost danger" data-m="satirSil" data-i="${i}" type="button">Sil</button>`:""}</td></tr>`}).join("")}
+    </tbody></table></div><datalist id="spUrunList">${state.urunler.map(u=>`<option value="${esc(u.ad)}"></option>`).join("")}</datalist>
+    <div class="filters"><button type="button" class="small" data-m="satirEkle">+ Satır ekle</button><button type="button" class="small ghost" data-m="kritikEkle" title="Kritik stok seviyesi girilmiş ve altına düşmüş ürünler">+ Kritik stoktakileri ekle</button></div>`;
+  const teslim=existing&&existing.durum!=="Teslim alındı"&&existing.durum!=="İptal";
+  openModal(`<div class="section-head"><h2>${existing?"Sipariş "+esc(s.no):"Yeni sipariş"}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="grid2">
+      <div class="field"><label for="spTed">Tedarikçi</label><select id="spTed"><option value="">Seçin ya da yanına yazın</option>${tedOpts()}</select></div>
+      <div class="field"><label for="spTedAd">Listede yoksa tedarikçi adı</label><input id="spTedAd" value="${esc(s.tedarikciAd||"")}"></div>
+      <div class="field"><label for="spTel">WhatsApp telefonu</label><input id="spTel" type="tel" value="${esc(s.tel||(sipTedarikci(s)||{}).tel||"")}" placeholder="05xx xxx xx xx"></div>
+      <div class="field"><label for="spTarih">Sipariş tarihi</label><input id="spTarih" type="date" value="${esc(s.tarih)}"></div>
+      <div class="field"><label for="spNo">Sipariş no</label><input id="spNo" value="${esc(s.no)}" style="font-family:var(--font-num)"></div>
+      <div class="field"><label for="spDurum">Durum</label><select id="spDurum">${SIP_DURUM.map(d=>`<option ${s.durum===d?"selected":""}>${d}</option>`).join("")}</select></div>
+    </div>
+    <div id="spSatirlar" style="display:flex;flex-direction:column;gap:8px">${lines()}</div>
+    <div class="field"><label for="spNot">Not (mesajın sonuna eklenir)</label><textarea id="spNot" rows="2">${esc(s.notlar||"")}</textarea></div>
+    <div class="err" id="spErr" role="alert"></div>
+    <div class="modal-foot">${existing?`<button type="button" class="danger" data-m="sil">Sil</button>${teslim?`<button type="button" data-m="teslim">Teslim alındı…</button>`:""}<span style="flex:1"></span>`:""}<button type="button" data-m="close">Vazgeç</button><button type="button" data-m="kaydet">Kaydet</button><button type="button" class="primary" data-m="kaydetWa">Kaydet ve WhatsApp'tan ilet</button></div>`,
+  root=>{root.style.maxWidth="820px";const er=root.querySelector("#spErr");
+    const head=()=>{const g=id=>root.querySelector("#"+id).value.trim();s.tedarikciId=g("spTed");s.tedarikciAd=g("spTedAd");s.tel=g("spTel");s.tarih=g("spTarih");s.no=g("spNo");s.durum=g("spDurum");s.notlar=root.querySelector("#spNot").value.trim()};
+    const redraw=()=>{head();root.querySelector("#spSatirlar").innerHTML=lines()};
+    root.querySelector("#spTed").addEventListener("change",e=>{const t=tedarikciById(e.target.value);if(t&&t.tel)root.querySelector("#spTel").value=t.tel});
+    const onLine=el=>{const i=Number(el.dataset.i),f=el.dataset.f,x=s.satirlar[i];if(!x)return;x[f]=f==="ad"||f==="birim"?el.value:el.value===""?"":Number(el.value);
+      if(f==="ad"){const v=el.value.trim(),u=state.urunler.find(y=>y.ad===v)||(v&&state.urunler.find(y=>String(y.barkod||"")===v));
+        if(u&&x.urunId!==u.id){x.urunId=u.id;x.ad=u.ad;x.barkod=String(u.barkod||"");x.birim=u.birim||"Adet";if(Number(u.alisFiyat))x.birimFiyat=r2(u.alisFiyat);redraw()}else if(!u)x.urunId=""}};
+    root.addEventListener("change",e=>{if(e.target.classList.contains("ln"))onLine(e.target)});
+    root.addEventListener("input",e=>{if(e.target.classList.contains("ln")&&e.target.dataset.f!=="ad")onLine(e.target)});
+    const topla=()=>{head();const sat=s.satirlar.filter(x=>(x.ad||"").trim());
+      if(!s.tedarikciId&&!s.tedarikciAd){er.textContent="Tedarikçi seçin ya da adını yazın.";return null}
+      if(!s.no){er.textContent="Sipariş numarası boş olamaz.";return null}
+      if(state.tsiparisler.some(y=>y.no===s.no&&(!existing||y.id!==existing.id))){er.textContent="Bu sipariş numarası zaten var.";return null}
+      if(!sat.length){er.textContent="En az bir ürün ekleyin.";return null}
+      if(sat.some(x=>!(Number(x.miktar)>0))){er.textContent="Her satırda miktar sıfırdan büyük olmalı.";return null}
+      return {no:s.no,tedarikciId:s.tedarikciId,tedarikciAd:s.tedarikciId?"":s.tedarikciAd,tel:s.tel,tarih:s.tarih||today(),durum:s.durum||"Taslak",notlar:s.notlar,
+        satirlar:sat.map(x=>({urunId:x.urunId||"",ad:x.ad.trim(),barkod:x.barkod||"",miktar:Number(x.miktar),birim:x.birim||"Adet",birimFiyat:Number(x.birimFiyat)>0?r2(x.birimFiyat):""})),
+        stokIds:existing&&existing.stokIds||[],olusturma:existing?(existing.olusturma||Date.now()):Date.now()}};
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;
+      if(a==="close")return closeModal();
+      if(a==="satirEkle"){head();s.satirlar.push(yeniSatir());redraw();const n=root.querySelector("#spAd"+(s.satirlar.length-1));if(n)n.focus();return}
+      if(a==="satirSil"){head();s.satirlar.splice(Number(b.dataset.i),1);redraw();return}
+      if(a==="kritikEkle"){head();const var_=new Set(s.satirlar.map(x=>x.urunId).filter(Boolean));let n=0;
+        for(const u of state.urunler){if(var_.has(u.id)||stokDurum(u)!=="kritik"&&!(Number(u.kritik)>0&&stokMiktar(u)<=0))continue;const m=stokMiktar(u),k=Number(u.kritik)||0;
+          s.satirlar.push({urunId:u.id,ad:u.ad,barkod:String(u.barkod||""),miktar:Math.max(1,Math.ceil(k*2-m)),birim:u.birim||"Adet",birimFiyat:Number(u.alisFiyat)?r2(u.alisFiyat):""});n++}
+        s.satirlar=s.satirlar.filter(x=>(x.ad||"").trim()||s.satirlar.length===1);if(!s.satirlar.length)s.satirlar=[yeniSatir()];redraw();toast(n?n+" kritik stok ürünü eklendi":"Kritik stok seviyesinin altında ürün yok");return}
+      if(a==="sil"){b.outerHTML=`<span class="err" style="align-self:center">Sipariş silinsin mi?</span><button type="button" class="danger" data-m="silOnay">Evet, sil</button>`;return}
+      if(a==="silOnay"){try{await api.del("tsiparisler",existing.id);closeModal();toast("Sipariş silindi")}catch(err){er.textContent=errMsg(err)}return}
+      if(a==="teslim"){b.outerHTML=`<span style="align-self:center;font-size:.85rem">Programdaki ürünlere stok girişi yapılsın mı?</span><button type="button" class="primary" data-m="teslimStok">Evet, stoğa ekle</button><button type="button" data-m="teslimSade">Hayır, yalnız durumu değiştir</button>`;return}
+      if(a==="teslimStok"||a==="teslimSade"){const doc=topla();if(!doc)return;b.disabled=true;
+        try{const stokIds=[...doc.stokIds];if(a==="teslimStok"&&!stokIds.length)for(const x of doc.satirlar){if(!x.urunId||!state.urunler.some(u=>u.id===x.urunId))continue;const sid=api.newId("stokHareketleri");
+            await api.setDoc("stokHareketleri",sid,{urunId:x.urunId,tarih:today(),tip:"Giriş",miktar:Number(x.miktar),birimFiyat:Number(x.birimFiyat)||0,aciklama:"Sipariş "+doc.no+" · "+sipTedAd(doc),hareketId:"",olusturma:Date.now()});stokIds.push(sid)}
+          await api.setDoc("tsiparisler",existing.id,{...doc,durum:"Teslim alındı",teslim:Date.now(),stokIds});closeModal();toast("Sipariş "+doc.no+" teslim alındı"+(stokIds.length?" · "+stokIds.length+" ürüne stok girişi yapıldı":""))}
+        catch(err){er.textContent=errMsg(err);b.disabled=false}return}
+      if(a==="kaydet"||a==="kaydetWa"){const doc=topla();if(!doc)return;b.disabled=true;const id=existing?existing.id:api.newId("tsiparisler");
+        try{await api.setDoc("tsiparisler",id,doc);closeModal();toast("Sipariş "+doc.no+" kaydedildi");if(a==="kaydetWa")siparisWhatsapp({id,...doc},false)}
+        catch(err){er.textContent=errMsg(err);b.disabled=false}}})})}
 function vTedarik(){
   const raw=ui.tdAra.trim(),q=tdLow(raw),ts=tedarikciListe(),p=tdUrunBul(raw),ro=state.readonly;
   const urunBilgi=p?`<div><span class="chip ok">📦 ${esc(p.ad)}</span> <span class="muted" style="font-size:.85rem">Satış ${money(p.satisFiyat)} · Bizim alış ${Number(p.alisFiyat)?money(p.alisFiyat):"—"} · Stok ${fmtMiktar(stokMiktar(p))} ${esc(p.birim||"")}</span></div>`
@@ -5342,6 +5441,10 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="stokAktar")stokAktarModal();
   else if(a==="yengecCek")yengecKurulumModal();
   else if(a==="newTeklif")teklifForm(null);
+  else if(a==="newSiparis")siparisForm(null);
+  else if(a==="editSiparis"){const s=state.tsiparisler.find(x=>x.id===id);if(s)siparisForm(s)}
+  else if(a==="sipWa"){const s=state.tsiparisler.find(x=>x.id===id);if(s)siparisWhatsapp(s,b.dataset.web==="1")}
+  else if(a==="sipKopya"){const s=state.tsiparisler.find(x=>x.id===id);if(s){try{await navigator.clipboard.writeText(siparisMetin(s));toast("Sipariş metni kopyalandı")}catch(e){toast("Kopyalanamadı")}}}
   else if(a==="editTeklif"){const t=state.teklifler.find(x=>x.id===id);if(t)teklifForm(t)}
   else if(a==="tSatis")teklifSatis(id);
   else if(a==="tFatura"){const t=state.teklifler.find(x=>x.id===id);if(t)faturaForm(null,{tur:"satis",teklif:t})}
@@ -5456,7 +5559,7 @@ document.getElementById("main").addEventListener("keydown",e=>{if(e.key==="Enter
 
 /* ---------- Veri katmanı ---------- */
 /* ---------- Uygulama: Supabase bağlantısı, giriş, firma, eşitleme ---------- */
-const KOLEKSIYONLAR={cariler:"cariler",hareketler:"hareketler",personeller:"personeller",personelEk:"ekler",izinler:"izinler",bankalar:"bankalar",virmanlar:"virmanlar",urunler:"urunler",stokHareketleri:"stokHareketleri",teklifler:"teklifler",faturalar:"faturalar",ajanda:"ajanda",tedarikciler:"tedarikciler",tfiyatlar:"tfiyatlar"};
+const KOLEKSIYONLAR={cariler:"cariler",hareketler:"hareketler",personeller:"personeller",personelEk:"ekler",izinler:"izinler",bankalar:"bankalar",virmanlar:"virmanlar",urunler:"urunler",stokHareketleri:"stokHareketleri",teklifler:"teklifler",faturalar:"faturalar",ajanda:"ajanda",tedarikciler:"tedarikciler",tfiyatlar:"tfiyatlar",tsiparisler:"tsiparisler"};
 const CFG=window.UYGULAMA_AYAR||{};let sb=null,oturum=null,firmaId=null,firmaRol="",kanal=null,kurulumOlayi=null;
 const kapi=document.getElementById("kapi");
 // Görsel büyütme: aynı ekranda büyük görsel + altında ürünün diğer görselleri; ok tuşları / tıklama ile geçiş, Esc ya da boşluğa tıklayınca kapanır
