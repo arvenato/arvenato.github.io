@@ -1996,10 +1996,24 @@ async function urunSeciliExcel(){
    Pazaryerine yazma yalnız deneme listesindeki ürünlere yapılabildiği için ürünler önce listeye eklenir (toplu ürün açmadaki gibi). */
 const PZ_FS_YAZ=["trendyol","n11","pazarama","idefix","shopify","amazon"];
 const pzFsSirada=(id,p)=>(pzTI.veri||[]).some(x=>x.islem&&x.urun_id===id&&x.pazaryeri===p&&(x.durum==="bekliyor"||x.durum==="isleniyor"));
+// Son fiyat / stok gönderimi pazaryerince reddedildiyse sebebi (yoksa null)
+function pzFsHata(id,p,islem){const x=(pzTI.veri||[]).find(y=>y.islem===islem&&y.urun_id===id&&y.pazaryeri===p);return x&&x.durum==="bitti"&&x.sonuc&&x.sonuc.durum==="hata"?String(x.sonuc.mesaj||"reddedildi"):null}
+const frHataHtml=m=>m?`<div title="${esc(m)}" style="font-size:.68rem;color:var(--neg,#c0392b);font-weight:600;max-width:150px;white-space:normal;text-align:right;cursor:help">✕ reddedildi: ${esc(m.replace(/^\["?|"?\]$/g,"").slice(0,70))}${m.length>70?"…":""}</div>`:"";
+/* Reddedilen gönderimler: rapordaki (iyimser yazılmış) değer gönderimden önceki değere geri alınır, ürün yeniden "fark var" listesine düşer */
+function pzFsHataUygula(){const f=firmaId,A="arv-fs-geri-"+f;let isle;try{isle=new Set(JSON.parse(localStorage.getItem(A)||"[]"))}catch(e){isle=new Set()}
+  let deg=false;
+  for(const x of pzTI.veri||[]){if(!x.islem||x.durum!=="bitti"||!x.sonuc||x.sonuc.durum!=="hata"||isle.has(x.id))continue;isle.add(x.id);
+    const o0=x.onceki!=null&&x.onceki!==""?x.onceki:x.sonuc.onceki,u=state.urunler.find(y=>y.id===x.urun_id),once=o0==null||o0===""?null:Number(o0);if(!u||once==null||!isFinite(once))continue;
+    const d=pzIlanDurum(u,x.pazaryeri);if(!d)continue;
+    if(pzIlanYaz(u,x.pazaryeri,x.islem==="fiyatGonder"?[d[0],d[1],d[2],r2(once)]:[d[0],Math.floor(once),d[2],d[3]]))deg=true}
+  try{localStorage.setItem(A,JSON.stringify([...isle].slice(-3000)))}catch(e){}
+  if(deg){pzIlanSakla();const r=window._frKok;if(r&&r.isConnected&&r._ciz)r._ciz()}}
 // is: [{u,p,islem:"fiyatGonder"|"stokGonder",satis?,stok?,buyuk?}]
 async function pzFsSiraya(is){if(!is.length)return 0;
   const tek=[...new Map(is.map(x=>[x.u.id,x.u])).values()];await pzDenemeEkle(tek);
-  const n=await pzTIEkle(is.map(x=>({id:x.u.id,p:x.p,govde:x.islem==="fiyatGonder"?{islem:"fiyatGonder",satis:r2(x.satis),buyukDegisim:!!x.buyuk,alt:String(x.u.barkod||"")}:{islem:"stokGonder",stok:Math.max(0,Math.floor(Number(x.stok)||0)),alt:String(x.u.barkod||"")}})));
+  // onceki: gönderimden önce pazaryerinde görünen değer (reddedilirse rapor bu değere geri döner)
+  const once=x=>{const d=pzIlanDurum(x.u,x.p);return d?(x.islem==="fiyatGonder"?Number(d[3])||0:Number(d[1])||0):null};
+  const n=await pzTIEkle(is.map(x=>({id:x.u.id,p:x.p,govde:x.islem==="fiyatGonder"?{islem:"fiyatGonder",satis:r2(x.satis),buyukDegisim:!!x.buyuk,alt:String(x.u.barkod||""),onceki:once(x)}:{islem:"stokGonder",stok:Math.max(0,Math.floor(Number(x.stok)||0)),alt:String(x.u.barkod||""),onceki:once(x)}})));
   // Rozet / rapor hemen yeni değeri göstersin (pazaryerinden okununca kesinleşir)
   for(const x of is){const d=pzIlanDurum(x.u,x.p);if(!d)continue;pzIlanYaz(x.u,x.p,x.islem==="fiyatGonder"?[d[0],d[1],d[2],r2(x.satis)]:[d[0],Math.floor(Number(x.stok)||0),d[2],d[3]])}
   pzIlanSakla();return n}
@@ -2066,14 +2080,16 @@ function frEsOnizle(root,pzl){const oz=root.querySelector("#esOzet");if(!oz)retu
    Pazaryeri fiyatları "🛒 Pazaryeri durumlarını oku" ile okunup cihazda saklanan ilan bilgisinden gelir (yeni istek atılmaz). */
 function pzFiyatRaporModal(op){const yalnizStok=!!(op&&op.mod==="stok");
   const pzl=PZ_ILAN.filter(p=>pzIlan.veri[p]&&(yalnizStok||Object.values(pzIlan.veri[p].m||{}).some(v=>Number(v[3])>0)));
-  const bos=!pzl.length;let fPz="",fAktif=true,fYon="";
+  const bos=!pzl.length;let fPz="",fAktif=true,fYon="",fSira="yuzdeC",sSira="cok";
   const satirlar=()=>{const out=[];
-    for(const u of state.urunler){const pf=r2(Number(u.satisFiyat)||0),h={};let enFark=0,var_=false;
+    for(const u of state.urunler){const pf=r2(Number(u.satisFiyat)||0),h={};let enFark=0,enTl=0,var_=false;
       for(const p of pzl){const d=pzIlanDurum(u,p);if(!d||!(Number(d[3])>0))continue;if(fAktif&&d[0]!==1)continue;
         const f=r2(Number(d[3])),fark=r2(f-pf);h[p]={f,fark,ak:d[0]===1,s:Number(d[1])||0};
-        if(Math.abs(fark)>=0.01&&(!fPz||fPz===p)&&(!fYon||(fYon==="dusuk"?fark<0:fark>0))){var_=true;const y=pf>0?Math.abs(fark)/pf*100:100;if(y>enFark)enFark=y}}
-      if(var_)out.push({u,pf,h,enFark})}
-    return out.sort((a,b)=>b.enFark-a.enFark)};
+        if(Math.abs(fark)>=0.01&&(!fPz||fPz===p)&&(!fYon||(fYon==="dusuk"?fark<0:fark>0))){var_=true;const y=pf>0?Math.abs(fark)/pf*100:100;if(y>enFark)enFark=y;if(Math.abs(fark)>enTl)enTl=Math.abs(fark)}}
+      if(var_)out.push({u,pf,h,enFark,enTl})}
+    // Sıralama: fark yüzdesi ya da tutarı, çoktan aza / azdan çoğa
+    const k=fSira.startsWith("tl")?"enTl":"enFark",yon=fSira.endsWith("A")?1:-1;
+    return out.sort((a,b)=>yon*(a[k]-b[k])||a.u.ad.localeCompare(b.u.ad,"tr"))};
   const ciz=root=>{if(yalnizStok){root.querySelector("#frIc").innerHTML=stokHtml();root._l=[];root._ls=_ls;return}
     const l=satirlar(),ic=root.querySelector("#frIc");
     const say={};for(const r of l)for(const p of pzl){const x=r.h[p];if(x&&Math.abs(x.fark)>=0.01)say[p]=(say[p]||0)+1}
@@ -2085,7 +2101,7 @@ function pzFiyatRaporModal(op){const yalnizStok=!!(op&&op.mod==="stok");
       ${l.slice(0,1000).map(r=>`<tr><td style="min-width:200px"><b style="font-size:.85rem">${esc(r.u.ad)}</b><div class="muted" style="font-size:.72rem">${esc(r.u.barkod||r.u.kod||"")}</div></td>
         <td class="num"><b data-fr="fiyat" data-p="program" data-u="${r.u.id}" style="cursor:cell">${money(r.pf)}</b><div class="muted" data-fr="stok" data-p="program" data-u="${r.u.id}" style="font-size:.7rem;cursor:cell">stok ${fmtMiktar(stokMiktar(r.u))}</div></td>
         ${pzl.map(p=>{const x=r.h[p];if(!x)return `<td class="num muted">—</td>`;const fk=Math.abs(x.fark)>=0.01,ed=yaz.includes(p)?` style="cursor:cell"`:"";
-          return `<td class="num" style="${fk?(x.fark<0?"color:var(--neg,#c0392b);font-weight:600":"color:#b26a00;font-weight:600"):""}"><span data-fr="fiyat" data-p="${p}" data-u="${r.u.id}"${ed}>${money(x.f)}</span>${fk?`<div style="font-size:.72rem">${x.fark>0?"+":""}${money(x.fark)}</div>`:""}${fk&&yaz.includes(p)&&firmaRol==="sahip"&&!state.readonly&&!pzFsSirada(r.u.id,p)?`<button type="button" class="small" data-m="tekEsitle" data-p="${p}" data-u="${r.u.id}" title="${esc(PZ_ADLAR[p])} fiyatını program fiyatına (${money(r.pf)}) eşitler ve hemen gönderir" style="padding:1px 6px;min-height:0;font-size:.7rem;margin:2px 0;font-weight:600">⇄ Eşitle</button>`:""}<div class="muted" data-fr="stok" data-p="${p}" data-u="${r.u.id}" style="font-size:.7rem;font-weight:400${yaz.includes(p)?";cursor:cell":""}">stok ${Number(x.s)||0}</div>${x.ak?"":`<div class="muted" style="font-size:.68rem">pasif</div>`}${pzFsSirada(r.u.id,p)?`<div style="font-size:.68rem;color:var(--accent)">⏳ sırada</div>`:""}</td>`}).join("")}
+          return `<td class="num" style="${fk?(x.fark<0?"color:var(--neg,#c0392b);font-weight:600":"color:#b26a00;font-weight:600"):""}"><span data-fr="fiyat" data-p="${p}" data-u="${r.u.id}"${ed}>${money(x.f)}</span>${fk?`<div style="font-size:.72rem">${x.fark>0?"+":""}${money(x.fark)}</div>`:""}${fk&&yaz.includes(p)&&firmaRol==="sahip"&&!state.readonly&&!pzFsSirada(r.u.id,p)?`<button type="button" class="small" data-m="tekEsitle" data-p="${p}" data-u="${r.u.id}" title="${esc(PZ_ADLAR[p])} fiyatını program fiyatına (${money(r.pf)}) eşitler ve hemen gönderir" style="padding:1px 6px;min-height:0;font-size:.7rem;margin:2px 0;font-weight:600">⇄ Eşitle</button>`:""}<div class="muted" data-fr="stok" data-p="${p}" data-u="${r.u.id}" style="font-size:.7rem;font-weight:400${yaz.includes(p)?";cursor:cell":""}">stok ${Number(x.s)||0}</div>${x.ak?"":`<div class="muted" style="font-size:.68rem">pasif</div>`}${pzFsSirada(r.u.id,p)?`<div style="font-size:.68rem;color:var(--accent)">⏳ sırada</div>`:frHataHtml(pzFsHata(r.u.id,p,"fiyatGonder"))}</td>`}).join("")}
         <td class="num">%${Math.round(r.enFark)}</td></tr>`).join("")||`<tr><td colspan="${pzl.length+3}" class="empty">Filtreye uyan fiyat farkı yok.</td></tr>`}</tbody></table></div>
       ${l.length>1000?`<div class="muted" style="font-size:.78rem">İlk 1.000 ürün gösteriliyor; hepsi için Excel'e aktarın.</div>`:""}
       ${stokHtml()}`;
@@ -2098,17 +2114,18 @@ function pzFiyatRaporModal(op){const yalnizStok=!!(op&&op.mod==="stok");
         const s=Math.floor(Number(d[1])||0),fark=s-ps;h[p]={s,fark,ak:d[0]===1};
         if(fark!==0&&(!fPz||fPz===p)){var_=true;if(Math.abs(fark)>en)en=Math.abs(fark)}}
       if(var_)out.push({u,ps,h,en})}
-    return out.sort((a,b)=>b.en-a.en)};
+    return out.sort((a,b)=>(sSira==="az"?a.en-b.en:b.en-a.en)||a.u.ad.localeCompare(b.u.ad,"tr"))};
   const stokHtml=()=>{_ls=stokSatirlar();const spz=PZ_ILAN.filter(k=>pzIlan.veri[k]),yaz=spz.filter(p=>PZ_FS_YAZ.includes(p)),sahip=firmaRol==="sahip"&&!state.readonly;
     const say={};for(const r of _ls)for(const p of spz){const x=r.h[p];if(x&&x.fark)say[p]=(say[p]||0)+1}
-    return `<h3 style="margin:18px 0 4px;font-size:1.05rem">📦 Stok farkı</h3>
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 4px"><h3 style="margin:0;font-size:1.05rem">📦 Stok farkı</h3>
+      <select id="frSSira" aria-label="Stok sıralaması"><option value="cok" ${sSira==="cok"?"selected":""}>↕ Fark: çoktan aza</option><option value="az" ${sSira==="az"?"selected":""}>↕ Fark: azdan çoğa</option></select></div>
       <div class="muted" style="font-size:.85rem;margin:0 0 6px"><b style="color:var(--fg)">${_ls.length.toLocaleString("tr-TR")}</b> üründe stok farkı var · ${spz.map(p=>`${esc(PZ_ADLAR[p])}: ${(say[p]||0).toLocaleString("tr-TR")}`).join(" · ")}. <span style="color:var(--neg,#c0392b);font-weight:600">Kırmızı</span>: pazaryerinde daha az · <span style="color:#b26a00;font-weight:600">turuncu</span>: pazaryerinde daha fazla. ⇄ Eşitle pazaryeri stoğunu programdaki stoğa getirir.</div>
       <div id="frSEs"></div>
       <div class="tscroll" style="max-height:50vh"><table class="kart-yok"><thead><tr><th>Ürün</th><th class="num">Program stoğu</th>${spz.map(p=>`<th class="num">${esc(PZ_ADLAR[p])}${yaz.includes(p)&&sahip?`<div><button class="small ghost" type="button" data-m="sEsitle" data-p="${p}" style="padding:2px 6px;min-height:0;font-size:.72rem">⚙ Eşitle</button></div>`:""}</th>`).join("")}<th class="num">En büyük fark</th></tr></thead><tbody>
       ${_ls.slice(0,1000).map(r=>`<tr><td style="min-width:200px"><b style="font-size:.85rem">${esc(r.u.ad)}</b><div class="muted" style="font-size:.72rem">${esc(r.u.barkod||r.u.kod||"")}</div></td>
         <td class="num"><b data-fr="stok" data-p="program" data-u="${r.u.id}" style="cursor:cell">${r.ps}</b></td>
         ${spz.map(p=>{const x=r.h[p];if(!x)return `<td class="num muted">—</td>`;const fk=x.fark!==0,ed=yaz.includes(p)?` style="cursor:cell"`:"";
-          return `<td class="num" style="${fk?(x.fark<0?"color:var(--neg,#c0392b);font-weight:600":"color:#b26a00;font-weight:600"):""}"><span data-fr="stok" data-p="${p}" data-u="${r.u.id}"${ed}>${x.s}</span>${fk?`<div style="font-size:.72rem">${x.fark>0?"+":""}${x.fark}</div>`:""}${fk&&yaz.includes(p)&&sahip&&!pzFsSirada(r.u.id,p)?`<button type="button" class="small" data-m="tekStokEsitle" data-p="${p}" data-u="${r.u.id}" title="${esc(PZ_ADLAR[p])} stoğunu program stoğuna (${r.ps}) eşitler ve hemen gönderir" style="padding:1px 6px;min-height:0;font-size:.7rem;margin:2px 0;font-weight:600">⇄ Eşitle</button>`:""}${x.ak?"":`<div class="muted" style="font-size:.68rem">pasif</div>`}${pzFsSirada(r.u.id,p)?`<div style="font-size:.68rem;color:var(--accent)">⏳ sırada</div>`:""}</td>`}).join("")}
+          return `<td class="num" style="${fk?(x.fark<0?"color:var(--neg,#c0392b);font-weight:600":"color:#b26a00;font-weight:600"):""}"><span data-fr="stok" data-p="${p}" data-u="${r.u.id}"${ed}>${x.s}</span>${fk?`<div style="font-size:.72rem">${x.fark>0?"+":""}${x.fark}</div>`:""}${fk&&yaz.includes(p)&&sahip&&!pzFsSirada(r.u.id,p)?`<button type="button" class="small" data-m="tekStokEsitle" data-p="${p}" data-u="${r.u.id}" title="${esc(PZ_ADLAR[p])} stoğunu program stoğuna (${r.ps}) eşitler ve hemen gönderir" style="padding:1px 6px;min-height:0;font-size:.7rem;margin:2px 0;font-weight:600">⇄ Eşitle</button>`:""}${x.ak?"":`<div class="muted" style="font-size:.68rem">pasif</div>`}${pzFsSirada(r.u.id,p)?`<div style="font-size:.68rem;color:var(--accent)">⏳ sırada</div>`:frHataHtml(pzFsHata(r.u.id,p,"stokGonder"))}</td>`}).join("")}
         <td class="num">${r.en}</td></tr>`).join("")||`<tr><td colspan="${spz.length+3}" class="empty">Filtreye uyan stok farkı yok.</td></tr>`}</tbody></table></div>
       ${_ls.length>1000?`<div class="muted" style="font-size:.78rem">İlk 1.000 ürün gösteriliyor.</div>`:""}`};
   // Toplu stok eşitleme: hedef pazaryeri stoğu = program stoğu (ya da başka bir pazaryerinin stoğu)
@@ -2133,11 +2150,12 @@ function pzFiyatRaporModal(op){const yalnizStok=!!(op&&op.mod==="stok");
     :`<div class="muted" style="font-size:.82rem">${yalnizStok?"Programdaki stok ile pazaryerlerindeki stok karşılaştırılır.":"Programdaki satış fiyatı ile pazaryerindeki satış fiyatı karşılaştırılır."} Pazaryeri bilgileri ${new Date(en).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} okumasından. <span style="color:var(--neg,#c0392b);font-weight:600">Kırmızı</span>: pazaryerinde daha ucuz · <span style="color:#b26a00;font-weight:600">turuncu</span>: pazaryerinde daha pahalı.</div>
       <div class="filters"><select id="frPz" aria-label="Pazaryeri"><option value="">Tüm pazaryerleri</option>${pzl.map(p=>`<option value="${p}">${esc(PZ_ADLAR[p])}</option>`).join("")}</select>
         <select id="frYon" aria-label="Yön" ${yalnizStok?"hidden":""}><option value="">Ucuz ve pahalı</option><option value="dusuk">Pazaryerinde daha ucuz</option><option value="yuksek">Pazaryerinde daha pahalı</option></select>
+        <select id="frSira" aria-label="Fiyat sıralaması" ${yalnizStok?"hidden":""}><option value="yuzdeC">↕ Fark %: çoktan aza</option><option value="yuzdeA">↕ Fark %: azdan çoğa</option><option value="tlC">↕ Fark ₺: çoktan aza</option><option value="tlA">↕ Fark ₺: azdan çoğa</option></select>
         <label style="display:flex;gap:6px;align-items:center;font-size:.85rem"><input type="checkbox" id="frAktif" checked> Yalnız aktif (satıştaki) ilanlar</label>
         <span style="flex:1"></span>${yalnizStok?"":`<button class="small" type="button" data-m="excel">⬇ Excel'e aktar</button>`}</div>
       <div id="frIc"></div><div class="modal-foot"><button type="button" data-m="close">Kapat</button></div>`}`,
-  root=>{root.style.maxWidth="1100px";root._ciz=()=>ciz(root);if(!bos)ciz(root);
-    root.addEventListener("change",e=>{const t=e.target;if(t.id==="frPz")fPz=t.value;else if(t.id==="frYon")fYon=t.value;else if(t.id==="frAktif")fAktif=t.checked;else return;ciz(root)});
+  root=>{root.style.maxWidth="1100px";root._ciz=()=>ciz(root);window._frKok=root;if(!bos)ciz(root);
+    root.addEventListener("change",e=>{const t=e.target;if(t.id==="frPz")fPz=t.value;else if(t.id==="frYon")fYon=t.value;else if(t.id==="frAktif")fAktif=t.checked;else if(t.id==="frSira")fSira=t.value;else if(t.id==="frSSira")sSira=t.value;else return;ciz(root)});
     // Çift tıklama: hücrede düzenleme (fiyat / stok)
     root.addEventListener("dblclick",e=>{const el=e.target.closest("[data-fr]");if(!el||firmaRol!=="sahip"||state.readonly)return;
       if(el.dataset.p!=="program"&&!PZ_FS_YAZ.includes(el.dataset.p))return;
@@ -4173,9 +4191,10 @@ async function pzTIEkle(is){const f=firmaId,uid=oturum&&oturum.user&&oturum.user
   await pzTIYenile();return satir.length}
 async function pzTIYenile(){clearTimeout(pzTI.t);if(!sb||!firmaId)return;const f=firmaId;
   try{pzTI.kapat=Number(localStorage.getItem(pzTIKapatAnahtar()))||0}catch(e){}
-  try{const {data,error}=await sb.from("pz_kuyruk").select("id,urun_id,pazaryeri,durum,sonuc,guncelleme,islem:govde->>islem").eq("firma_id",f).neq("durum","iptal").gte("guncelleme",new Date(Date.now()-24*3600000).toISOString()).order("id",{ascending:false}).limit(5000);
+  try{const {data,error}=await sb.from("pz_kuyruk").select("id,urun_id,pazaryeri,durum,sonuc,guncelleme,islem:govde->>islem,onceki:govde->>onceki").eq("firma_id",f).neq("durum","iptal").gte("guncelleme",new Date(Date.now()-24*3600000).toISOString()).order("id",{ascending:false}).limit(5000);
     if(error)throw error;if(firmaId!==f)return;pzTI.veri=data||[]}catch(e){pzTI.veri=pzTI.veri||[]}
   if(pzTI.dinleyici)try{pzTI.dinleyici(pzTI.veri)}catch(e){}
+  try{pzFsHataUygula()}catch(e){}
   pzTIBant();
   // Ürünler › Pazaryeri gönderimleri açıksa güncellenir (yazı yazılırken bozulmasın)
   if(view==="stok"&&ui.uSekme==="gonderim"&&!gdIs&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName||""))render();
