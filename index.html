@@ -2090,7 +2090,11 @@ function pzFiyatRaporModal(op){const yalnizStok=!!(op&&op.mod==="stok");
     // Sıralama: fark yüzdesi ya da tutarı, çoktan aza / azdan çoğa
     const k=fSira.startsWith("tl")?"enTl":"enFark",yon=fSira.endsWith("A")?1:-1;
     return out.sort((a,b)=>yon*(a[k]-b[k])||a.u.ad.localeCompare(b.u.ad,"tr"))};
-  const ciz=root=>{if(yalnizStok){root.querySelector("#frIc").innerHTML=stokHtml();root._l=[];root._ls=_ls;return}
+  // Yeniden çizimde kaydırma yeri korunur (Eşitle'ye basınca liste başa dönmesin)
+  const ciz=root=>{const ks=[...root.querySelectorAll("#frIc .tscroll")].map(x=>x.scrollTop),ov=root.closest(".overlay"),ovs=ov?ov.scrollTop:0,ws=window.scrollY;
+    cizIc(root);
+    root.querySelectorAll("#frIc .tscroll").forEach((x,i)=>{if(ks[i])x.scrollTop=ks[i]});if(ov)ov.scrollTop=ovs;if(ws)window.scrollTo(0,ws)};
+  const cizIc=root=>{if(yalnizStok){root.querySelector("#frIc").innerHTML=stokHtml();root._l=[];root._ls=_ls;return}
     const l=satirlar(),ic=root.querySelector("#frIc");
     const say={};for(const r of l)for(const p of pzl){const x=r.h[p];if(x&&Math.abs(x.fark)>=0.01)say[p]=(say[p]||0)+1}
     const yaz=pzl.filter(p=>PZ_FS_YAZ.includes(p));
