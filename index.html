@@ -898,14 +898,16 @@ async function faturalariKaydet(list,o,ilerleme){
   const vb=varsayilanBanka();
   for(const v of list){n++;ilerleme&&ilerleme(n,list.length);
     try{if(state.faturalar.some(f=>f.tur===o.tur&&f.no===v.no)){atlanan++;continue}
+      // Sabit kimlik: aynı fatura (ETTN ya da tür+no) kaç kez / kaç cihazdan alınırsa alınsın aynı kayda yazılır, çift oluşmaz
+      const sab=String(v.ettn||(o.tur+"-"+v.no)).replace(/[^A-Za-z0-9-]/g,"").slice(0,60);const fid=sab?"ef-"+o.tur+"-"+sab:api.newId("faturalar");
       let cari=null;const vk=(v.vkn||"").replace(/\D/g,"");
       if(vk)cari=state.cariler.find(c=>(c.vergiNo||"")===vk)||cache["v"+vk];
       if(!cari&&v.unvan)cari=state.cariler.find(c=>_norm(c.ad)===_norm(v.unvan))||cache["a"+_norm(v.unvan)];
-      if(!cari&&o.cariAc&&v.unvan){const id=api.newId("cariler");const doc={ad:v.unvan,tur:satis?"musteri":"tedarikci",vergiNo:/^\d{10,11}$/.test(vk)?vk:"",vergiDairesi:"",telefon:"",olusturma:Date.now()};await api.setDoc("cariler",id,doc);cari={id,...doc};if(vk)cache["v"+vk]=cari;cache["a"+_norm(v.unvan)]=cari;cariYeni++}
+      if(!cari&&o.cariAc&&v.unvan){const id=/^\d{10,11}$/.test(vk)?"cv-"+vk:api.newId("cariler");const doc={ad:v.unvan,tur:satis?"musteri":"tedarikci",vergiNo:/^\d{10,11}$/.test(vk)?vk:"",vergiDairesi:"",telefon:"",olusturma:Date.now()};await api.setDoc("cariler",id,doc);cari={id,...doc};if(vk)cache["v"+vk]=cari;cache["a"+_norm(v.unvan)]=cari;cariYeni++}
       const odeme=o.odeme==="acik"&&!cari?"banka":o.odeme;
-      const rate=kdvOranTahmin(v.net,v.kdv);const hid=api.newId("hareketler");const ad=cari?cari.ad:(v.unvan||"");
+      const rate=kdvOranTahmin(v.net,v.kdv);const hid=sab?"efh-"+o.tur+"-"+sab:api.newId("hareketler");const ad=cari?cari.ad:(v.unvan||"");
       await api.setDoc("hareketler",hid,{tur:satis?"satis":"alis",tarih:v.tarih,odeme,cariId:cari?cari.id:"",kanal:"",kategori:"",bankaId:odeme==="banka"&&vb?vb.id:"",kdvOran:rate,net:v.net,kdv:v.kdv,toplam:v.toplam,aciklama:"Fatura "+v.no+(ad?" · "+ad:""),belgeNo:v.no,olusturma:Date.now()});
-      await api.setDoc("faturalar",api.newId("faturalar"),{tur:o.tur,no:v.no,cariId:cari?cari.id:"",musteriAd:cari?"":(v.unvan||""),tarih:v.tarih,vade:odeme==="acik"?(v.vade||gunEkle(v.tarih,30)):"",odeme,bankaId:odeme==="banka"&&vb?vb.id:"",kanal:"",stokEtki:false,satirlar:[{urunId:"",ad:"Fatura toplamı",miktar:1,birim:"Adet",birimFiyat:v.net,kdvOran:rate,iskonto:0}],notlar:o.kaynak==="trendyol"?"Trendyol e-Faturam'dan otomatik alındı"+(v.tip&&v.tip!=="SATIS"?" · "+v.tip:""):(o.kaynak==="pdf"?"PDF'ten":"Excel'den")+" aktarıldı"+(v.dosya?" ("+v.dosya+")":""),araToplam:v.net,iskonto:0,net:v.net,kdv:v.kdv,toplam:v.toplam,hareketIds:[hid],stokIds:[],odemeIds:[],kaynak:o.kaynak,ettn:v.ettn||"",olusturma:Date.now()});
+      await api.setDoc("faturalar",fid,{tur:o.tur,no:v.no,cariId:cari?cari.id:"",musteriAd:cari?"":(v.unvan||""),tarih:v.tarih,vade:odeme==="acik"?(v.vade||gunEkle(v.tarih,30)):"",odeme,bankaId:odeme==="banka"&&vb?vb.id:"",kanal:"",stokEtki:false,satirlar:[{urunId:"",ad:"Fatura toplamı",miktar:1,birim:"Adet",birimFiyat:v.net,kdvOran:rate,iskonto:0}],notlar:o.kaynak==="trendyol"?"Trendyol e-Faturam'dan otomatik alındı"+(v.tip&&v.tip!=="SATIS"?" · "+v.tip:""):(o.kaynak==="pdf"?"PDF'ten":"Excel'den")+" aktarıldı"+(v.dosya?" ("+v.dosya+")":""),araToplam:v.net,iskonto:0,net:v.net,kdv:v.kdv,toplam:v.toplam,hareketIds:[hid],stokIds:[],odemeIds:[],kaynak:o.kaynak,ettn:v.ettn||"",olusturma:Date.now()});
       eklenen++}
     catch(err){if(err&&(err.code==="resource_exhausted"||err.code==="unavailable")){await new Promise(r=>setTimeout(r,1500));n--;list.push(v);continue}hata++}}
   return {eklenen,atlanan,cariYeni,hata}}
@@ -931,6 +933,10 @@ function efatKayit(x,gelen){
   return fatTamamla({no:String(x.invoiceId||""),tarih:String(x.issuedAt||x.createdAt||"").slice(0,10),unvan:String(ad||"").trim().slice(0,120),vkn:String((gelen?x.senderTaxId:x.receiverTaxId)||""),net:k(x.taxExcludedPrice),kdv:k(x.taxAmount),toplam:k(x.payableAmount??x.taxInclusiveAmount),vade:"",ettn:x.invoiceUuid||"",tip:x.invoiceTypeCode||""},20)}
 async function efatSenk(elle){
   if(efatSenkCalisiyor||state.readonly||!firmaId||!api||!api.setDoc)return;
+  // Aynı bilgisayarda birden çok sekme açıksa yalnız biri alır (10 dakikalık kilit)
+  const kilitA="arv-efat-kilit-"+firmaId;let kil=0;try{kil=Number(localStorage.getItem(kilitA))||0}catch(e){}
+  if(!elle&&Date.now()-kil<10*60000)return;
+  try{localStorage.setItem(kilitA,String(Date.now()))}catch(e){}
   efatSenkCalisiyor=true;
   try{
     const prof=efatProfil();
