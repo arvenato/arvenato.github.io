@@ -3196,7 +3196,7 @@ async function pzCagir(govde){
   return data;
 }
 /* Deneme ürünleri: yalnızca izinli listedeki ürünlerin Trendyol stok/fiyatını göster ve onaylı gönder */
-const PZ_DENEME_UST=100;// deneme listesindeki en fazla ürün (pazaryerlerine yazma yalnız bu ürünlere yapılır)
+const PZ_DENEME_UST=Infinity;// deneme listesinde sınır yok (kullanıcı isteği 2026-11-23); pazaryerlerine yazma yine yalnız bu listedeki ürünlere yapılır
 function pzDenemeKodlar(){return (((state.ayarEk||{}).pazaryeriTest||{}).kodlar||[])}
 function pzArvUrun(t){const kods=[t.kod,t.barkod,t.stokKodu].filter(Boolean).map(String);return state.urunler.find(u=>kods.includes(String(u.barkod||""))||kods.includes(String(u.kod||"")))||null}
 async function pzDenemeGetir(){
