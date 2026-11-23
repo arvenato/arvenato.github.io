@@ -3986,6 +3986,8 @@ function pzGonderimHtml(){
 // Hata metnine göre kısa öneri (ne yapılmalı)
 function gdOneri(x){const m=String(x.mesaj||"");
   if(/onaylanmamıştır|Onay İsteyin|marka adı Amazon/i.test(m))return pzAmzMarka(x.u.marka)==="Generic"?"Marka artık “Generic” gönderiliyor: yeniden sıraya ekleyin.":"Bu marka Amazon'da onaylı değil: Ürün açma ayarlarında “Generic” markalara ekleyin ya da Amazon'dan marka onayı isteyin.";
+  if(/Tekrarlayan işlem/i.test(m))return "Pazarama bu ürünü zaten işliyor olabilir: önce Pazarama panelinde ürünü kontrol edin; yoksa yeniden sıraya ekleyin.";
+  if(/\(429\)|çok fazla istek/i.test(m))return "Pazaryeri o an yoğundu: yeniden sıraya ekleyin.";
   if(/ASIN\s+B0[A-Z0-9]{8}/.test(m))return "Bu barkod Amazon'da zaten var: yeniden sıraya ekleyince mevcut ürüne teklif olarak bağlanır.";
   if(/GS1|GTIN|marka kayıtlarımızla eşleşmiyor/i.test(m))return "Barkod GS1 / marka kaydıyla eşleşmiyor: ürünün gerçek barkodunu girin (Düzelt) ya da Amazon'dan GTIN muafiyeti alın.";
   if(/gerekli ancak eksik|özelliği|eksik bilgi/i.test(m))return "Eksik bilgi: Düzelt ile tamamlayıp gönderin.";
