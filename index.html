@@ -3808,54 +3808,46 @@ function pzUrunAyarModal(){const ay=pzUrunAyar(),n=ay.n11||{},i=ay.idefix||{};
 /* Toplu ürün açma: seçili ürünleri bağlı pazaryerlerinde tek seferde açar.
    Ürün kartındaki tek tek açmayla aynı kurallar: önce her ürün × pazaryeri için hazır mı tablosu, onay, deneme listesine ekleme (en fazla PZ_DENEME_UST), sırayla gönderim, sonuç takibi.
    Rozetine göre pazaryerinde zaten olan ya da daha önce gönderilmiş ürün o pazaryerine gönderilmez. */
-/* Toplu gönderim işi: pencereden bağımsız sürer (pencere kapansa da devam eder), ilerleme sol altta bantta görünür.
-   Kalan sıra bu cihazda saklanır; sayfa yenilenir / uygulama kapanırsa açılışta "Devam et" ile kaldığı yerden sürer. */
-const pzTI={calisiyor:false,toplam:0,biten:0,ok:0,hata:0,dur:false,sonPzr:0};
-const pzTIAnahtar=()=>"arv-pztoplu-"+firmaId;
-function pzTISira(l){try{if(l&&l.length)localStorage.setItem(pzTIAnahtar(),JSON.stringify(l));else localStorage.removeItem(pzTIAnahtar())}catch(e){}}
-function pzTIOku(){try{const l=JSON.parse(localStorage.getItem(pzTIAnahtar())||"null");return Array.isArray(l)?l:null}catch(e){return null}}
-async function pzTIGonder(u,p,govde){let s;
-  for(let d=0;d<2;d++){
-    if(p==="pazarama"){const bek=pzTI.sonPzr+11000-Date.now();if(bek>0)await new Promise(r=>setTimeout(r,bek));pzTI.sonPzr=Date.now()}
-    try{const r=await pzCagir({islem:"urunAc",pazaryeri:p,kod:u.kod||u.barkod,govde});
-      if(r.durum==="zatenVar")s={durum:"zatenVar",mesaj:r.mesaj||"",zaman:Date.now()};
-      else{s={durum:"gonderildi",id:String(r.id||""),zaman:Date.now()};if(pzIlanYaz(u,p,[0,Math.max(0,Math.floor(stokMiktar(u))),"gönderildi, onay bekleniyor"]))pzIlanSakla()}
-      break}
-    catch(err){const m=String(err.message||err).slice(0,300);s={durum:"hata",mesaj:m,zaman:Date.now()};
-      if(d===0&&/\(429\)|çok fazla istek|too many/i.test(m)){await new Promise(r=>setTimeout(r,12000));continue}
-      break}}
-  return s}
-async function pzTIKaydet(yk){const t=((state.ayarEk||{}).pzUrunAc||{}),n={...t};for(const id of Object.keys(yk))n[id]={...(t[id]||{}),...yk[id]};await api.setDoc("ayar","pzUrunAc",n)}
-// is: [{id,p,govde?}] · cb(id,p,sonuc|null): pencere açıksa hücreleri günceller (null = gönderiliyor)
-async function pzTICalistir(is,cb){
-  if(pzTI.calisiyor||!is.length)return false;
-  Object.assign(pzTI,{calisiyor:true,toplam:is.length,biten:0,ok:0,hata:0,dur:false});
-  const f=firmaId;let kalan=is.map(x=>[x.id,x.p]);pzTISira(kalan);pzTIBant();
-  try{for(const x of is){if(pzTI.dur||firmaId!==f)break;
-      const u=state.urunler.find(y=>y.id===x.id);let s=null,g=x.govde;
-      if(!u)s={durum:"hata",mesaj:"ürün programda bulunamadı",zaman:Date.now()};
-      else if(!g){try{const r=await pzUrunGovde({...u,miktar:stokMiktar(u)},x.p);if((r.ek||[]).length||!r.govde)s={durum:"hata",mesaj:"eksik bilgi: "+(r.ek||[]).join(", "),zaman:Date.now()};else g=r.govde}
-        catch(e){s={durum:"hata",mesaj:String(e.message||e).slice(0,300),zaman:Date.now()}}}
-      if(!s){if(cb)cb(x.id,x.p,null);s=await pzTIGonder(u,x.p,g)}
-      pzTI.biten++;if(s.durum==="hata")pzTI.hata++;else pzTI.ok++;
-      try{await pzTIKaydet({[x.id]:{[x.p]:s}})}catch(e){}
-      kalan=kalan.slice(1);pzTISira(kalan);if(cb)cb(x.id,x.p,s);pzTIBant()}}
-  finally{pzTI.calisiyor=false;if(!kalan.length)pzTISira(null);pzTIBant()}
-  return true}
-function pzTIBant(){let d=document.getElementById("pzTopluBant");const kalan=pzTI.calisiyor?null:pzTIOku();
-  if(!pzTI.calisiyor&&!pzTI.toplam&&!(kalan&&kalan.length)){if(d)d.remove();return}
+/* Toplu gönderim sunucudaki sıraya (pz_kuyruk) yazılır; gönderimi Supabase sürdürür (sayfa, telefon ya da bilgisayar kapansa da).
+   Sol alttaki bant sıranın durumunu her cihazda gösterir; "Durdur" bekleyenleri iptal eder. */
+const pzTI={dinleyici:null,veri:null,kapat:0,t:null};
+const pzTIEskiAnahtar=()=>"arv-pztoplu-"+firmaId,pzTIKapatAnahtar=()=>"arv-pztoplu-kapat-"+firmaId;
+function pzTIEskiOku(){try{const l=JSON.parse(localStorage.getItem(pzTIEskiAnahtar())||"null");return Array.isArray(l)&&l.length?l:null}catch(e){return null}}
+const pzTISirada=(id,p)=>(pzTI.veri||[]).some(x=>x.urun_id===id&&x.pazaryeri===p&&(x.durum==="bekliyor"||x.durum==="isleniyor"));
+// is: [{id,p,govde}] → sıraya ekler (200'lük parçalar)
+async function pzTIEkle(is){const f=firmaId,uid=oturum&&oturum.user&&oturum.user.id;if(!uid)throw new Error("Giriş gerekli");
+  const satir=is.filter(x=>x.govde).map(x=>{const u=state.urunler.find(y=>y.id===x.id)||{};return {firma_id:f,urun_id:x.id,pazaryeri:x.p,kod:String(u.kod||u.barkod||""),govde:x.govde,olusturan:uid}});
+  for(let i=0;i<satir.length;i+=200){const {error}=await sb.from("pz_kuyruk").insert(satir.slice(i,i+200));if(error)throw new Error(sbMesaj(error))}
+  try{localStorage.removeItem(pzTIKapatAnahtar())}catch(e){}pzTI.kapat=0;
+  await pzTIYenile();return satir.length}
+async function pzTIYenile(){clearTimeout(pzTI.t);if(!sb||!firmaId)return;const f=firmaId;
+  try{pzTI.kapat=Number(localStorage.getItem(pzTIKapatAnahtar()))||0}catch(e){}
+  try{const {data,error}=await sb.from("pz_kuyruk").select("id,urun_id,pazaryeri,durum,sonuc,guncelleme").eq("firma_id",f).neq("durum","iptal").gte("guncelleme",new Date(Date.now()-24*3600000).toISOString()).order("id",{ascending:false}).limit(5000);
+    if(error)throw error;if(firmaId!==f)return;pzTI.veri=data||[]}catch(e){pzTI.veri=pzTI.veri||[]}
+  if(pzTI.dinleyici)try{pzTI.dinleyici(pzTI.veri)}catch(e){}
+  pzTIBant();
+  const bekl=(pzTI.veri||[]).some(x=>x.durum==="bekliyor"||x.durum==="isleniyor");
+  pzTI.t=setTimeout(()=>pzTIYenile(),bekl?15000:120000)}
+function pzTIBant(){let d=document.getElementById("pzTopluBant");const v=pzTI.veri||[],kap=pzTI.kapat||0,eski=pzTIEskiOku();
+  const bekl=v.filter(x=>x.durum==="bekliyor"||x.durum==="isleniyor").length,bit=v.filter(x=>x.durum==="bitti"&&Date.parse(x.guncelleme)>kap);
+  const ht=bit.filter(x=>!x.sonuc||x.sonuc.durum==="hata").length,ok=bit.length-ht;
+  if(!bekl&&!bit.length&&!eski){if(d)d.remove();return}
   if(!d){d=document.createElement("div");d.id="pzTopluBant";
     d.style.cssText="position:fixed;left:16px;bottom:16px;z-index:9998;background:var(--surface,#fff);color:var(--fg,#111);border:1px solid var(--accent,#17624d);border-radius:10px;padding:10px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2);display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.85rem;max-width:calc(100vw - 32px)";
     document.body.appendChild(d);
-    d.addEventListener("click",e=>{const b=e.target.closest("[data-ti]");if(!b)return;const a=b.dataset.ti;
-      if(a==="dur"){pzTI.dur=true;pzTIBant()}
-      else if(a==="devam"){const l=pzTIOku()||[];pzTICalistir(l.map(([id,p])=>({id,p})))}
-      else if(a==="birak"){pzTISira(null);pzTI.toplam=0;pzTIBant()}
-      else if(a==="kapat"){pzTI.toplam=0;pzTIBant()}})}
-  if(pzTI.calisiyor)d.innerHTML=`<span>🚀 Pazaryeri gönderimi: <b>${pzTI.biten}/${pzTI.toplam}</b> · ✓ ${pzTI.ok} · ✕ ${pzTI.hata}${pzTI.dur?" · durduruluyor…":""}</span><button class="small" type="button" data-ti="dur"${pzTI.dur?" disabled":""}>Durdur</button>`;
-  else if(kalan&&kalan.length)d.innerHTML=`<span>🚀 Yarım kalan pazaryeri gönderimi: <b>${kalan.length}</b> gönderim kaldı</span><button class="small primary" type="button" data-ti="devam">Devam et</button><button class="small" type="button" data-ti="birak">Vazgeç</button>`;
-  else d.innerHTML=`<span>✓ Pazaryeri gönderimi bitti: ${pzTI.ok} gönderildi${pzTI.hata?` · ${pzTI.hata} hata (ürün kartında görünür)`:""}</span><button class="small" type="button" data-ti="kapat">Kapat</button>`}
-window.addEventListener("beforeunload",e=>{if(pzTI.calisiyor){e.preventDefault();e.returnValue=""}});
+    d.addEventListener("click",async e=>{const b=e.target.closest("[data-ti]");if(!b)return;const a=b.dataset.ti;b.disabled=true;
+      try{if(a==="dur"){const {error}=await sb.from("pz_kuyruk").update({durum:"iptal",guncelleme:new Date().toISOString()}).eq("firma_id",firmaId).eq("durum","bekliyor");if(error)throw new Error(sbMesaj(error));toast("Bekleyen gönderimler iptal edildi");await pzTIYenile()}
+        else if(a==="kapat"){try{localStorage.setItem(pzTIKapatAnahtar(),String(Date.now()))}catch(_){}pzTI.kapat=Date.now();pzTIBant()}
+        else if(a==="eskiBirak"){try{localStorage.removeItem(pzTIEskiAnahtar())}catch(_){}pzTIBant()}
+        else if(a==="eskiAktar"){const l=pzTIEskiOku()||[],is=[];let eksik=0;
+          for(const [id,p] of l){const u=state.urunler.find(y=>y.id===id);if(!u){eksik++;continue}try{const r=await pzUrunGovde({...u,miktar:stokMiktar(u)},p);if((r.ek||[]).length||!r.govde)eksik++;else is.push({id,p,govde:r.govde})}catch(_){eksik++}}
+          const n=await pzTIEkle(is);try{localStorage.removeItem(pzTIEskiAnahtar())}catch(_){}toast(`${n} gönderim sunucu sırasına eklendi`+(eksik?` · ${eksik} tanesinde eksik bilgi var, eklenmedi`:""))}}
+      catch(err){toast(err.message||String(err));b.disabled=false}})}
+  let h="";
+  if(bekl)h=`<span>🚀 Pazaryeri gönderimi sunucuda sürüyor: <b>${bekl.toLocaleString("tr-TR")}</b> sırada · ✓ ${ok} · ✕ ${ht}</span><button class="small" type="button" data-ti="dur">Durdur</button>`;
+  else if(bit.length)h=`<span>✓ Pazaryeri gönderimi bitti: ${ok} gönderildi${ht?` · ${ht} hata (ürün kartında görünür)`:""}</span><button class="small" type="button" data-ti="kapat">Kapat</button>`;
+  if(eski)h+=`<span>${h?" · ":""}Bu cihazda yarım kalan <b>${eski.length}</b> gönderim var</span><button class="small primary" type="button" data-ti="eskiAktar">Sunucuya aktar</button><button class="small" type="button" data-ti="eskiBirak">Vazgeç</button>`;
+  d.innerHTML=h}
 async function pzTopluAcModal(){
   if(firmaRol!=="sahip"||state.readonly){toast("Pazaryerlerinde ürün açmak için firma sahibi olmalısınız");return}
   const urunler=[...urunSecim].map(id=>state.urunler.find(u=>u.id===id)).filter(Boolean);
@@ -3871,9 +3863,11 @@ async function pzTopluAcModal(){
   const hesapla=async(u,p,k)=>{const h={u,p,ek:[],govde:null,durum:"eksik"};
     if(pzIlanDurum(u,p))h.durum="var";
     else if(k&&((k[u.id]||{})[p]||{}).durum&&/^(gonderildi|tamam)$/.test(k[u.id][p].durum))h.durum="once";
+    else if(pzTISirada(u.id,p))h.durum="sirada";
     else{try{const r=await pzUrunGovde({...u,miktar:stokMiktar(u)},p);h.ek=r.ek||[];h.govde=r.govde}catch(err){h.ek=[err.message||String(err)]}h.durum=h.ek.length||!h.govde?"eksik":"hazir"}
     return h};
-  const ozet=()=>{const say=d=>hucre.filter(h=>h.durum===d).length;return `${say("hazir")} gönderime hazır · ${say("eksik")} eksik bilgi · ${say("var")+say("once")} zaten var / daha önce gönderildi`};
+  const ozet=()=>{const say=d=>hucre.filter(h=>h.durum===d).length;return `${say("hazir")} gönderime hazır · ${say("eksik")} eksik bilgi · ${say("var")+say("once")} zaten var / daha önce gönderildi${say("sirada")?` · ${say("sirada")} sunucu sırasında`:""}`};
+  await pzTIYenile();// sunucu sırasındakiler yeniden gönderilmesin
   const tablo=()=>`<div class="tscroll" style="max-height:45vh"><table><thead><tr><th>Ürün</th>${pzl.map(p=>`<th>${esc(PZ_ADLAR[p])}</th>`).join("")}</tr></thead><tbody>
     ${urunler.map(u=>`<tr><td style="min-width:180px"><b style="font-size:.85rem">${esc(u.ad)}</b><div class="muted" style="font-size:.75rem">${esc(u.barkod||u.kod||"")} · ${money(u.satisFiyat)} · stok ${esc(String(stokMiktar(u)))}</div></td>${pzl.map(p=>{const h=hucre.find(x=>x.u.id===u.id&&x.p===p);if(!h)return `<td class="muted">…</td>`;
       const k=u.id+"|"+p,s=sonuc[k],ek=duz===k?' style="outline:2px solid var(--accent,#17624d);outline-offset:-2px"':"";
@@ -3883,6 +3877,7 @@ async function pzTopluAcModal(){
       if(h.durum==="hazir")return `<td${ek}><label style="display:flex;gap:4px;align-items:center;font-size:.78rem;color:var(--accent,#17624d);font-weight:600"><input type="checkbox" data-tac="${esc(k)}" checked> hazır</label></td>`;
       if(h.durum==="var")return `<td class="muted" style="font-size:.78rem">● zaten var</td>`;
       if(h.durum==="once")return `<td class="muted" style="font-size:.78rem">daha önce gönderildi</td>`;
+      if(h.durum==="sirada")return `<td class="muted" style="font-size:.78rem">⏳ sırada (sunucuda)</td>`;
       return `<td${ek}><div class="neg" style="font-size:.75rem;max-width:180px">${esc(h.ek.join(", "))}</div>${dz}</td>`}).join("")}</tr>`).join("")}</tbody></table></div>`;
   openModal(`<div class="section-head"><h2>🚀 Pazaryerlerinde toplu aç</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div id="taIc"><div class="muted">${urunler.length} ürün × ${pzl.length} pazaryeri hazırlanıyor…</div></div>`,
@@ -4049,22 +4044,40 @@ async function pzTopluAcModal(){
       if(m==="tekrar"){const [id,p]=String(b.dataset.k||"").split("|");if(!id||!p)return;b.disabled=true;
         const hata=await listeyeEkle([id]);if(hata){toast(hata);b.disabled=false;return}
         const s=await gonderBir(id,p);await yaz({[id]:{[p]:s}});if(s.durum==="gonderildi")takip();return}
-      if(m!=="gonder"||gonderildi)return;
-      const sec=[...root.querySelectorAll("[data-tac]:checked")].map(x=>x.dataset.tac.split("|"));
-      if(!sec.length){root.querySelector("#taErr").textContent="Gönderilecek bir şey seçilmedi.";return}
+      if(m==="pzVaz"){root.querySelector("#taPzSec").innerHTML="";return}
+      if(m==="gonder"&&!gonderildi){
+        // Önce hangi pazaryerlerine gönderileceği sorulur (hepsi ya da seçilenler)
+        const sec=[...root.querySelectorAll("[data-tac]:checked")].map(x=>x.dataset.tac.split("|"));
+        if(!sec.length){root.querySelector("#taErr").textContent="Gönderilecek bir şey seçilmedi.";return}
+        const say={};for(const [,p] of sec)say[p]=(say[p]||0)+1;root.querySelector("#taErr").textContent="";
+        const sa=root.querySelector("#taPzSec");sa.innerHTML=`<div class="notice" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"><b>Hangi pazaryerlerine gönderilsin?</b>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">${pzl.filter(p=>say[p]).map(p=>`<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-pzsec="${p}" checked> ${esc(PZ_ADLAR[p])} <span class="muted">(${say[p]})</span></label>`).join("")}</div>
+          <div class="filters"><button class="small primary" type="button" data-m="pzHepsi">Hepsine gönder (${sec.length})</button><button class="small" type="button" data-m="pzSecilen">Seçtiklerime gönder</button><button class="small ghost" type="button" data-m="pzVaz">Vazgeç</button></div></div>`;
+        sa.scrollIntoView({block:"nearest"});return}
+      if((m!=="pzHepsi"&&m!=="pzSecilen")||gonderildi)return;
+      const secPz=new Set(m==="pzHepsi"?pzl:[...root.querySelectorAll("[data-pzsec]:checked")].map(x=>x.dataset.pzsec));
+      const sec=[...root.querySelectorAll("[data-tac]:checked")].map(x=>x.dataset.tac.split("|")).filter(([,p])=>secPz.has(p));
+      if(!sec.length){root.querySelector("#taErr").textContent="Seçilen pazaryerlerinde gönderilecek ürün yok.";return}
       const hata=await listeyeEkle(sec.map(s=>s[0]));if(hata){root.querySelector("#taErr").innerHTML=esc(hata);return}
-      if(pzTI.calisiyor){root.querySelector("#taErr").textContent="Başka bir toplu gönderim sürüyor (sol alttaki bant); bitince yeniden deneyin.";return}
-      gonderildi=true;b.disabled=true;root.querySelectorAll("[data-m=tumu]").forEach(x=>x.disabled=true);
-      for(const [id,p] of sec){sonuc[id+"|"+p]=`<span class="muted">sırada…</span>`;sd[id+"|"+p]=""}ciz();
-      ic.querySelector("#taDurum").innerHTML=`Gönderim arka planda sürüyor: bu pencereyi kapatıp programda çalışmaya devam edebilirsiniz; ilerleme sol alttaki bantta görünür. Program kapanırsa yeniden açtığınızda <b>Devam et</b> ile kaldığı yerden sürer.`;
-      await pzTICalistir(sec.map(([id,p])=>({id,p,govde:(hucre.find(x=>x.u.id===id&&x.p===p)||{}).govde})),(id,p,s)=>{const k=id+"|"+p;
-        if(!s){sonuc[k]=`<span class="muted">gönderiliyor…</span>`;sd[k]=""}
-        else if(s.durum==="zatenVar"){sonuc[k]=`<span class="muted">● zaten var</span>`;sd[k]="zatenVar"}
-        else if(s.durum==="gonderildi"){sonuc[k]=`<span class="muted">⏳ gönderildi, onay bekleniyor</span>`;sd[k]="gonderildi"}
-        else{sonuc[k]=`<span class="neg">✕ ${esc(s.mesaj||"")}</span>`;sd[k]="hata"}
-        if(root.isConnected)ciz()});
-      ic.querySelector("#taDurum").innerHTML=`Gönderim bitti. Hata alanlarda <b>↻ Tekrar gönder</b>, eksik ya da reddedilenlerde <b>✏️ Düzelt</b> kullanabilirsiniz. Onay sonuçları 20 saniyede bir soruluyor (pencere açık kaldıkça); pencereyi kapatırsanız sonuçları her ürünün kartında görebilirsiniz.`;
-      takip();
+      const kilit=d=>root.querySelectorAll("[data-m=gonder],[data-m=tumu],[data-m=pzHepsi],[data-m=pzSecilen]").forEach(x=>x.disabled=d);
+      gonderildi=true;kilit(true);
+      const benim=new Set(sec.map(([id,p])=>id+"|"+p));
+      try{const n=await pzTIEkle(sec.map(([id,p])=>({id,p,govde:(hucre.find(x=>x.u.id===id&&x.p===p)||{}).govde})));
+        for(const k of benim){sonuc[k]=`<span class="muted">⏳ sırada (sunucuda)</span>`;sd[k]=""}
+        root.querySelector("#taPzSec").innerHTML="";ciz();
+        ic.querySelector("#taDurum").innerHTML=`${n} gönderim sunucudaki sıraya eklendi. Gönderimi sunucu sürdürür: bu pencereyi, programı, hatta bilgisayarı kapatabilirsiniz. Sunucu sırayı dakikada bir işler; ilerleme sol alttaki bantta (her cihazda) görünür, sonuçlar ürün kartlarına yazılır.`}
+      catch(err){gonderildi=false;kilit(false);root.querySelector("#taErr").textContent="Sıraya eklenemedi: "+(err.message||err);return}
+      // Sıradaki sonuçları pencereye yansıt (pencere açık kaldıkça)
+      pzTI.dinleyici=rows=>{if(!root.isConnected){pzTI.dinleyici=null;return}const gor=new Set();let degisti=false;
+        for(const x of rows){const k=x.urun_id+"|"+x.pazaryeri;if(!benim.has(k)||gor.has(k))continue;gor.add(k);const s=x.sonuc||{};let h,t;
+          if(x.durum==="bekliyor"){h=`<span class="muted">⏳ sırada (sunucuda)</span>`;t=""}
+          else if(x.durum==="isleniyor"){h=`<span class="muted">gönderiliyor…</span>`;t=""}
+          else if(s.durum==="zatenVar"){h=`<span class="muted">● zaten var</span>`;t="zatenVar"}
+          else if(s.durum==="gonderildi"){h=`<span class="muted">⏳ gönderildi, onay bekleniyor</span>`;t="gonderildi"}
+          else{h=`<span class="neg">✕ ${esc(s.mesaj||"")}</span>`;t="hata"}
+          if(sonuc[k]!==h){sonuc[k]=h;sd[k]=t;degisti=true}}
+        if(degisti)ciz();if(Object.values(sd).includes("gonderildi"))takip()};
+      pzTI.dinleyici(pzTI.veri||[]);
     });
     (async()=>{const k=acKayit();
       for(const u of urunler)for(const p of pzl)hucre.push(await hesapla(u,p,k));
@@ -4074,7 +4087,7 @@ async function pzTopluAcModal(){
         <div class="muted" id="taOzet" style="font-size:.85rem;margin:6px 0">${ozet()}</div><div id="taTablo">${tablo()}</div>
         <div id="taDuzelt"></div>
         <div class="muted" id="taDurum" style="font-size:.82rem;margin-top:6px">Eksik bilgisi olan hücrelerde <b>✏️ Düzelt</b> ile eksikleri burada tamamlayabilirsiniz.</div>
-        <div class="err" id="taErr"></div>
+        <div class="err" id="taErr"></div><div id="taPzSec"></div>
         <div class="modal-foot"><button type="button" data-m="close">Kapat</button><button type="button" data-m="tumu">Seçimi tersine çevir</button><button type="button" class="primary" data-m="gonder">Evet, işaretlileri aç</button></div>`})()})}
 /* Zorunlu özellikleri otomatik doldurma (yalnızca programdaki eşleştirmelere ve ürünlere yazar; pazaryerlerine hiçbir şey göndermez).
    Eşleşmiş her kategori × pazaryeri için eksik zorunlu özellikler okunur ve öneri çıkarılır:
@@ -5746,9 +5759,9 @@ async function veriBaslat(){
     .subscribe();
   render();
   // Uygulama öne gelince (telefonda arka plandan dönüş) veriler ve öteki bilgisayarlardan gelen ilan / öneri bilgileri yenilenir
-  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId){veriYenile();if(pzIlan.firma===firmaId)pzIlanOrtakCek(firmaId).catch(()=>{});if(pzOE.firma===firmaId)pzOEOrtakCek().then(d=>{if(d)pzOEAyikla()}).catch(()=>{})}});
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId){veriYenile();pzTIYenile();if(pzIlan.firma===firmaId)pzIlanOrtakCek(firmaId).catch(()=>{});if(pzOE.firma===firmaId)pzOEOrtakCek().then(d=>{if(d)pzOEAyikla()}).catch(()=>{})}});
   yengecHazirBildir();
-  pzTIBant();// yarım kalan toplu pazaryeri gönderimi varsa "Devam et" bandı
+  pzTIYenile();// sunucu gönderim sırası / bu cihazda yarım kalan gönderim varsa sol alt bant
   setTimeout(()=>efatSenk(false),4000);
   if(!window._efatZamanlayici)window._efatZamanlayici=setInterval(()=>efatSenk(false),15*60*1000);
   if(!window._pzCanliZamanlayici)window._pzCanliZamanlayici=setInterval(()=>pzCanliYenile(),60000);
@@ -5834,7 +5847,7 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();kurulumOlay
 // kontrol edilir; yeni sürüm hazır olunca açık pencere / yazılan alan yoksa sayfa yenilenir, varsa altta "Yenile" bandı çıkar.
 if("serviceWorker" in navigator&&location.protocol==="https:"){
   const vardi=!!navigator.serviceWorker.controller;let bekleyen=false,yenilendi=false;
-  const mesgul=()=>{const m=document.getElementById("modalRoot"),a=document.activeElement;return !!(pzTI.calisiyor||(m&&m.children.length)||(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))};
+  const mesgul=()=>{const m=document.getElementById("modalRoot"),a=document.activeElement;return !!((m&&m.children.length)||(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))};
   const bant=()=>{if(document.getElementById("surumBandi"))return;const d=document.createElement("div");d.id="surumBandi";
     d.style.cssText="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:9999;background:#1f5f4a;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;font-size:.9rem;max-width:calc(100vw - 32px)";
     d.innerHTML='<span>Programın yeni sürümü hazır.</span><button type="button" style="background:#fff;color:#1f5f4a;border:0;border-radius:8px;padding:6px 12px;font-weight:600">Yenile</button>';
