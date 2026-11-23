@@ -187,6 +187,65 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
 .logo-baslik img{height:40px;width:auto;border-radius:8px;display:block}
 .gizli{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi .val{font-size:1.1rem}.top-row{padding-block:10px}}
+/* ---------- Mobil (telefon) düzeni ---------- */
+.alt-nav,.alt-menu{display:none}
+@media (max-width:700px){
+  nav.tabs{display:none}
+  .top-row{gap:8px;padding-block:8px}
+  .logo-baslik img{height:32px}
+  #yedekBtn{display:none}
+  main{padding-block:14px calc(90px + env(safe-area-inset-bottom,0px));gap:14px}
+  .wrap{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+  .kpis{gap:8px}
+  .kpi{padding:10px 12px}
+  .kpi .val{font-size:clamp(.92rem,4.3vw,1.1rem);white-space:nowrap;overflow-wrap:normal;letter-spacing:-.02em}
+  .panel{padding:12px}
+  .filters>input,.filters>select{flex:1 1 140px}
+  input,select,textarea{font-size:16px}
+  .section-head h2{font-size:1.05rem}
+  /* Alt gezinme çubuğu */
+  .alt-nav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px color-mix(in srgb,#000 8%,transparent)}
+  .alt-nav a,.alt-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-radius:0;background:transparent;color:var(--muted);text-decoration:none;font-size:.7rem;font-weight:600}
+  .alt-nav .ik{font-size:1.25rem;line-height:1}
+  .alt-nav [aria-current="page"],.alt-nav button[aria-expanded="true"]{color:var(--accent)}
+  .alt-menu:not([hidden]){display:block;position:fixed;inset:0;z-index:14;background:color-mix(in srgb,#000 40%,transparent)}
+  .alt-menu .sayfa{position:absolute;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom,0px));background:var(--surface);border-radius:14px 14px 0 0;padding:14px 12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:70vh;overflow-y:auto}
+  .alt-menu a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--fg);font-size:.8rem;font-weight:600;text-align:center}
+  .alt-menu a .ik{font-size:1.3rem}
+  .alt-menu a[aria-current="page"]{border-color:var(--accent);background:var(--accent-soft)}
+  .toast{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  #pzTopluBant{bottom:calc(68px + env(safe-area-inset-bottom,0px))!important;left:12px!important;max-width:calc(100vw - 24px)!important}
+  /* Pencereler (modal) telefonda tam ekrana yakın */
+  .overlay{padding:max(8px,env(safe-area-inset-top,0px)) 0 0}
+  .modal{border-radius:14px 14px 0 0;padding:14px 12px calc(20px + env(safe-area-inset-bottom,0px));min-height:calc(100vh - 8px);max-width:none}
+  .modal-foot{position:sticky;bottom:0;background:var(--surface);padding-top:8px}
+  .modal-foot>button{flex:1}
+  /* Tablolar kart görünümü: her satır bir kart, sütun adı solda */
+  table.kart{min-width:0!important;table-layout:auto!important;font-size:.88rem}
+  table.kart thead{display:none}
+  table.kart,table.kart tbody,table.kart tfoot,table.kart tr,table.kart td{display:block;width:auto!important}
+  table.kart tr{border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin-bottom:8px;background:var(--surface)}
+  table.kart tfoot tr{background:var(--surface-2)}
+  table.kart td{border:0;padding:4px 0;display:flex;justify-content:space-between;align-items:baseline;gap:12px;text-align:right;white-space:normal;min-height:0}
+  table.kart td[data-label]::before{content:attr(data-label);font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;text-align:left;flex-shrink:0;max-width:45%}
+  table.kart td:not([data-label]){justify-content:flex-start;text-align:left}
+  table.kart td.kart-bas{font-weight:600;font-size:.95rem;text-align:left;justify-content:flex-start;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:2px}
+  table.kart td.kart-bas::before{display:none}
+  table.kart td:empty{display:none}
+  table.kart .rowact{justify-content:flex-end;flex-wrap:wrap}
+  table.kart td[colspan]{justify-content:flex-start;text-align:left}
+  table.kart tr{position:relative}
+  table.kart td:has(>input[type=checkbox]:only-child){position:absolute;right:8px;top:6px;padding:0}
+  table.kart td.kart-bas{padding-right:34px}
+  body.kapali .alt-nav,body.kapali .alt-menu{display:none!important}
+  .tscroll:has(>table.kart){overflow-x:visible}
+}
+@media (pointer:coarse){
+  button,.btn{min-height:40px}
+  .small{min-height:36px;padding:6px 12px}
+  input[type=checkbox],input[type=radio]{width:20px;height:20px}
+  .alt-nav a,.alt-nav button{min-height:58px}
+}
 </style>
 
 </head>
@@ -229,6 +288,21 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
 <div id="toastRoot"></div>
 <div id="printArea"></div>
 <style id="posSayfa"></style>
+<nav class="alt-nav" id="altNav" aria-label="Ana menü">
+  <a href="#satis"><span class="ik" aria-hidden="true">🧾</span>Satış</a>
+  <a href="#stok"><span class="ik" aria-hidden="true">📦</span>Ürünler</a>
+  <a href="#faturalar"><span class="ik" aria-hidden="true">📄</span>Faturalar</a>
+  <a href="#ozet"><span class="ik" aria-hidden="true">📊</span>Özet</a>
+  <button type="button" id="altMenuBtn" aria-expanded="false" aria-controls="altMenu"><span class="ik" aria-hidden="true">☰</span>Menü</button>
+</nav>
+<div class="alt-menu" id="altMenu" hidden><div class="sayfa" role="menu">
+  <a href="#satis"><span class="ik">🧾</span>Satış</a><a href="#stok"><span class="ik">📦</span>Ürünler</a><a href="#tedarik"><span class="ik">🚚</span>Tedarikçiler</a>
+  <a href="#siparis"><span class="ik">🛍</span>Siparişler</a><a href="#pazaryeri"><span class="ik">🛒</span>Pazaryeri</a><a href="#faturalar"><span class="ik">📄</span>Faturalar</a>
+  <a href="#cariler"><span class="ik">👥</span>Cariler</a><a href="#personeller"><span class="ik">🧑‍💼</span>Personeller</a><a href="#bankalar"><span class="ik">🏦</span>Bankalar</a>
+  <a href="#gelirler"><span class="ik">⬇️</span>Gelirler</a><a href="#giderler"><span class="ik">⬆️</span>Giderler</a><a href="#hareketler"><span class="ik">↔️</span>Hareketler</a>
+  <a href="#teklifler"><span class="ik">📝</span>Teklifler</a><a href="#rapor"><span class="ik">📈</span>Aylık rapor</a><a href="#ozet"><span class="ik">📊</span>Özet</a>
+  <a href="#ajanda"><span class="ik">📅</span>Ajanda</a><a href="#" data-alt="yedek"><span class="ik">💾</span>Yedek al</a>
+</div></div>
 
 <script>
 (function(){
@@ -320,12 +394,37 @@ function setView(){
   const h=(location.hash||"").replace("#",""),once=view;
   view=VIEWS.includes(h)?h:"ozet";
   if(once!==view&&typeof urunSecim!=="undefined")urunSecim.clear();// sekme değişince ürün seçimi temizlenir
-  document.querySelectorAll("#tabs a").forEach(a=>{
+  document.querySelectorAll("#tabs a,#altNav a,#altMenu a").forEach(a=>{
     if(a.getAttribute("href")==="#"+view)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");
   });
+  altMenuAc(false);
   render();
 }
 window.addEventListener("hashchange",setView);
+/* Telefon: alt menü (bütün sekmeler) */
+function altMenuAc(ac){const m=document.getElementById("altMenu"),b=document.getElementById("altMenuBtn");if(!m||!b)return;m.hidden=!ac;b.setAttribute("aria-expanded",ac?"true":"false")}
+document.addEventListener("click",e=>{
+  if(e.target.closest("#altMenuBtn")){altMenuAc(document.getElementById("altMenu").hidden);return}
+  const y=e.target.closest('#altMenu [data-alt="yedek"]');if(y){e.preventDefault();altMenuAc(false);document.getElementById("yedekBtn").click();return}
+  if(e.target.id==="altMenu")altMenuAc(false);
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")altMenuAc(false)});
+/* Telefon: tablolar kart görünümünde gösterilir. Her hücreye sütun adı (data-label) yazılır; düzen CSS'te (max-width:700px).
+   Hariç: satış sepeti, sabit düzenli tablolar, pencerelerdeki (modal) tablolar ve "kart-yok" işaretliler. */
+function tabloKartla(kok){
+  for(const t of (kok||document).querySelectorAll("table:not(.kart):not(.kart-yok):not(.pos-cart):not(.td-tbl)")){
+    if(t.closest(".modal,#printArea,.pos-sol,.kasa-grid"))continue;
+    const th=t.tHead&&t.tHead.rows[0];if(!th)continue;
+    const adlar=[];for(const c of th.cells){const n=c.colSpan||1;for(let i=0;i<n;i++)adlar.push(c.textContent.trim())}
+    let ilkMetin=-1;
+    for(const tb of t.tBodies)for(const r of tb.rows){let k=0;
+      for(const c of r.cells){const ad=adlar[k]||"";if(ad&&!c.hasAttribute("colspan"))c.setAttribute("data-label",ad);k+=c.colSpan||1}}
+    // Kart başlığı: ilk sütun adı olan ve içinde form öğesi olmayan sütun (ör. ürün adı, cari, fatura no)
+    for(let i=0;i<adlar.length;i++){if(adlar[i]){ilkMetin=i;break}}
+    if(ilkMetin>=0)for(const tb of t.tBodies)for(const r of tb.rows){let k=0;for(const c of r.cells){if(k===ilkMetin&&!c.hasAttribute("colspan")&&!c.querySelector("input,select,button")){c.classList.add("kart-bas");c.removeAttribute("data-label")}k+=c.colSpan||1}}
+    t.classList.add("kart")}}
+(()=>{const m=document.getElementById("main");if(!m||typeof MutationObserver==="undefined")return;let bekle=0;
+  new MutationObserver(()=>{if(bekle)return;bekle=requestAnimationFrame(()=>{bekle=0;tabloKartla(m)})}).observe(m,{childList:true,subtree:true})})();
 
 function notices(){
   let s="";
@@ -1566,7 +1665,7 @@ function vStok(){
       <select id="fSDurum" data-filter="sDurum" aria-label="Durum"><option value="">Tüm durumlar</option><option value="ok" ${ui.sDurum==="ok"?"selected":""}>Yeterli</option><option value="kritik" ${ui.sDurum==="kritik"?"selected":""}>Kritik</option><option value="yok" ${ui.sDurum==="yok"?"selected":""}>Stokta yok</option></select>
       ${ilanPz.length?`<select id="fSPz" data-filter="sPz" aria-label="Pazaryeri durumu"><option value="">Tüm pazaryeri durumları</option>${ilanPz.map(p=>[["ak","'da aktif"],["pa","'da pasif"],["yok","'da yok"]].map(([t,ad])=>`<option value="${p}:${t}" ${ui.sPz===p+":"+t?"selected":""}>${esc(PZ_ADLAR[p])}${ad}</option>`).join("")).join("")}</select>`:""}
       <select id="fSSira" data-act-sayfa="sira" aria-label="Sıralama" title="Sıralama">${Object.entries(URUN_SIRA).map(([k,v])=>`<option value="${k}" ${(ui.sSira||"adAZ")===k?"selected":""}>↕ ${v[0]}</option>`).join("")}</select>
-      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uListeSec" type="button" title="Barkod veya stok kodu listesini yapıştırın (Excel'den sütun kopyalayabilirsiniz); o ürünler seçilir">📋 Listeden seç</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}${ro?"":`<button class="small" data-act="pzIlanOku" type="button" ${pzIlanIs?"disabled":""} title="Bağlı pazaryerlerindeki ilanları okur (hiçbir şey göndermez); ürünlerin yanında hangi pazaryerinde aktif / pasif olduğu görünür">🛒 Pazaryeri durumlarını oku</button>${PZ_ILAN.some(p=>pzIlan.veri[p])?`<button class="small" data-act="pzIlanYeni" type="button" title="Yalnız programdan açılmış ama rozeti henüz aktif olmayan ürünleri sorar (hızlı). Program açıkken ~30 dakikada bir kendiliğinden de çalışır.">↻ Yenileri kontrol et</button>`:""}<button class="small" data-act="pzFiyatRapor" type="button" title="Pazaryerlerindeki fiyatı programdaki satış fiyatından farklı olan ürünleri listeler">💰 Fiyat farkı raporu</button>`}
+      ${ro||!list.length?"":`<button class="small" data-act="uHepsi" type="button">${hepsiSecili?"☐ Seçimi kaldır":"☑ Hepsini seç ("+list.length.toLocaleString("tr-TR")+")"}</button>`}${ro?"":`<button class="small" data-act="uListeSec" type="button" title="Barkod veya stok kodu listesini yapıştırın (Excel'den sütun kopyalayabilirsiniz); o ürünler seçilir">📋 Listeden seç</button>`}${ro?"":`<button class="small" data-act="uKatDuzelt" type="button" title="Hazırlanmış kategori düzeltme listesini (.json) yükleyip onayla uygular">📂 Kategori düzeltme dosyası</button>`}${ro?"":`<button class="small" data-act="pzIlanOku" type="button" ${pzIlanIs?"disabled":""} title="Bağlı pazaryerlerindeki ilanları okur (hiçbir şey göndermez); ürün seçiliyse yalnız seçilenler okunur">${urunSecim.size?"🛒 Seçili "+urunSecim.size.toLocaleString("tr-TR")+" ürünün durumunu oku":"🛒 Pazaryeri durumlarını oku"}</button>${PZ_ILAN.some(p=>pzIlan.veri[p])?`<button class="small" data-act="pzIlanYeni" type="button" title="Yalnız programdan açılmış ama rozeti henüz aktif olmayan ürünleri sorar (hızlı). Program açıkken ~30 dakikada bir kendiliğinden de çalışır.">↻ Yenileri kontrol et</button>`:""}<button class="small" data-act="pzFiyatRapor" type="button" title="Pazaryerlerindeki fiyatı programdaki satış fiyatından farklı olan ürünleri listeler">💰 Fiyat farkı raporu</button>`}
     </div>
     <div id="pzIlanBilgi">${pzIlanBilgi()}</div>
     ${!ro&&urunSecim.size?`<div class="toplu-bar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(23,98,77,.08));border:1px solid var(--accent,#17624d)">
@@ -4829,10 +4928,47 @@ function pzIlanFiltre(u,f){if(!f)return true;const [p,t]=f.split(":");const d=pz
 function pzIlanBilgi(){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(pzIlanIs)return `<div class="muted" style="font-size:.82rem">🛒 ${esc(PZ_ADLAR[pzIlanIs.pz]||"")} ilanları okunuyor… ${pzIlanIs.not?esc(pzIlanIs.not)+" · birkaç dakika sürebilir":pzIlanIs.adet.toLocaleString("tr-TR")}</div>`;
   if(!l.length)return "";const en=Math.min(...l.map(p=>pzIlan.veri[p].zaman||0));
   return `<div class="muted" style="font-size:.78rem">Pazaryeri rozetleri: <b style="color:var(--fg)">●</b> aktif (satışta) · ○ pasif / onay bekliyor · rozet yoksa o pazaryerinde ilan yok. Programdan açılan ürünlerin rozeti kendiliğinden güncellenir (~30 dakikada bir); pazaryeri panelinden eklenenler için ara sıra baştan okuyun. Son baştan okuma ${new Date(en).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · ${l.map(p=>`${esc(PZ_ADLAR[p])} ${(pzIlan.veri[p].adet||0).toLocaleString("tr-TR")}${pzIlan.veri[p].hata?" ⚠":""}`).join(" · ")}</div>`}
+// Seçili ürünlerin rozetinden o pazaryerini kaldırır (ürün o pazaryerinde bulunamadı)
+function pzIlanKaldir(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return false;let deg=false;
+  for(const key of [pzKimlik(u.barkod),pzKimlik(u.kod)])if(key&&d.m[key]){delete d.m[key];deg=true}
+  if(deg){d.degis=Date.now();_pzIlanDegisen.add(p)}return deg}
+/* Yalnız seçili ürünlerin pazaryeri durumunu okur (baştan okuma yerine ürün ürün sorar). Yalnızca okuma; hiçbir şey göndermez. */
+async function pzIlanSeciliOku(ids,bagli){const f=firmaId;const urunler=ids.map(id=>state.urunler.find(u=>u.id===id)).filter(Boolean);
+  if(!urunler.length){toast("Seçili ürün bulunamadı");return}
+  const hatalar=[];let n=0;
+  const sayac=()=>{const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=pzIlanBilgi()};
+  try{for(const p of bagli){
+      if(!pzIlan.veri[p])pzIlan.veri[p]={zaman:Date.now(),degis:Date.now(),adet:0,m:{},hata:""};
+      pzIlanIs={pz:p,adet:0,not:""};sayac();
+      try{
+        if(p==="trendyol"){for(const u of urunler){if(pzIlan.firma!==f)return;let bulundu=false;
+            for(const k of [u.barkod,u.kod].map(x=>String(x||"").trim()).filter(Boolean)){
+              const r=await pzCagir({islem:"urunler",sayfa:0,barkod:k});const t=(r.urunler||[]).find(x=>pzKimlik(x.barkod)===pzKimlik(k)||pzKimlik(x.stokKodu)===pzKimlik(k));
+              if(t){bulundu=true;if(pzIlanYaz(u,p,[t.satista?1:0,Number(t.stok)||0,t.satista?"":"satışta değil / arşiv",Number(t.fiyat)||0]))n++;break}}
+            if(!bulundu&&pzIlanKaldir(u,p))n++;pzIlanIs.adet++;sayac()}}
+        else if(p==="amazon"){for(const u of urunler){if(pzIlan.firma!==f)return;const kod=String(u.kod||u.barkod||"").trim();if(!kod)continue;
+            const r=await pzCagir({islem:"urunSonuc",pazaryeri:p,kod});
+            if(r.durum==="tamam"){const sat=/satışta/.test(String(r.mesaj||""));if(pzIlanYaz(u,p,[sat?1:0,Math.max(0,Math.floor(Number(u.miktar)||0)),sat?(r.asin||""):String(r.mesaj||"")+(r.asin?" · "+r.asin:""),Number(u.satisFiyat)||0]))n++}
+            else if(r.durum==="hata"){if(pzIlanYaz(u,p,[0,0,String(r.mesaj||"hata").slice(0,200),0]))n++}
+            else if(/henüz işliyor/.test(String(r.mesaj||""))){if(pzIlanKaldir(u,p))n++}
+            pzIlanIs.adet++;sayac()}}
+        else{const kod=u=>p==="n11"?(u.kod||u.barkod):(u.barkod||u.kod);
+          for(let i=0;i<urunler.length;i+=20){if(pzIlan.firma!==f)return;const parca=urunler.slice(i,i+20);
+            const r=await pzCagir({islem:"ilanBul",pazaryeri:p,kodlar:parca.map(kod)});const bul=new Set();
+            for(const x of r.sonuclar||[]){if(!x.ilan)continue;const u=parca.find(y=>pzKimlik(kod(y))===pzKimlik(x.kod));if(!u)continue;bul.add(u.id);
+              if(pzIlanYaz(u,p,[x.ilan.a?1:0,Number(x.ilan.s)||0,String(x.ilan.d||""),Number(x.ilan.f)||0]))n++}
+            for(const u of parca)if(!bul.has(u.id)&&pzIlanKaldir(u,p))n++;
+            pzIlanIs.adet+=parca.length;sayac()}}}
+      catch(err){const m=err.message||String(err);if(!/bu işlem henüz yok|Bilinmeyen işlem/i.test(m))hatalar.push(PZ_ADLAR[p]+": "+m.slice(0,120))}}
+    pzIlanSakla()}
+  finally{pzIlanIs=null;render()}
+  toast((hatalar.length?"Bazı pazaryerleri okunamadı: "+hatalar.join(" · ").slice(0,300)+" · ":"")+urunler.length+" seçili ürün kontrol edildi · "+n+" rozet güncellendi")}
 async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
   // Not: pzBagliAl otomatik işlemeden hariç tutulanları (ör. Amazon) çıkarır; ilan okuma (yalnızca okuma) tüm bağlı pazaryerlerini kapsar
   let tum=null;try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:f});tum=(data||[]).map(x=>x.pazaryeri)}catch(e){}
   const bagli=(tum||await pzBagliAl()).filter(k=>PZ_ILAN_OKU.includes(k)).sort((a,b)=>PZ_ILAN_OKU.indexOf(a)-PZ_ILAN_OKU.indexOf(b));if(!bagli.length){toast("Bağlı pazaryeri bulunamadı");return}
+  // Ürün seçiliyse yalnız seçilenler okunur
+  if(urunSecim.size)return pzIlanSeciliOku([...urunSecim],bagli);
   const veri={...pzIlan.veri},hatalar=[];
   try{for(const p of bagli){pzIlanIs={pz:p,adet:0};render();const m={};let imlec=null,adet=0,onceki="",hata="";
       try{for(let i=0;i<600;i++){let l,sonraki;
