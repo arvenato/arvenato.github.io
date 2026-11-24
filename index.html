@@ -1674,19 +1674,33 @@ async function faturaSatirExcel(btn){
     if(ok)toast(`${sec.length} fatura, ${satirlar.length} satır indirildi`+(alinamayan.length?` · ${alinamayan.length} e-faturanın kalemleri Trendyol'dan alınamadı (köprü bu bilgisayarda çalışıyor mu?), programdaki satırlar yazıldı`:""));
   }catch(e){toast("Excel oluşturulamadı: "+(e&&e.message==="load"?"internet gerekli":(e.message||e)))}
   finally{if(btn){btn.disabled=false;btn.textContent=eskiYazi}}}
-// Faturayı program içinde gösterir (indirmeden); yazdır ve indir düğmeleriyle
+/* Faturayı program içinde gösterir. e-Faturam'dan gelen (ETTN'li) faturalarda orijinal PDF, bilgisayardaki e-Fatura köprüsünden alınır;
+   köprüye ulaşılamazsa programdaki bilgilerden hazırlanan özet gösterilir. */
+async function faturaPdfAl(f){
+  const tipler=f.tur==="alis"?["GELEN"]:["EFATURA","EARSIV"];let son="";
+  for(const tip of tipler){const c=new AbortController(),t=setTimeout(()=>c.abort(),60000);
+    try{const r=await fetch(EFK+"/pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uuid:f.ettn,tip,profil:efatProfil()}),signal:c.signal});
+      if(r.ok){const b=await r.blob();if(b.size>500)return new Blob([b],{type:"application/pdf"})}
+      else{try{son=(await r.json()).hata||""}catch(e){}}}
+    catch(e){son=e.name==="AbortError"?"zaman aşımı":"köprüye ulaşılamadı"}finally{clearTimeout(t)}}
+  throw new Error(son||"PDF alınamadı")}
 function faturaGorModal(id){
-  const f=state.faturalar.find(x=>x.id===id);if(!f)return;let html;
-  try{html=teklifHtml(faturaBelge(f))}catch(e){toast("Fatura gösterilemedi");return}
+  const f=state.faturalar.find(x=>x.id===id);if(!f)return;let pdf=null,pdfUrl="";
   openModal(`<div class="section-head"><h2>${esc(f.no)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">${esc(teklifMusteri(f))} · ${money(f.toplam)}</div>
-    <iframe id="fgCerceve" title="Fatura ${esc(f.no)}" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>
+    <div class="muted" id="fgDurum" role="status" style="font-size:.85rem"></div>
+    <iframe id="fgCerceve" title="Fatura ${esc(f.no)}" style="width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>
     <div class="modal-foot"><button type="button" data-m="yazdir">Yazdır</button><button type="button" data-m="indir">İndir</button><button type="button" class="primary" data-m="close">Kapat</button></div>`,
-  root=>{const c=root.querySelector("#fgCerceve");c.srcdoc=html;
-    root.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;
-      if(a==="close")closeModal();
-      else if(a==="yazdir"){try{c.contentWindow.focus();c.contentWindow.print()}catch(err){toast("Yazdırılamadı")}}
-      else if(a==="indir"){closeModal();faturaIndirModal(id)}})});
+  root=>{const c=root.querySelector("#fgCerceve"),d=root.querySelector("#fgDurum");
+    const ozet=neden=>{try{c.removeAttribute("src");c.srcdoc=teklifHtml(faturaBelge(f))}catch(e){}d.innerHTML=`<span style="color:var(--out)">Orijinal fatura açılamadı${neden?" ("+esc(neden)+")":""}; programdaki bilgilerden hazırlanan özet gösteriliyor.</span>${f.ettn?" Orijinali görmek için programı e-Fatura köprüsünün kurulu olduğu bilgisayarda açın.":" Bu fatura e-Faturam'dan alınmadığı için orijinali programda yok."}`};
+    const kapat=()=>{if(pdfUrl)setTimeout(()=>URL.revokeObjectURL(pdfUrl),1000);closeModal()};
+    if(f.ettn&&efatProfil()){d.textContent="Orijinal fatura e-Faturam'dan alınıyor…";
+      faturaPdfAl(f).then(b=>{if(!root.isConnected)return;pdf=b;pdfUrl=URL.createObjectURL(b);c.src=pdfUrl;d.textContent="e-Faturam'daki orijinal fatura."}).catch(e=>{if(root.isConnected)ozet(e.message)})}
+    else ozet("");
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;
+      if(a==="close")kapat();
+      else if(a==="yazdir"){try{if(pdfUrl){const w=window.open(pdfUrl,"_blank");if(!w)toast("Açılır pencere engellendi")}else{c.contentWindow.focus();c.contentWindow.print()}}catch(err){toast("Yazdırılamadı")}}
+      else if(a==="indir"){if(pdf){if(await dosyaKaydet(f.no+".pdf",pdf))toast(f.no+" indirildi")}else{kapat();faturaIndirModal(id)}}})});
 }
 function faturaIndirModal(id){
   const f=state.faturalar.find(x=>x.id===id);if(!f)return;const t=faturaBelge(f);
