@@ -1824,6 +1824,7 @@ function vStok(){
       <button class="small" data-act="uToplu" data-id="kdv" type="button">KDV</button><button class="small" data-act="uToplu" data-id="birim" type="button">Birim</button>
       <button class="small" data-act="uToplu" data-id="stok" type="button">Stok (ekle / çıkar / eşitle)</button>
       ${firmaRol==="sahip"&&sb?`<button class="small primary" data-act="pzTopluAc" type="button" title="Seçili ürünleri bağlı pazaryerlerinde açar (önce hazır mı tablosu ve onay)">🚀 Pazaryerlerinde aç</button>`:""}
+      <button class="small primary" data-act="pzFsSecili" type="button" title="Seçili ürünlerin programdaki satış fiyatını ve stoğunu seçtiğiniz pazaryerlerine gönderir">🔄 Pazaryerine fiyat / stok gönder</button>
       <button class="small" data-act="tyGorselSecili" type="button" title="Seçili ürünlerin görsellerini ve açıklamasını Trendyol'dan alır">🖼 Görselleri Trendyol'dan çek</button>
       <button class="small" data-act="uToplu" data-id="satis" type="button">Satış fiyatı</button><button class="small" data-act="uToplu" data-id="alis" type="button">Alış fiyatı</button>
       <button class="small" data-act="uToplu" data-id="kritik" type="button">Kritik seviye</button><button class="small" data-act="uToplu" data-id="barkod" type="button" title="Barkodu boş olup stok kodu barkod gibi (8–14 rakam) olan ürünlerde stok kodunu Barkod alanına da yazar">Barkodu stok kodundan al</button><button class="small" data-act="uExcel" type="button">Excel'e aktar</button>
@@ -2179,6 +2180,46 @@ async function pzFsSiraya(is){if(!is.length)return 0;
   for(const x of is){const d=pzIlanDurum(x.u,x.p);if(!d)continue;pzIlanYaz(x.u,x.p,x.islem==="fiyatGonder"?[d[0],d[1],d[2],r2(x.satis)]:[d[0],Math.floor(Number(x.stok)||0),d[2],d[3]])}
   pzIlanSakla();return n}
 const _frBuyuk=(eski,yeni)=>eski>0&&(yeni<eski*0.5||yeni>eski*2);
+/* Ürünler › seçili ürünler › "Pazaryerine fiyat / stok gönder": programdaki satış fiyatı ve stok, seçilen pazaryerlerindeki ilanlara
+   sunucu gönderim sırasıyla (pzFsSiraya) gider. Yalnızca o pazaryerinde ilanı olan ürünler gönderilir. */
+function pzFsSeciliModal(secili){
+  if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
+  const urunler=state.urunler.filter(u=>secili.has(u.id));
+  const sayi=Object.fromEntries(PZ_FS_YAZ.map(p=>[p,urunler.filter(u=>pzIlanDurum(u,p)).length]));
+  const pzl=PZ_FS_YAZ.filter(p=>pzIlan.veri[p]);
+  openModal(`<div class="section-head"><h2>🔄 Pazaryerine fiyat / stok gönder · ${urunler.length.toLocaleString("tr-TR")} seçili ürün</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">Programdaki satış fiyatı ve stok, seçtiğiniz pazaryerlerindeki ilanlara gönderilir. Yalnızca o pazaryerinde ilanı olan ürünler gönderilir; gönderim sunucu sırasıyla yapılır, pencere kapansa da gider.</div>
+    <div><b style="font-size:.9rem">Pazaryerleri</b>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px">${pzl.length?pzl.map(p=>`<label style="display:flex;gap:6px;align-items:center;font-size:.9rem${sayi[p]?"":";opacity:.55"}"><input type="checkbox" data-fsp="${p}" ${sayi[p]?"checked":"disabled"}> ${esc(PZ_ADLAR[p])} <span class="muted">(${sayi[p].toLocaleString("tr-TR")} ilan)</span></label>`).join(""):`<span class="muted">Pazaryeri ilanları henüz okunmamış. Önce Ürünler ekranında "🛒 Pazaryeri durumlarını oku" ile okuyun.</span>`}</div></div>
+    <div><b style="font-size:.9rem">Ne gönderilsin?</b>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px">
+        <label style="display:flex;gap:6px;align-items:center;font-size:.9rem"><input type="checkbox" id="fsFiyat" checked> Fiyat (programdaki satış fiyatı)</label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:.9rem"><input type="checkbox" id="fsStok" checked> Stok (programdaki stok)</label></div></div>
+    <label style="display:flex;gap:6px;align-items:center;font-size:.85rem"><input type="checkbox" id="fsHepsi"> Pazaryerindeki değer aynı olsa da gönder</label>
+    <label style="display:flex;gap:6px;align-items:center;font-size:.85rem"><input type="checkbox" id="fsBuyuk"> Fiyatı yarıdan fazla düşen / iki katını aşanları da gönder</label>
+    <div class="muted" id="fsOzet" role="status" style="font-size:.85rem"></div><div class="err" id="fsErr" role="alert"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="gonder">Gönder</button></div>`,
+  root=>{
+    const hesapla=()=>{const ps=[...root.querySelectorAll("[data-fsp]:checked")].map(x=>x.dataset.fsp),fiyat=root.querySelector("#fsFiyat").checked,stok=root.querySelector("#fsStok").checked,
+        hepsi=root.querySelector("#fsHepsi").checked,buyukDe=root.querySelector("#fsBuyuk").checked;
+      const is=[],sat={};let ayni=0,buyukAtla=0,fiyatYok=0;
+      for(const p of ps){sat[p]={f:0,s:0};for(const u of urunler){const d=pzIlanDurum(u,p);if(!d)continue;
+        if(fiyat){const y=r2(Number(u.satisFiyat)||0),e=Number(d[3])||0;
+          if(!(y>0))fiyatYok++;else if(!hepsi&&Math.abs(y-e)<0.005)ayni++;else{const buyuk=_frBuyuk(e,y);if(buyuk&&!buyukDe)buyukAtla++;else{is.push({u,p,islem:"fiyatGonder",satis:y,buyuk});sat[p].f++}}}
+        if(stok){const y=Math.min(20000,Math.max(0,Math.floor(stokMiktar(u)))),e=Math.floor(Number(d[1])||0);
+          if(!hepsi&&y===e)ayni++;else{is.push({u,p,islem:"stokGonder",stok:y});sat[p].s++}}}}
+      return {is,ps,sat,ayni,buyukAtla,fiyatYok,fiyat,stok}};
+    const ciz=()=>{const h=hesapla(),oz=root.querySelector("#fsOzet");
+      oz.innerHTML=h.ps.length&&(h.fiyat||h.stok)?`<b style="color:var(--fg)">${h.is.length.toLocaleString("tr-TR")}</b> gönderim yapılacak${h.ps.length?": "+h.ps.map(p=>`${esc(PZ_ADLAR[p])} ${[h.fiyat?h.sat[p].f+" fiyat":"",h.stok?h.sat[p].s+" stok":""].filter(Boolean).join(" + ")}`).join(" · "):""}.
+        ${h.ayni?`<br>${h.ayni.toLocaleString("tr-TR")} değer pazaryerinde zaten aynı, gönderilmeyecek.`:""}${h.buyukAtla?`<br>${h.buyukAtla} ürünün fiyatı yarıdan fazla düştüğü / iki katını aştığı için atlandı.`:""}${h.fiyatYok?`<br>${h.fiyatYok} üründe satış fiyatı yok.`:""}`
+        :"Bir pazaryeri ve gönderilecek bilgiyi (fiyat / stok) seçin.";
+      root.querySelector("[data-m=gonder]").disabled=!h.is.length;return h};
+    root.addEventListener("change",ciz);ciz();
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;
+      if(b.dataset.m==="close"){closeModal();return}
+      if(b.dataset.m!=="gonder")return;const h=ciz();if(!h.is.length)return;const er=root.querySelector("#fsErr");er.textContent="";b.disabled=true;b.textContent="Sıraya alınıyor…";
+      try{const n=await pzFsSiraya(h.is);closeModal();toast(`${(n||h.is.length).toLocaleString("tr-TR")} fiyat / stok gönderimi sıraya alındı`)}
+      catch(err){b.disabled=false;b.textContent="Gönder";er.textContent="Gönderilemedi: "+(err.message||err)}})})}
 function frDuzenAc(root,el){const u=state.urunler.find(x=>x.id===el.dataset.u);if(!u)return;const p=el.dataset.p,alan=el.dataset.fr,d=p==="program"?null:pzIlanDurum(u,p);
   const eski=p==="program"?(alan==="fiyat"?r2(Number(u.satisFiyat)||0):stokMiktar(u)):(d?(alan==="fiyat"?r2(Number(d[3])||0):Number(d[1])||0):0);
   const listeli=PZ_FS_YAZ.filter(k=>pzIlanDurum(u,k));
@@ -6095,6 +6136,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="trendyolCek")trendyolUrunCek();
   else if(a==="tyGorsel")tyGorselAl();
   else if(a==="tyGorselSecili")tyGorselAl(new Set(urunSecim));
+  else if(a==="pzFsSecili")pzFsSeciliModal(new Set(urunSecim));
   else if(a==="pzUrunAyar")pzUrunAyarModal();
   else if(a==="pzOzOto")pzOzOtoModal();
   else if(a==="pzOtoEs")pzOtoEsModal();
