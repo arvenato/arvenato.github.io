@@ -5290,9 +5290,24 @@ async function pzIlanOrtakCek(f){if(pzIlanIs||!sb||!f||pzIlan.firma!==f)return;c
   if(n){await pzDepo.koy("ilan-"+f,pzIlan.veri);render()}}
 function pzIlanOrtakGonder(f,pzl){for(const p of pzl){const d=pzIlan.veri[p];if(d&&d.m&&pzIlan.firma===f)pzOrtak.koy(f,"ilan-"+p,d,d.degis||d.zaman||Date.now())}}
 function pzIlanDurum(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return null;const b=pzKimlik(u.barkod),k=pzKimlik(u.kod);return (b&&d.m[b])||(k&&d.m[k])||null}
-function pzIlanRozet(u){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(!l.length)return "";const h=[];
-  for(const p of l){const d=pzIlanDurum(u,p);if(!d)continue;const ak=d[0]===1,r=PZ_ILAN_RENK[p];
-    h.push(`<span title="${esc(PZ_ADLAR[p])}: ${ak?"aktif (satışta)":"pasif"}${d[2]?" · "+esc(d[2]):""} · pazaryerindeki stok ${esc(String(d[1]))}" style="display:inline-flex;align-items:center;gap:3px;font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:999px;line-height:1.5;${ak?`background:${r};color:#fff;border:1px solid ${r}`:`background:transparent;color:var(--muted,#888);border:1px dashed var(--muted,#999)`}">${ak?"●":"○"} ${PZ_KISA[p]}</span>`)}
+/* Rozete basınca ürün mağazada açılır: Trendyol içerik no (d[4]) ya da Amazon ASIN biliniyorsa doğrudan ürün sayfası, yoksa o pazaryerinde ürün adıyla arama.
+   Shopify mağaza adresi bağlantı özetinden bir kez alınır. */
+let _pzMagaza={firma:null,shopify:""};
+function pzMagazaYukle(){if(_pzMagaza.firma===firmaId||!sb||!firmaId)return;const f=firmaId;_pzMagaza={firma:f,shopify:""};
+  sb.rpc("pazaryeri_hesap_durum",{p_firma:f}).then(({data})=>{const s=(data||[]).find(x=>x.pazaryeri==="shopify");const m=String(s&&s.ozet||"").trim().toLowerCase();
+    if(_pzMagaza.firma===f&&/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(m)){_pzMagaza.shopify=m;render()}}).catch(()=>{})}
+function pzUrunLink(u,p,d){const q=encodeURIComponent(String(u.ad||u.barkod||"").trim().slice(0,120)),bk=encodeURIComponent(String(u.barkod||u.kod||"").trim());
+  if(p==="trendyol")return d&&d[4]?"https://www.trendyol.com/urun/urun-p-"+encodeURIComponent(d[4]):"https://www.trendyol.com/sr?q="+q;
+  if(p==="amazon"){const m=String(d&&d[2]||"").match(/\b(B0[A-Z0-9]{8})\b/);return m?"https://www.amazon.com.tr/dp/"+m[1]:"https://www.amazon.com.tr/s?k="+(bk||q)}
+  if(p==="n11")return "https://www.n11.com/arama?q="+q;
+  if(p==="pazarama")return "https://www.pazarama.com/arama?q="+q;
+  if(p==="idefix")return "https://www.idefix.com/arama?q="+q;
+  if(p==="hepsiburada")return "https://www.hepsiburada.com/ara?q="+q;
+  if(p==="shopify")return _pzMagaza.shopify?"https://"+_pzMagaza.shopify+"/search?q="+q:"";
+  return ""}
+function pzIlanRozet(u){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(!l.length)return "";const h=[];pzMagazaYukle();
+  for(const p of l){const d=pzIlanDurum(u,p);if(!d)continue;const ak=d[0]===1,r=PZ_ILAN_RENK[p],url=pzUrunLink(u,p,d),tag=url?"a":"span";
+    h.push(`<${tag}${url?` href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"`:""} title="${esc(PZ_ADLAR[p])}: ${ak?"aktif (satışta)":"pasif"}${d[2]?" · "+esc(d[2]):""} · pazaryerindeki stok ${esc(String(d[1]))}${url?" · mağazada açmak için basın":""}" style="display:inline-flex;align-items:center;gap:3px;font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:999px;line-height:1.5;text-decoration:none;${url?"cursor:pointer;":""}${ak?`background:${r};color:#fff;border:1px solid ${r}`:`background:transparent;color:var(--muted,#888);border:1px dashed var(--muted,#999)`}">${ak?"●":"○"} ${PZ_KISA[p]}</${tag}>`)}
   return h.length?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">${h.join("")}</div>`:""}
 function pzIlanFiltre(u,f){if(!f)return true;const [p,t]=f.split(":");const d=pzIlanDurum(u,p);return t==="yok"?!d:t==="ak"?!!d&&d[0]===1:!!d&&d[0]!==1}
 function pzIlanBilgi(){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(pzIlanIs)return `<div class="muted" style="font-size:.82rem">🛒 ${esc(PZ_ADLAR[pzIlanIs.pz]||"")} ilanları okunuyor… ${pzIlanIs.not?esc(pzIlanIs.not)+" · birkaç dakika sürebilir":pzIlanIs.adet.toLocaleString("tr-TR")}</div>`;
@@ -5314,7 +5329,7 @@ async function pzIlanSeciliOku(ids,bagli){const f=firmaId;const urunler=ids.map(
         if(p==="trendyol"){for(const u of urunler){if(pzIlan.firma!==f)return;let bulundu=false;
             for(const k of [u.barkod,u.kod].map(x=>String(x||"").trim()).filter(Boolean)){
               const r=await pzCagir({islem:"urunler",sayfa:0,barkod:k});const t=(r.urunler||[]).find(x=>pzKimlik(x.barkod)===pzKimlik(k)||pzKimlik(x.stokKodu)===pzKimlik(k));
-              if(t){bulundu=true;if(pzIlanYaz(u,p,[t.satista?1:0,Number(t.stok)||0,t.satista?"":"satışta değil / arşiv",Number(t.fiyat)||0]))n++;break}}
+              if(t){bulundu=true;if(pzIlanYaz(u,p,[t.satista?1:0,Number(t.stok)||0,t.satista?"":"satışta değil / arşiv",Number(t.fiyat)||0,String(t.icerikId||"")]))n++;break}}
             if(!bulundu&&pzIlanKaldir(u,p))n++;pzIlanIs.adet++;sayac()}}
         else if(p==="amazon"){for(const u of urunler){if(pzIlan.firma!==f)return;const kod=String(u.kod||u.barkod||"").trim();if(!kod)continue;
             const r=await pzCagir({islem:"urunSonuc",pazaryeri:p,kod});
@@ -5342,14 +5357,14 @@ async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
   const veri={...pzIlan.veri},hatalar=[];
   try{for(const p of bagli){pzIlanIs={pz:p,adet:0};render();const m={};let imlec=null,adet=0,onceki="",hata="";
       try{for(let i=0;i<600;i++){let l,sonraki;
-          if(p==="trendyol"){const r=await pzCagir({islem:"urunler",sayfa:i,sonrakiToken:imlec});l=(r.urunler||[]).map(x=>({b:x.barkod,k:x.stokKodu,a:x.satista,s:x.stok,d:x.satista?"":"satışta değil / arşiv",f:x.fiyat}));sonraki=(i+1>=(r.toplamSayfa||1)&&!(r.sonrakiToken&&i>=99))?null:(i>=99?(r.sonrakiToken||null):"")}
+          if(p==="trendyol"){const r=await pzCagir({islem:"urunler",sayfa:i,sonrakiToken:imlec});l=(r.urunler||[]).map(x=>({b:x.barkod,k:x.stokKodu,a:x.satista,s:x.stok,d:x.satista?"":"satışta değil / arşiv",f:x.fiyat,c:x.icerikId}));sonraki=(i+1>=(r.toplamSayfa||1)&&!(r.sonrakiToken&&i>=99))?null:(i>=99?(r.sonrakiToken||null):"")}
           else{const r=await pzCagir({islem:"ilanListe",pazaryeri:p,imlec});l=r.ilanlar||[];sonraki=r.sonraki;
             // Amazon: ilan raporu hazırlanırken boş döner ve beklenmesi istenir (en fazla ~15 dakika)
             if(r.bekle&&sonraki&&!l.length&&i<60){pzIlanIs.not=r.not||"";const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=pzIlanBilgi();
               await new Promise(z=>setTimeout(z,Math.min(60,Number(r.bekle)||15)*1000));if(pzIlan.firma!==f)return;imlec=sonraki;continue}
             pzIlanIs.not=""}
           const imza=l.slice(0,3).map(x=>x.b+"|"+x.k).join(",");if(l.length&&imza===onceki)break;onceki=imza;
-          for(const x of l){const v=[x.a?1:0,Number(x.s)||0,String(x.d||""),Number(x.f)||0];for(const key of [pzKimlik(x.b),pzKimlik(x.k)]){if(!key)continue;const e=m[key];if(!e||(v[0]&&!e[0]))m[key]=v}}
+          for(const x of l){const v=[x.a?1:0,Number(x.s)||0,String(x.d||""),Number(x.f)||0];if(x.c)v.push(String(x.c));for(const key of [pzKimlik(x.b),pzKimlik(x.k)]){if(!key)continue;const e=m[key];if(!e||(v[0]&&!e[0]))m[key]=v}}
           adet+=l.length;pzIlanIs.adet=adet;const bi=document.getElementById("pzIlanBilgi");if(bi)bi.innerHTML=pzIlanBilgi();
           if(sonraki==null||(p!=="trendyol"&&!l.length))break;imlec=sonraki}}
       catch(err){hata=err.message||String(err);hatalar.push(PZ_ADLAR[p]+": "+hata)}
@@ -5359,7 +5374,8 @@ async function pzIlanOku(){if(pzIlanIs)return;const f=firmaId;
   toast(hatalar.length?"Bazı pazaryerleri okunamadı: "+hatalar.join(" · ").slice(0,300):"Pazaryeri ilan durumları güncellendi")}
 // Tek ürünün bir pazaryerindeki rozetini günceller (yalnız o pazaryeri en az bir kez baştan okunduysa); değiştiyse true
 function pzIlanYaz(u,p,v){const d=pzIlan.veri[p];if(!d||!d.m||pzIlan.firma!==firmaId)return false;const o=pzIlanDurum(u,p);
-  for(const key of [pzKimlik(u.barkod),pzKimlik(u.kod)])if(key)d.m[key]=v;const deg=!o||o[0]!==v[0]||o[1]!==v[1]||o[2]!==v[2];
+  if(o&&o[4]&&!v[4])v=[v[0],v[1],v[2],v[3],o[4]];// mağaza bağlantısı için kayıtlı içerik no korunur
+  for(const key of [pzKimlik(u.barkod),pzKimlik(u.kod)])if(key)d.m[key]=v;const deg=!o||o[0]!==v[0]||o[1]!==v[1]||o[2]!==v[2]||(v[4]&&o[4]!==v[4]);
   if(deg){d.degis=Date.now();_pzIlanDegisen.add(p)}return deg}
 let _pzIlanKayZ=null,_pzIlanOrtakZ=null;const _pzIlanDegisen=new Set();
 function pzIlanSakla(){clearTimeout(_pzIlanKayZ);const f=firmaId;_pzIlanKayZ=setTimeout(()=>{if(pzIlan.firma===f)pzDepo.koy("ilan-"+f,pzIlan.veri)},500);
@@ -5378,7 +5394,7 @@ async function pzIlanYeni(sessiz){if(_pzYeniIs||pzIlanIs||state.readonly||!sb||!
       if(p==="trendyol"){for(const u of aday){if(pzIlan.firma!==f)return;bakilan++;
           for(const k of [u.barkod,u.kod].map(x=>String(x||"").trim()).filter(Boolean)){
             try{const r=await pzCagir({islem:"urunler",sayfa:0,barkod:k});const t=(r.urunler||[]).find(x=>pzKimlik(x.barkod)===pzKimlik(k)||pzKimlik(x.stokKodu)===pzKimlik(k));
-              if(t){if(pzIlanYaz(u,p,[t.satista?1:0,Number(t.stok)||0,t.satista?"":"satışta değil / arşiv",Number(t.fiyat)||0]))n++;break}}catch(e){}}}}
+              if(t){if(pzIlanYaz(u,p,[t.satista?1:0,Number(t.stok)||0,t.satista?"":"satışta değil / arşiv",Number(t.fiyat)||0,String(t.icerikId||"")]))n++;break}}catch(e){}}}}
       else for(let i=0;i<aday.length;i+=20){const parca=aday.slice(i,i+20),kod=u=>p==="n11"?(u.kod||u.barkod):(u.barkod||u.kod);bakilan+=parca.length;
         try{const r=await pzCagir({islem:"ilanBul",pazaryeri:p,kodlar:parca.map(kod)});if(pzIlan.firma!==f)return;
           for(const x of r.sonuclar||[]){if(!x.ilan)continue;const u=parca.find(y=>pzKimlik(kod(y))===pzKimlik(x.kod));if(u&&pzIlanYaz(u,p,[x.ilan.a?1:0,Number(x.ilan.s)||0,String(x.ilan.d||""),Number(x.ilan.f)||0]))n++}}
