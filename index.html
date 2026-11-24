@@ -5453,20 +5453,33 @@ function tyGorselAl(secili){
   if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
   // secili: yalnızca seçili ürünler (200'e kadar barkodla tek tek aranır; daha fazlasında bütün Trendyol ürünleri okunur)
   const hedef=secili?state.urunler.filter(u=>secili.has(u.id)):state.urunler;
-  let plan=null;
+  let plan=null;const tamTarama=!(secili&&hedef.length<=200);const f0=firmaId;
+  const gunStr=t=>{const d=new Date(t);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
   openModal(`<div class="section-head"><h2>🖼 Görselleri Trendyol'dan ${secili?"çek · "+hedef.length.toLocaleString("tr-TR")+" seçili ürün":"al"}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">Trendyol'daki onaylı ürünler okunur (Trendyol'a hiçbir şey gönderilmez). Barkod ya da stok koduyla eşleşen ${secili?"seçili ":""}ürünlere görseller ve açıklama eklenir. Bu görseller sonra diğer pazaryerlerine ürün açarken kullanılır.</div>
+    ${tamTarama?`<label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.9rem"><input type="radio" name="tgKapsam" value="yeni" checked> Yalnızca yeni yüklenenler: <input id="tgTarih" type="date" style="width:auto"> tarihinden sonra Trendyol'a yüklenen ürünler</label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:.9rem"><input type="radio" name="tgKapsam" value="tum"> Bütün ürünler (uzun sürer)</label>
+    <div class="muted" id="tgSon" style="font-size:.82rem"></div>`:""}
     <label style="display:flex;gap:8px;align-items:center;font-size:.9rem"><input id="tgBos" type="checkbox" ${secili?"":"checked"}> Yalnızca görseli olmayan ürünlere ekle (mevcut görsellere dokunma)</label>
     <label style="display:flex;gap:8px;align-items:center;font-size:.9rem"><input id="tgAcik" type="checkbox" checked> Açıklaması boş ürünlere Trendyol açıklamasını da ekle</label>
     <div class="muted" id="tgDurum" role="status" style="font-size:.85rem"></div><div class="err" id="tgErr" role="alert"></div>
     <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="oku">Trendyol'dan oku</button></div>`,
-  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
+  root=>{const ti=root.querySelector("#tgTarih");
+    // Son taramanın zamanı bütün bilgisayarlarda ortak tutulur; tarih varsayılanı ondan bir gün öncesi (yoksa son 7 gün)
+    if(ti){ti.value=gunStr(Date.now()-7*86400000);ti.max=gunStr(Date.now());
+      ti.addEventListener("focus",()=>{root.querySelector('[name=tgKapsam][value=yeni]').checked=true});
+      pzOrtak.al(f0,"tyGorselZaman").then(s=>{const z=Number(s&&s.veri&&s.veri.zaman);if(!(z>0)||firmaId!==f0||!root.isConnected)return;
+        ti.value=gunStr(z-86400000);root.querySelector("#tgSon").textContent="Son tarama: "+new Date(z).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}).catch(()=>{})}
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
     const du=root.querySelector("#tgDurum"),er=root.querySelector("#tgErr");if(m==="close"){if(!tyUrunCekiliyor)closeModal();return}
-    if(m==="oku"&&!tyUrunCekiliyor){er.textContent="";tyUrunCekiliyor=true;b.disabled=true;
+    if(m==="oku"&&!tyUrunCekiliyor){er.textContent="";
+      const yeniMi=!!ti&&root.querySelector('[name=tgKapsam]:checked').value==="yeni";const bas=yeniMi?new Date(ti.value+"T00:00:00").getTime():0;
+      if(yeniMi&&!(bas>0)){er.textContent="Tarih seçin ya da “Bütün ürünler”i işaretleyin.";return}
+      const t0=Date.now();tyUrunCekiliyor=true;b.disabled=true;
       try{const tum=[];let tok="";
         if(secili&&hedef.length<=200){for(let i=0;i<hedef.length;i++){const u=hedef[i];du.textContent=`Trendyol'da aranıyor… ${i+1} / ${hedef.length}`;
             for(const k of [u.barkod,u.kod].map(x=>String(x||"").trim()).filter(Boolean)){const r=await pzCagir({islem:"urunler",sayfa:0,barkod:k});const l=(r.urunler||[]).filter(x=>pzKimlik(x.barkod)===pzKimlik(k)||pzKimlik(x.stokKodu)===pzKimlik(k));if(l.length){tum.push(...l);break}}}}
-        else for(let s=0;s<500;s++){const r=await pzCagir({islem:"urunler",sayfa:s,sonrakiToken:tok});tum.push(...(r.urunler||[]));du.textContent=`Trendyol ürünleri okunuyor… ${tum.length.toLocaleString("tr-TR")}${r.toplam?" / "+Number(r.toplam).toLocaleString("tr-TR")+" içerik":""}`;
+        else for(let s=0;s<500;s++){const r=await pzCagir(Object.assign({islem:"urunler",sayfa:s,sonrakiToken:tok},yeniMi?{baslangic:bas}:{}));tum.push(...(r.urunler||[]));du.textContent=`Trendyol ürünleri okunuyor… ${tum.length.toLocaleString("tr-TR")}${r.toplam?" / "+Number(r.toplam).toLocaleString("tr-TR")+" içerik":""}`;
           if(s+1>=(r.toplamSayfa||1)&&!(r.sonrakiToken&&s>=99))break;tok=s>=99?(r.sonrakiToken||""):"";if(s>=99&&!tok)break}
         const byB=new Map(),byK=new Map();for(const t of tum){if(t.barkod)byB.set(pzKimlik(t.barkod),t);if(t.stokKodu)byK.set(pzKimlik(t.stokKodu),t)}
         const bos=root.querySelector("#tgBos").checked,acik=root.querySelector("#tgAcik").checked;let eslesen=0,gorsel=0,aciklama=0;const satir=[];
@@ -5476,11 +5489,12 @@ function tyGorselAl(secili){
           if(Number(t.desi)>0&&!(Number(u.desi)>0))y.desi=Number(t.desi);
           if(Object.keys(y).length){const {id,...r}=u;satir.push({col:"urunler",id,veri:{...r,...y}})}}
         plan=satir;tyUrunCekiliyor=false;
-        du.innerHTML=`<b>${tum.length.toLocaleString("tr-TR")}</b> Trendyol ürünü okundu, ${secili?"seçili "+hedef.length.toLocaleString("tr-TR")+" üründen ":"programdaki "}<b>${eslesen.toLocaleString("tr-TR")}</b> ürünle eşleşti. <b>${gorsel.toLocaleString("tr-TR")}</b> ürüne görsel, <b>${aciklama.toLocaleString("tr-TR")}</b> ürüne açıklama eklenecek.`;
+        if(tamTarama)pzOrtak.koy(f0,"tyGorselZaman",{zaman:t0,yeniMi,okunan:tum.length},t0);
+        du.innerHTML=`<b>${tum.length.toLocaleString("tr-TR")}</b> ${yeniMi?"yeni ":""}Trendyol ürünü okundu,${secili?"seçili "+hedef.length.toLocaleString("tr-TR")+" üründen ":"programdaki "}<b>${eslesen.toLocaleString("tr-TR")}</b> ürünle eşleşti. <b>${gorsel.toLocaleString("tr-TR")}</b> ürüne görsel, <b>${aciklama.toLocaleString("tr-TR")}</b> ürüne açıklama eklenecek.`;
         b.outerHTML=satir.length?`<button type="button" class="primary" data-m="yaz">Evet, ${satir.length.toLocaleString("tr-TR")} ürüne ekle</button>`:`<span class="muted">Eklenecek bir şey yok.</span>`}
       catch(err){tyUrunCekiliyor=false;b.disabled=false;du.textContent="";er.textContent=err.message||String(err)}return}
     if(m==="yaz"&&plan){b.disabled=true;try{await topluYaz(plan,(x,t)=>{du.textContent=`Kaydediliyor… ${x.toLocaleString("tr-TR")} / ${t.toLocaleString("tr-TR")}`});closeModal();toast(`${plan.length.toLocaleString("tr-TR")} ürüne görsel / açıklama eklendi`)}
-      catch(err){b.disabled=false;er.textContent=errMsg(err)}}}))}
+      catch(err){b.disabled=false;er.textContent=errMsg(err)}}})})}
 /* ---------- Firma başına Pazaryeri ve e-Fatura ayarları ----------
    Trendyol API bilgileri "pazaryeri_hesap" tablosuna yalnızca YAZILIR (uygulama geri okuyamaz; yalnızca sunucu fonksiyonu kullanır).
    e-Fatura köprüsünde her firma kendi Trendyol e-Faturam hesabını (köprü profili) kullanır; seçilmemişse e-Fatura işlemi yapılmaz. */
