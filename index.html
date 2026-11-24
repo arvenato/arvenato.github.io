@@ -2249,6 +2249,45 @@ async function pzFsSiraya(is){if(!is.length)return 0;
   for(const x of is){const d=pzIlanDurum(x.u,x.p);if(!d)continue;pzIlanYaz(x.u,x.p,x.islem==="fiyatGonder"?[d[0],d[1],d[2],r2(x.satis)]:[d[0],Math.floor(Number(x.stok)||0),d[2],d[3]])}
   pzIlanSakla();return n}
 const _frBuyuk=(eski,yeni)=>eski>0&&(yeni<eski*0.5||yeni>eski*2);
+/* Ürünler listesindeki pazaryeri rozetine sağ tıklayınca: yalnız o pazaryerindeki ilanın fiyatını / stoğunu değiştirme paneli.
+   Programdaki satış fiyatı ve stok değişmez; yalnızca o pazaryerine gönderim sırasına alınır. */
+function pzTekModal(uid,p){
+  const u=state.urunler.find(x=>x.id===uid);if(!u)return;
+  if(state.readonly||firmaRol!=="sahip"){toast("Bu firmada pazaryerine gönderme yetkiniz yok");return}
+  if(!sb||!oturum||!firmaId){toast("Bunun için internet ve giriş gerekli");return}
+  if(!PZ_FS_YAZ.includes(p)){toast(PZ_ADLAR[p]+" için fiyat / stok gönderme henüz yok");return}
+  const d=pzIlanDurum(u,p);if(!d){toast(PZ_ADLAR[p]+"'da bu ürünün ilanı bulunamadı");return}
+  const pf=Number(d[3])||0,ps=Math.floor(Number(d[1])||0),sf=r2(Number(u.satisFiyat)||0),ss=Math.max(0,Math.floor(stokMiktar(u)));let onay=false;
+  openModal(`<div class="section-head"><h2><span style="color:${PZ_ILAN_RENK[p]}">●</span> ${esc(PZ_ADLAR[p])} · fiyat / stok</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div><b>${esc(u.ad)}</b><div class="muted" style="font-size:.84rem">${esc(u.barkod||u.kod||"")} · ${d[0]===1?"satışta":"pasif"}${d[2]?" · "+esc(d[2]):""}</div></div>
+    <div class="tscroll"><table class="kart-yok"><thead><tr><th></th><th class="num">${esc(PZ_ADLAR[p])}'da şu an</th><th class="num">Programda</th></tr></thead><tbody>
+      <tr><td>Satış fiyatı</td><td class="num">${pf?money(pf):"—"}</td><td class="num">${money(sf)}</td></tr>
+      <tr><td>Stok</td><td class="num">${ps.toLocaleString("tr-TR")}</td><td class="num">${ss.toLocaleString("tr-TR")}</td></tr></tbody></table></div>
+    <div class="grid2">
+      <div class="field"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ptF" checked> Yeni fiyat (₺, KDV dahil)</label><input id="ptFiyat" type="number" step="0.01" min="0" inputmode="decimal" value="${pf||sf}"></div>
+      <div class="field"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ptS"> Yeni stok</label><input id="ptStok" type="number" step="1" min="0" max="20000" inputmode="numeric" value="${ps}"></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="small ghost" data-m="prog">Programdaki fiyat ve stoğu yaz</button></div>
+    <div class="muted" style="font-size:.82rem">Yalnızca ${esc(PZ_ADLAR[p])}'a gönderilir; programdaki satış fiyatı ve stok değişmez. Gönderim sunucu sırasıyla yapılır, sonucu ürünün rozetinde ve Fiyat / Stok farkı raporunda görünür.</div>
+    <div class="err" id="ptErr" role="alert"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="gonder">${esc(PZ_ADLAR[p])}'a gönder</button></div>`,
+  root=>{const $=s=>root.querySelector(s),er=$("#ptErr");
+    root.addEventListener("input",e=>{onay=false;if(e.target.id==="ptFiyat")$("#ptF").checked=true;if(e.target.id==="ptStok")$("#ptS").checked=true;$('[data-m="gonder"]').textContent=PZ_ADLAR[p]+"'a gönder";er.textContent=""});
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
+      if(m==="close")return closeModal();
+      if(m==="prog"){$("#ptFiyat").value=sf;$("#ptStok").value=ss;$("#ptF").checked=sf>0;$("#ptS").checked=true;onay=false;return}
+      if(m!=="gonder")return;
+      const fG=$("#ptF").checked,sG=$("#ptS").checked,yf=r2(Number(String($("#ptFiyat").value).replace(",","."))),ys=Math.floor(Number($("#ptStok").value));
+      if(!fG&&!sG){er.textContent="Fiyat ya da stok seçin.";return}
+      if(fG&&!(yf>0)){er.textContent="Geçerli bir fiyat girin.";return}
+      if(sG&&!(ys>=0&&ys<=20000)){er.textContent="Stok 0 ile 20.000 arasında olmalı.";return}
+      const buyuk=fG&&_frBuyuk(pf,yf);
+      if(buyuk&&!onay){onay=true;er.textContent=`Fiyat ${yf<pf?"yarısından fazla düşüyor":"iki katından fazla artıyor"} (${money(pf)} → ${money(yf)}). Eminseniz bir kez daha basın.`;b.textContent="Evet, eminim — gönder";return}
+      const is=[];if(fG)is.push({u,p,islem:"fiyatGonder",satis:yf,buyuk});if(sG)is.push({u,p,islem:"stokGonder",stok:ys});
+      b.disabled=true;
+      try{const n=await pzFsSiraya(is);closeModal();toast(PZ_ADLAR[p]+": "+[fG?"fiyat "+money(yf):"",sG?"stok "+ys:""].filter(Boolean).join(", ")+" · "+n+" gönderim sıraya alındı");render()}
+      catch(err){er.textContent=err.message||String(err);b.disabled=false}})})}
+document.addEventListener("contextmenu",e=>{const r=e.target.closest&&e.target.closest("[data-pzsag]");if(!r)return;e.preventDefault();pzTekModal(r.dataset.uid,r.dataset.pzsag)});
 /* Ürünler › seçili ürünler › "Pazaryerine fiyat / stok gönder": programdaki satış fiyatı ve stok, seçilen pazaryerlerindeki ilanlara
    sunucu gönderim sırasıyla (pzFsSiraya) gider. Yalnızca o pazaryerinde ilanı olan ürünler gönderilir. */
 function pzFsSeciliModal(secili){
@@ -3903,7 +3942,8 @@ async function pzDenemeGonder(i){
       const metin=basarili?"✓ Trendyol işledi ("+new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+")":bitti?("✕ Trendyol reddetti: "+(((kal.hatalar||[]).join(", "))||kd||son.durum||"neden bildirilmedi")):"⏳ Trendyol henüz sonuçlandırmadı; birkaç dakika sonra Trendyol'dan getir'e basıp kontrol edin";
       if(basarili&&pz.deneme.girdi)delete pz.deneme.girdi[t.barkod];
       if(basarili&&u){const fark=r2(stok-stokMiktar(u));if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(u.alisFiyat)||0,aciklama:"Trendyol'a gönderilen stok",hareketId:"",olusturma:Date.now()});
-        if(r2(Number(u.satisFiyat)||0)!==r2(satis)){const {id:_,...rest}=u;await api.setDoc("urunler",u.id,{...rest,satisFiyat:r2(satis)})}}
+        const ug=state.urunler.find(x=>x.id===u.id)||u;// beklerken değişmiş olabilir (ör. alış fiyatı): güncel kayıt üzerine yazılır
+        if(r2(Number(ug.satisFiyat)||0)!==r2(satis)){const {id:_,...rest}=ug;await api.setDoc("urunler",ug.id,{...rest,satisFiyat:r2(satis)})}}
       pz.deneme.sonuc=pz.deneme.sonuc||{};pz.deneme.sonuc[t.barkod]={metin,hata:bitti&&!basarili};
       closeModal();toast(metin);await pzDenemeGetir()}
     catch(err){b.disabled=false;du.textContent="";er.textContent=(err.message||String(err))}}));
@@ -5380,7 +5420,7 @@ function pzUrunLink(u,p,d){const q=encodeURIComponent(String(u.ad||u.barkod||"")
   return ""}
 function pzIlanRozet(u){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(!l.length)return "";const h=[];pzMagazaYukle();
   for(const p of l){const d=pzIlanDurum(u,p);if(!d)continue;const ak=d[0]===1,r=PZ_ILAN_RENK[p],url=pzUrunLink(u,p,d),tag=url?"a":"span";
-    h.push(`<${tag}${url?` href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"`:""} title="${esc(PZ_ADLAR[p])}: ${ak?"aktif (satışta)":"pasif"}${d[2]?" · "+esc(d[2]):""} · pazaryerindeki stok ${esc(String(d[1]))}${url?" · mağazada açmak için basın":""}" style="display:inline-flex;align-items:center;gap:3px;font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:999px;line-height:1.5;text-decoration:none;${url?"cursor:pointer;":""}${ak?`background:${r};color:#fff;border:1px solid ${r}`:`background:transparent;color:var(--muted,#888);border:1px dashed var(--muted,#999)`}">${ak?"●":"○"} ${PZ_KISA[p]}</${tag}>`)}
+    h.push(`<${tag}${url?` href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"`:""} data-pzsag="${p}" data-uid="${u.id}" title="${esc(PZ_ADLAR[p])}: ${ak?"aktif (satışta)":"pasif"}${d[2]?" · "+esc(d[2]):""} · pazaryerindeki stok ${esc(String(d[1]))}${d[3]?" · fiyat "+money(d[3]):""}${url?" · mağazada açmak için basın":""}${PZ_FS_YAZ.includes(p)?" · fiyat / stok değiştirmek için sağ tıklayın":""}" style="display:inline-flex;align-items:center;gap:3px;font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:999px;line-height:1.5;text-decoration:none;${url?"cursor:pointer;":""}${ak?`background:${r};color:#fff;border:1px solid ${r}`:`background:transparent;color:var(--muted,#888);border:1px dashed var(--muted,#999)`}">${ak?"●":"○"} ${PZ_KISA[p]}</${tag}>`)}
   return h.length?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">${h.join("")}</div>`:""}
 function pzIlanFiltre(u,f){if(!f)return true;const [p,t]=f.split(":");const d=pzIlanDurum(u,p);return t==="yok"?!d:t==="ak"?!!d&&d[0]===1:!!d&&d[0]!==1}
 function pzIlanBilgi(){const l=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(pzIlanIs)return `<div class="muted" style="font-size:.82rem">🛒 ${esc(PZ_ADLAR[pzIlanIs.pz]||"")} ilanları okunuyor… ${pzIlanIs.not?esc(pzIlanIs.not)+" · birkaç dakika sürebilir":pzIlanIs.adet.toLocaleString("tr-TR")}</div>`;
@@ -6510,11 +6550,16 @@ function uzakUygula(col,id,veri){
   else{const k=KOLEKSIYONLAR[col];if(!k)return;const mevcut=state[k].find(x=>x.id===id);
     if(!veri&&!mevcut)return;
     if(veri&&mevcut){const {id:_,...m}=mevcut;if(_sirali(m)===_sirali(veri))return}}
-  yerelUygula(col,id,veri);renderSonra()}
+  _yukNot(col,id,veri);yerelUygula(col,id,veri);renderSonra()}
 function yerelUygula(col,id,veri){if(col==="ayar"){if(id==="firma")state.firma=veri?veri.ad||"":"";else{state.ayarEk=state.ayarEk||{};if(veri)state.ayarEk[id]=veri;else delete state.ayarEk[id]}return}const k=KOLEKSIYONLAR[col];if(!k)return;const arr=state[k].filter(x=>x.id!==id);if(veri)arr.push({id,...veri});state[k]=arr}
 // Bütün kayıtlar: önce sayı sorulur, sonra 1000'lik parçalar aynı anda 6'şar okunur (sırayla okumaktan ~5 kat hızlı).
 // Okunan kayıtlar bu cihazda saklanır; program bir sonraki açılışta önce onları gösterir.
-async function tumunuYukle(){const f=firmaId,N=1000;
+/* Okuma sürerken (birkaç saniye) yapılan kayıtlar ve canlı gelen değişiklikler not edilir; okunan eski liste uygulandıktan sonra
+   bunlar yeniden uygulanır. Yoksa ör. o sırada girilen alış fiyatı birkaç saniye sonra eski haline döner gibi görünür. */
+const _yukIzle=new Set();
+function _yukNot(col,id,veri){for(const m of _yukIzle)m.set(col+"\u0001"+id,{col,id,veri})}
+async function tumunuYukle(){const iz=new Map();_yukIzle.add(iz);try{await _tumunuYukle(iz)}finally{_yukIzle.delete(iz)}}
+async function _tumunuYukle(iz){const f=firmaId,N=1000;
   const parca=async from=>{for(let d=0;;d++){const {data,error}=await sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",f).order("koleksiyon").order("id").range(from,from+N-1);if(!error)return data;if(d>=2)throw error;await new Promise(r=>setTimeout(r,800*(d+1)))}};
   const {count,error:ce}=await sb.from("kayitlar").select("id",{count:"exact",head:true}).eq("firma_id",f);
   let rows=[];
@@ -6522,7 +6567,9 @@ async function tumunuYukle(){const f=firmaId,N=1000;
   else{const bas=[];for(let from=0;from<count+N;from+=N)bas.push(from);const sonuc=new Array(bas.length);let i=0;
     await Promise.all(Array.from({length:Math.min(6,bas.length)},async()=>{while(i<bas.length){const k=i++;sonuc[k]=await parca(bas[k])}}));
     rows=sonuc.flat()}
-  if(f!==firmaId)return;kayitUygula(rows);pzDepo.koy("kayitlar-"+f,{zaman:Date.now(),rows})}
+  if(f!==firmaId)return;kayitUygula(rows);for(const x of iz.values())yerelUygula(x.col,x.id,x.veri);
+  if(iz.size){const ek=new Map([...iz.values()].map(x=>[x.col+"\u0001"+x.id,x]));rows=rows.filter(r=>!ek.has(r.koleksiyon+"\u0001"+r.id));for(const x of ek.values())if(x.veri)rows.push({koleksiyon:x.col,id:x.id,veri:x.veri})}
+  pzDepo.koy("kayitlar-"+f,{zaman:Date.now(),rows})}
 function kayitUygula(rows){for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";state.ayarEk={};
   // Aynı koleksiyondaki kayıtlar tek seferde dizilir (her kayıtta diziyi yeniden kurmak 27 bin kayıtta yavaş)
   const gr={};for(const r of rows){if(r.koleksiyon==="ayar"){yerelUygula("ayar",r.id,r.veri);continue}const k=KOLEKSIYONLAR[r.koleksiyon];if(!k)continue;(gr[k]=gr[k]||new Map()).set(r.id,{id:r.id,...r.veri})}
@@ -6621,8 +6668,8 @@ async function veriBaslat(){
   if(ob&&Array.isArray(ob.rows)&&state.mode==="loading"){kayitUygula(ob.rows);state.mode="db";state.guncelleniyor=true;render()}
   // Yazma bağlantısı okumayı beklemeden kurulur: kayıtlar arkadan güncellenirken de kaydetme çalışır
   api={newId:()=>idUret(),
-    setDoc:async(col,id,obj)=>{_yazSay++;yerelUygula(col,id,obj);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
-    del:async(col,id)=>{_yazSay++;yerelUygula(col,id,null);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
+    setDoc:async(col,id,obj)=>{_yazSay++;_yukNot(col,id,obj);yerelUygula(col,id,obj);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
+    del:async(col,id)=>{_yazSay++;_yukNot(col,id,null);yerelUygula(col,id,null);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
     setFirma:async n=>{yerelUygula("ayar","firma",{ad:n});render();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:n}});if(error)throw sbHata(error);if(firmaRol==="sahip")await sb.from("firmalar").update({ad:n}).eq("id",firmaId)}};
   const yaz0=_yazSay;
   try{await tumunuYukle();state.mode="db"}catch(e){state.mode="db";state.error="Kayıtlar yüklenemedi. "+sbMesaj(e)}
