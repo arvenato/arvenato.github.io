@@ -267,6 +267,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <a href="#tedarik">Tedarikçiler</a>
       <a href="#siparis">Siparişler</a>
       <a href="#pazaryeri">Pazaryeri</a>
+      <a href="#kar">Kâr hesabı</a>
       <a href="#faturalar">Faturalar</a>
       <a href="#cariler">Cariler</a>
       <a href="#personeller">Personeller</a>
@@ -301,7 +302,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
   <a href="#cariler"><span class="ik">👥</span>Cariler</a><a href="#personeller"><span class="ik">🧑‍💼</span>Personeller</a><a href="#bankalar"><span class="ik">🏦</span>Bankalar</a>
   <a href="#gelirler"><span class="ik">⬇️</span>Gelirler</a><a href="#giderler"><span class="ik">⬆️</span>Giderler</a><a href="#hareketler"><span class="ik">↔️</span>Hareketler</a>
   <a href="#teklifler"><span class="ik">📝</span>Teklifler</a><a href="#rapor"><span class="ik">📈</span>Aylık rapor</a><a href="#ozet"><span class="ik">📊</span>Özet</a>
-  <a href="#ajanda"><span class="ik">📅</span>Ajanda</a><a href="#" data-alt="yedek"><span class="ik">💾</span>Yedek al</a>
+  <a href="#ajanda"><span class="ik">📅</span>Ajanda</a><a href="#kar"><span class="ik">🧮</span>Kâr hesabı</a><a href="#" data-alt="yedek"><span class="ik">💾</span>Yedek al</a>
 </div></div>
 
 <script>
@@ -386,7 +387,7 @@ function donemOzet(filter){
 }
 
 /* ---------- Görünümler ---------- */
-const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","siparis","satis","pazaryeri"];
+const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","siparis","satis","pazaryeri","kar"];
 let view="ozet";
 const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sMarka:"",sSayfa:1,sKol:{},sSira:(()=>{try{return localStorage.getItem("urun-sira")||"adAZ"}catch(e){return "adAZ"}})(),sBoyut:(()=>{try{return Number(localStorage.getItem("urun-sayfa-boyut"))||100}catch(e){return 100}})(),sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",fCari:"",fAra:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",pzGun:"bugun",pzDurum:"",pzAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
 
@@ -461,8 +462,10 @@ function render(){
   else if(view==="siparis")html+=vSiparis();
   else if(view==="pazaryeri")html+=vPazaryeri();
   else if(view==="satis")html+=vSatis();
+  else if(view==="kar")html+=vKar();
   else html+=vRapor();
   m.innerHTML=html;
+  if(view==="kar")karBagla();
   const f=m.querySelectorAll("[data-filter]");
   f.forEach(el=>el.addEventListener("input",()=>{ui[el.dataset.filter]=el.value;rerenderKeepFocus(el.id);
     // Pazaryeri dönemi değişince sipariş listesi kayıtlı veriden yeniden süzülür / gerekirse okunur
@@ -879,6 +882,101 @@ function ajSatir(e){const t=today();const gec=!e.done&&e.tarih<t;const fark=gunF
     <td>${ajChip(e)}</td><td style="min-width:180px"><b style="${e.done?"text-decoration:line-through":""}">${esc(e.baslik)}</b><div class="muted" style="font-size:.78rem">${[e.cari,ne&&"otomatik · "+ne,e.tekrar?"tekrarlı":"",e.not].filter(Boolean).map(esc).join(" · ")}</div></td>
     <td class="num ${e.tur==="Tahsilat"?"pos":e.tutar&&e.tur!=="Hatırlatma"?"neg":""}">${e.tutar?money(e.tutar):"—"}</td><td><div class="rowact">${aks}</div></td></tr>`}
 function ajTablo(list){return `<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Tür</th><th>Açıklama</th><th class="num">Tutar</th><th></th></tr></thead><tbody>${list.map(ajSatir).join("")}</tbody></table></div>`}
+/* ---------- Kâr hesabı: pazaryeri giderleriyle hesaba geçen tutar, kâr ve hedef kâra göre fiyat ----------
+   Satış ve alış KDV dahil girilir. Komisyon satış fiyatı (KDV dahil) üzerinden; komisyon, kargo ve hizmet bedeline %20 KDV eklenir.
+   KDV ayrılırsa kâr = satış/(1+k) − alış/(1+k) − giderler (KDV hariç). Stopaj hesaba eksik geçer, vergiden mahsup edildiği için kârdan düşülmez.
+   Ayarlar: ayar/karHesap {satirlar:{pz:{aktif,c,kg,h,st}},kdv,hedefTur(alis|marj|tl),hedef,yuvarla(90|tam|yok)} */
+const KAR_PZ=[{k:"magaza",ad:"Mağaza",c:0,kg:0,h:0,st:0},{k:"trendyol",ad:"Trendyol",c:18,kg:60,h:10,st:1},{k:"hepsiburada",ad:"Hepsiburada",c:18,kg:60,h:8,st:1},
+  {k:"n11",ad:"N11",c:18,kg:60,h:8,st:1},{k:"amazon",ad:"Amazon",c:15,kg:60,h:0,st:1},{k:"pazarama",ad:"Pazarama",c:18,kg:60,h:0,st:1},
+  {k:"idefix",ad:"İdefix",c:18,kg:60,h:0,st:1},{k:"shopify",ad:"Shopify (web sitesi)",c:3,kg:60,h:0,st:0}];
+function karAyar(){const a=(state.ayarEk||{}).karHesap||{},s=a.satirlar||{},n=(v,d)=>v!=null&&v!==""&&isFinite(Number(v))?Number(v):d;
+  return {kayitli:!!(state.ayarEk||{}).karHesap,kdv:a.kdv!==false,hedefTur:a.hedefTur||"alis",hedef:n(a.hedef,25),yuvarla:a.yuvarla||"90",
+    satirlar:KAR_PZ.map(p=>{const x=s[p.k]||{},vc=(p.k==="idefix"||p.k==="pazarama")?n(pzKomisyonOrani(p.k),p.c):p.c;
+      return {k:p.k,ad:p.ad,aktif:x.aktif!==false,c:n(x.c,vc),kg:n(x.kg,p.kg),h:n(x.h,p.h),st:n(x.st,p.st)}})}}
+function karHesapla(f,a,k,r,kdv){f=Number(f)||0;a=Number(a)||0;const b=1+(Number(k)||0)/100;
+  const kom=f*(Number(r.c)||0)/100,giderNet=kom+(Number(r.kg)||0)+(Number(r.h)||0),giderKdv=giderNet*0.2,stopaj=f/b*(Number(r.st)||0)/100;
+  const gelen=f-giderNet-giderKdv-stopaj,kar=kdv?f/b-a/b-giderNet:f-a-giderNet-giderKdv,ab=kdv?a/b:a,sb_=kdv?f/b:f;
+  return {kom,giderNet,giderKdv,stopaj,gelen,kar,karYuzde:ab>0?kar/ab*100:null,marj:sb_>0?kar/sb_*100:null}}
+// Hedefi tutturan en düşük satış fiyatı (kâr fiyata göre doğrusal). Tutturulamıyorsa null.
+function karFiyatBul(a,k,r,kdv,tur,deger,yuv){const bz=kdv?1/(1+(Number(k)||0)/100):1,d=Number(deger)||0;
+  const g=f=>karHesapla(f,a,k,r,kdv).kar-(tur==="tl"?d:tur==="marj"?d/100*f*bz:d/100*(Number(a)||0)*bz);
+  const g0=g(0),eg=(g(1000)-g0)/1000;if(!(eg>1e-9))return null;let f=Math.max(0.01,-g0/eg);
+  if(yuv==="90")f=Math.ceil(f+0.1-1e-9)-0.1;else if(yuv==="tam")f=Math.ceil(f-1e-9);else f=Math.ceil(f*100-1e-6)/100;return r2(f)}
+const karHedefYazi=(tur,d)=>tur==="tl"?money(d)+" kâr":tur==="marj"?"%"+d+" marj (satışa göre)":"%"+d+" kâr (alışa göre)";
+const karYuzde=v=>v==null||!isFinite(v)?"—":"%"+v.toLocaleString("tr-TR",{maximumFractionDigits:1});
+function vKar(){const ay=karAyar(),ro=state.readonly;
+  if(!ui.kh)ui.kh={ara:"",uid:"",alis:"",satis:"",kdvOran:20,kdv:ay.kdv,hedefTur:ay.hedefTur,hedef:ay.hedef,yuvarla:ay.yuvarla,taslak:{}};const h=ui.kh;
+  const u=h.uid?state.urunler.find(x=>x.id===h.uid):null;
+  const ss=ay.satirlar.map(r=>({...r,...(h.taslak[r.k]||{})}));
+  const sel=(id,v,l)=>`<select id="${id}">${l.map(([k,t])=>`<option value="${k}" ${String(v)===k?"selected":""}>${t}</option>`).join("")}</select>`;
+  return `<div id="khKok"><section class="section-head"><h2>Kâr hesabı</h2></section>
+  <section class="panel"><div class="section-head"><h2>Ürün ve fiyat</h2></div>
+    <div class="field"><label for="khAra">Ürün seç <span class="muted" style="font-weight:400">(isteğe bağlı: alış, satış fiyatı ve KDV üründen gelir)</span></label>
+      <input id="khAra" value="${esc(h.ara)}" placeholder="Barkod, stok kodu ya da ürün adı yazın" autocomplete="off"><div id="khSonuc" style="display:flex;flex-direction:column;gap:4px;margin-top:4px"></div></div>
+    ${u?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="chip ok">📦 ${esc(u.ad)}</span><span class="muted" style="font-size:.85rem">${esc(u.barkod||u.kod||"")} · Kayıtlı satış ${money(u.satisFiyat)} · Alış ${Number(u.alisFiyat)?money(u.alisFiyat):"—"} · Stok ${fmtMiktar(stokMiktar(u))}</span><button class="small ghost" type="button" data-kh="birak">Ürünü bırak</button></div>`:""}
+    <div class="grid2">
+      <div class="field"><label for="khAlis">Alış fiyatı, KDV dahil (₺)</label><input id="khAlis" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(h.alis)}" placeholder="Örn. 100"></div>
+      <div class="field"><label for="khSatis">Satış fiyatı, KDV dahil (₺)</label><input id="khSatis" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(h.satis)}" placeholder="Örn. 199,90"></div>
+      <div class="field"><label for="khKdv">Ürünün KDV oranı</label>${sel("khKdv",h.kdvOran,KDV_ORAN.map(k=>[String(k),"%"+k]))}</div>
+      <div class="field"><label for="khKdvMod">Kâr nasıl hesaplansın?</label>${sel("khKdvMod",h.kdv?"1":"0",[["1","KDV ayrılarak (önerilen)"],["0","KDV ayrılmadan, dahil tutarlarla"]])}</div>
+    </div></section>
+  <section class="panel"><div class="section-head"><h2>Bu fiyattan satınca size ne kalır?</h2></div><div id="khTablo"></div></section>
+  <section class="panel"><div class="section-head"><h2>Hedef kâra göre satış fiyatı</h2></div>
+    <div class="filters">${sel("khHTur",h.hedefTur,[["alis","Kâr % (alışa göre)"],["marj","Marj % (satışa göre)"],["tl","Sabit kâr (₺)"]])}
+      <input id="khHDeger" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(h.hedef)}" style="max-width:120px" aria-label="Hedef değer">
+      ${sel("khYuv",h.yuvarla,[["90","Fiyatı ,90 ile bitir"],["tam","Tam liraya yuvarla"],["yok","Yuvarlama"]])}</div>
+    <div id="khHedef"></div></section>
+  <section class="panel"><div class="section-head"><h2>Pazaryeri giderleri</h2>${ro?"":`<button class="small primary" type="button" data-kh="kaydet">Kaydet</button>`}</div>
+    <div class="muted" style="font-size:.84rem">${ay.kayitli?"":"<b>Değerler örnektir;</b> kendi anlaşmanıza ve kategori komisyonlarınıza göre düzeltip kaydedin. "}Komisyon KDV dahil satış fiyatı üzerinden yüzde; kargo ve hizmet bedeli sipariş başına KDV hariç tutar (bunlara %20 KDV eklenir). Stopaj: pazaryerinin ödemeden kestiği e-ticaret stopajı. Kaydedince hedef kâr ayarı da varsayılan olur; ürün kartındaki fiyat önerisi bunları kullanır.</div>
+    <div class="tscroll"><table><thead><tr><th>Kullan</th><th>Satış yeri</th><th class="num">Komisyon %</th><th class="num">Kargo ₺</th><th class="num">Hizmet bedeli ₺</th><th class="num">Stopaj %</th></tr></thead><tbody>
+    ${ss.map(r=>`<tr><td><input type="checkbox" data-ks="aktif" data-p="${r.k}" ${r.aktif?"checked":""} ${ro?"disabled":""} aria-label="${esc(r.ad)} hesaba katılsın"></td><td>${esc(r.ad)}</td>${["c","kg","h","st"].map(f=>`<td class="num"><input type="number" step="0.01" min="0" inputmode="decimal" data-ks="${f}" data-p="${r.k}" value="${esc(r[f])}" style="max-width:96px;text-align:right" ${ro?"disabled":""}></td>`).join("")}</tr>`).join("")}
+    </tbody></table></div><div class="err" id="khErr" role="alert"></div></section></div>`}
+function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||!h)return;const $=s=>kok.querySelector(s);
+  const num=v=>{const n=Number(String(v??"").replace(",","."));return isFinite(n)?n:0};
+  const satirlar=()=>karAyar().satirlar.map(r=>({...r,...(h.taslak[r.k]||{})}));
+  const td=v=>`<td class="num${v<0?" neg":""}">`;
+  const hesapCiz=()=>{const a=num(h.alis),f=num(h.satis),k=num(h.kdvOran),ss=satirlar().filter(r=>r.aktif);
+    $("#khTablo").innerHTML=!(f>0)?`<div class="empty">Satış fiyatını yazın; her satış yerinde hesabınıza ne geçeceği ve kârınız burada görünür.</div>`:
+      `<div class="tscroll"><table><thead><tr><th>Satış yeri</th><th class="num">Komisyon</th><th class="num">Kargo + hizmet</th><th class="num">Giderlerin KDV'si</th><th class="num">Stopaj</th><th class="num">Hesabınıza geçen</th><th class="num">Kâr</th><th class="num">Kâr % (alışa göre)</th><th class="num">Marj % (satışa göre)</th></tr></thead><tbody>
+      ${ss.map(r=>{const x=karHesapla(f,a,k,r,h.kdv);return `<tr><td>${esc(r.ad)}${r.c?` <span class="muted" style="font-size:.78rem">%${r.c}</span>`:""}</td><td class="num">${money(x.kom)}</td><td class="num">${money(num(r.kg)+num(r.h))}</td><td class="num">${money(x.giderKdv)}</td><td class="num">${money(x.stopaj)}</td><td class="num"><b>${money(x.gelen)}</b></td>${td(x.kar)}<b>${money(x.kar)}</b></td>${td(x.kar)}${a>0?karYuzde(x.karYuzde):"—"}</td>${td(x.kar)}${karYuzde(x.marj)}</td></tr>`}).join("")}</tbody></table></div>
+      <div class="muted" style="font-size:.8rem">${h.kdv?"Kâr KDV hariç: satıştaki KDV'den alışın ve giderlerin KDV'si düşülür, kalan devlete ödenir.":"Kâr KDV ayrılmadan, KDV dahil tutarlarla hesaplandı."} ${a>0?"":"Alış fiyatı yazılmadığı için kâr alışı 0 sayarak hesaplandı. "}Stopaj hesabınıza eksik geçer ama vergiden mahsup edildiği için kârdan düşülmez.</div>`;
+    hedefCiz()};
+  const hedefCiz=()=>{const a=num(h.alis),k=num(h.kdvOran),d=num(h.hedef),ss=satirlar().filter(r=>r.aktif),el=$("#khHedef");
+    if(h.hedefTur==="alis"&&!(a>0)){el.innerHTML=`<div class="empty">Alışa göre kâr için alış fiyatını yazın.</div>`;return}
+    const l=ss.map(r=>({r,f:karFiyatBul(a,k,r,h.kdv,h.hedefTur,d,h.yuvarla)})),ok=l.filter(x=>x.f!=null),enY=ok.length?Math.max(...ok.map(x=>x.f)):null;
+    const u=h.uid?state.urunler.find(x=>x.id===h.uid):null;
+    el.innerHTML=`<div class="tscroll"><table><thead><tr><th>Satış yeri</th><th class="num">Önerilen fiyat</th><th class="num">Bu fiyatta kâr</th><th class="num">Hesabınıza geçen</th>${enY?`<th class="num">${money(enY)} olursa kâr</th>`:""}<th></th></tr></thead><tbody>
+      ${l.map(({r,f})=>{if(f==null)return `<tr><td>${esc(r.ad)}</td><td colspan="${enY?5:4}" class="neg">Bu hedef bu giderlerle tutturulamaz (komisyon ve marj toplamı çok yüksek).</td></tr>`;
+        const x=karHesapla(f,a,k,r,h.kdv),y=enY?karHesapla(enY,a,k,r,h.kdv):null;
+        return `<tr><td>${esc(r.ad)}</td><td class="num"><b>${money(f)}</b></td><td class="num">${money(x.kar)} <span class="muted" style="font-size:.8rem">${karYuzde(h.hedefTur==="marj"?x.marj:x.karYuzde)}</span></td><td class="num">${money(x.gelen)}</td>${y?`${td(y.kar)}${money(y.kar)}</td>`:""}<td><button class="small ghost" type="button" data-kh="kullan" data-v="${f}">Hesapla</button></td></tr>`}).join("")}</tbody></table></div>
+      ${enY?`<div class="notice" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><span style="flex:1;min-width:220px"><b>Bütün satış yerlerinde hedefi tutturan fiyat: ${money(enY)}</b><br><span style="font-size:.84rem">Pazaryerlerine aynı satış fiyatı gittiği için en yüksek giderli yere göre seçildi.</span></span>
+        <button class="small" type="button" data-kh="kullan" data-v="${enY}">Bu fiyatla hesapla</button>${u&&!state.readonly?`<button class="small primary" type="button" data-kh="urunYaz" data-v="${enY}">Ürünün fiyatını ${money(enY)} yap</button>`:""}</div>`:""}`};
+  const aramaCiz=()=>{const q=String(h.ara||"").trim(),el=$("#khSonuc");if(q.length<2){el.innerHTML="";return}
+    const qk=pzKimlik(q),qn=q.toLocaleLowerCase("tr");
+    const tam=state.urunler.filter(u=>qk&&(pzKimlik(u.barkod)===qk||pzKimlik(u.kod)===qk));
+    const l=(tam.length?tam:state.urunler.filter(u=>String(u.ad||"").toLocaleLowerCase("tr").includes(qn)||String(u.barkod||"").includes(q)||String(u.kod||"").toLocaleLowerCase("tr").includes(qn))).slice(0,8);
+    el.innerHTML=l.length?l.map(u=>`<button type="button" class="small ghost" data-kh="sec" data-v="${u.id}" style="text-align:left;justify-content:flex-start">${esc(u.ad)} <span class="muted">· ${esc(u.barkod||u.kod||"")} · ${money(u.satisFiyat)}</span></button>`).join(""):`<span class="muted" style="font-size:.84rem">Ürün bulunamadı.</span>`};
+  $("#khAra").addEventListener("input",e=>{h.ara=e.target.value;aramaCiz()});
+  $("#khAlis").addEventListener("input",e=>{h.alis=e.target.value;hesapCiz()});
+  $("#khSatis").addEventListener("input",e=>{h.satis=e.target.value;hesapCiz()});
+  $("#khKdv").addEventListener("change",e=>{h.kdvOran=Number(e.target.value);hesapCiz()});
+  $("#khKdvMod").addEventListener("change",e=>{h.kdv=e.target.value==="1";hesapCiz()});
+  $("#khHTur").addEventListener("change",e=>{h.hedefTur=e.target.value;hedefCiz()});
+  $("#khHDeger").addEventListener("input",e=>{h.hedef=e.target.value;hedefCiz()});
+  $("#khYuv").addEventListener("change",e=>{h.yuvarla=e.target.value;hedefCiz()});
+  kok.querySelectorAll("[data-ks]").forEach(i=>i.addEventListener(i.type==="checkbox"?"change":"input",()=>{const p=i.dataset.p,f=i.dataset.ks;
+    h.taslak[p]={...(h.taslak[p]||{}),[f]:f==="aktif"?i.checked:i.value};hesapCiz()}));
+  kok.addEventListener("click",async e=>{const b=e.target.closest("[data-kh]");if(!b)return;const a=b.dataset.kh,v=b.dataset.v;
+    if(a==="sec"){const u=state.urunler.find(x=>x.id===v);if(!u)return;Object.assign(h,{uid:u.id,ara:"",alis:Number(u.alisFiyat)?String(r2(u.alisFiyat)):"",satis:Number(u.satisFiyat)?String(r2(u.satisFiyat)):"",kdvOran:Number(u.kdvOran??20)});render()}
+    else if(a==="birak"){h.uid="";render()}
+    else if(a==="kullan"){h.satis=String(v);$("#khSatis").value=v;hesapCiz();$("#khTablo").scrollIntoView({block:"nearest",behavior:"smooth"})}
+    else if(a==="urunYaz"){if(h.uid)hizliDuzenle(h.uid,"satis",Number(v))}
+    else if(a==="kaydet"){const s={};for(const r of satirlar())s[r.k]={aktif:r.aktif!==false,c:num(r.c),kg:num(r.kg),h:num(r.h),st:num(r.st)};
+      b.disabled=true;$("#khErr").textContent="";
+      try{await api.setDoc("ayar","karHesap",{satirlar:s,kdv:h.kdv,hedefTur:h.hedefTur,hedef:num(h.hedef),yuvarla:h.yuvarla,guncelleme:Date.now()});h.taslak={};toast("Kâr hesabı ayarları kaydedildi")}
+      catch(err){$("#khErr").textContent=errMsg(err);b.disabled=false}}});
+  aramaCiz();hesapCiz()}
+
 function vAjanda(){
   const t=today();const ev=ajandaOlaylari(gunEkle(t,-180),gunEkle(t,120));
   const acik=ev.filter(e=>!e.done);const gec=acik.filter(e=>e.tarih<t&&e.tur!=="Hatırlatma"||e.tarih<t&&e.kaynak==="manuel");
@@ -1711,7 +1809,7 @@ function urunForm(existing){
       <div class="field"><label for="sAcilis">${existing?"Açılış stoku":"Mevcut stok miktarı"}</label><input id="sAcilis" type="number" step="1" inputmode="decimal" value="${esc(u.acilis)}" placeholder="0"></div>
       <div class="field"><label for="sKritik">Kritik stok seviyesi</label><input id="sKritik" type="number" step="1" min="0" inputmode="decimal" value="${esc(u.kritik)}" placeholder="Örn. 10"></div>
     </div>
-    ${(Number(u.alisFiyat)||0)&&(Number(u.satisFiyat)||0)?`<div class="muted" style="font-size:.82rem">Kâr marjı: %${Math.round((u.satisFiyat-u.alisFiyat)/u.alisFiyat*100)}</div>`:""}
+    <div id="sKar" class="muted" style="font-size:.82rem"></div>
     <div class="field"><label>Görseller <span class="muted" style="font-weight:400">(en fazla 8; ilki ana görsel — pazaryerlerine ürün açarken kullanılır)</span></label>
       <div id="sGorsel" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       <div class="filters" style="margin-top:6px"><button class="small primary" data-m="tyGorsel" type="button" title="Bu ürünün görsellerini ve açıklamasını barkoduyla Trendyol'dan alır">🖼 Trendyol'dan çek</button><button class="small" data-m="dosya" type="button">📷 Bilgisayardan ekle</button><input id="sGorselDosya" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
@@ -1731,6 +1829,16 @@ function urunForm(existing){
     gCiz();
     // Pazaryeri hazırlığı: formdaki güncel bilgilerle her pazaryeri için eksikler; ürüne özel zorunlu özellikler (pzOz)
     const fv=id=>root.querySelector("#"+id).value.trim();
+    // Kâr özeti ve hedef kâra göre önerilen satış fiyatı (giderler ve hedef: Kâr hesabı sekmesindeki ayarlar)
+    const karCiz=()=>{const el=root.querySelector("#sKar");if(!el)return;const a=Number(fv("sAlis"))||0,f=Number(fv("sSatis"))||0,k=Number(root.querySelector("#sKdv").value)||0,ay=karAyar(),ss=ay.satirlar.filter(r=>r.aktif);
+      const hf=a>0?ss.map(r=>karFiyatBul(a,k,r,ay.kdv,ay.hedefTur,ay.hedef,ay.yuvarla)).filter(x=>x!=null):[],enY=hf.length?Math.max(...hf):null;
+      const kl=f>0&&a>0?ss.map(r=>{const x=karHesapla(f,a,k,r,ay.kdv);return `${esc(r.ad)} <b class="${x.kar<0?"neg":""}" style="${x.kar<0?"":"color:var(--fg)"}">${money(x.kar)}</b>`}).join(" · "):"";
+      el.innerHTML=(kl?`<div>Bu fiyatta kâr${ay.kdv?" (KDV hariç)":""}: ${kl}</div>`:"")
+        +(enY?`<div style="margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>Hedef ${esc(karHedefYazi(ay.hedefTur,ay.hedef))} için önerilen satış fiyatı: <b style="color:var(--fg)">${money(enY)}</b></span>${f===enY?`<span class="chip ok">uygulandı</span>`:`<button type="button" class="small" id="sKarUygula">Satış fiyatına yaz</button>`}</div>`
+          :`<div>Alış fiyatını yazınca hedef kâra göre satış fiyatı önerilir.</div>`)
+        +`<div style="font-size:.76rem;margin-top:2px">Komisyon, kargo ve hedef kâr “Kâr hesabı” sekmesinden ayarlanır.</div>`;
+      const bt=el.querySelector("#sKarUygula");if(bt)bt.onclick=()=>{root.querySelector("#sSatis").value=enY;karCiz()}};
+    root.querySelector("#sAlis").addEventListener("input",karCiz);root.querySelector("#sSatis").addEventListener("input",karCiz);root.querySelector("#sKdv").addEventListener("change",karCiz);karCiz();
     let pzOz=JSON.parse(JSON.stringify(u.pzOzellik||{})),pzAcik="";
     const formU=()=>({ad:fv("sAd"),kod:fv("sKod"),barkod:fv("sBarkod"),satisFiyat:Number(fv("sSatis")),kdvOran:Number(fv("sKdv")),miktar:existing?stokMiktar(existing):Number(fv("sAcilis"))||0,gorseller,aciklama:fv("sAcik"),desi:Number(fv("sDesi")),kategori:fv("sKat"),marka:fv("sMarka"),pzOzellik:pzOz});
     const pzDurumHtml=(f,p)=>{const ek=pzHazirlik(f,p);return ek.length?`<span class="neg">Eksik: ${esc(ek.join(", "))}</span>`:`<span style="color:var(--accent,#17624d);font-weight:600">Hazır ✓</span>`};
@@ -2207,7 +2315,7 @@ async function urunTumExcel(){
    Stok değişikliği "Sayım" hareketi olarak yazılır (geçmiş korunur); fiyat ürün kartına yazılır. */
 document.addEventListener("dblclick",e=>{const td=e.target.closest&&e.target.closest("[data-dbl]");if(!td||state.readonly)return;
   e.preventDefault();try{window.getSelection().removeAllRanges()}catch(err){}hizliDuzenle(td.dataset.id,td.dataset.dbl)});
-function hizliDuzenle(uid,alan){
+function hizliDuzenle(uid,alan,onDeger){
   const u=state.urunler.find(x=>x.id===uid);if(!u)return;
   const stokMu=alan==="stok",ad={stok:"Stok",alis:"Alış fiyatı",satis:"Satış fiyatı"}[alan];
   const eski=stokMu?stokMiktar(u):r2(Number(alan==="alis"?u.alisFiyat:u.satisFiyat)||0);
@@ -2218,7 +2326,7 @@ function hizliDuzenle(uid,alan){
   const listeli=alan!=="alis"&&firmaRol==="sahip"&&!state.readonly&&sb?PZ_FS_YAZ.filter(k=>pzIlanDurum(u,k)):[];let pzGonder=true;
   const ciz=root=>{const f=root.querySelector("#hdGovde");
     if(adim===1)f.innerHTML=`<div class="field"><label for="hdDeger">Yeni ${ad.toLocaleLowerCase("tr")}${stokMu?" ("+esc(u.birim||"Adet")+")":" (₺, KDV dahil)"}</label>
-        <input id="hdDeger" type="number" ${stokMu?'step="1"':'step="0.01" min="0"'} inputmode="decimal" value="${esc(String(eski))}"></div>
+        <input id="hdDeger" type="number" ${stokMu?'step="1"':'step="0.01" min="0"'} inputmode="decimal" value="${esc(String(onDeger!=null&&yeni==null?onDeger:yeni!=null?yeni:eski))}"></div>
       <div class="muted" style="font-size:.85rem">Şu an: <b style="color:var(--fg)">${goster(eski)}</b>${stokMu?" · fark sayım hareketi olarak kaydedilir":""}</div>
       ${stokMu&&deneme&&pzStokOtoAcik()&&!listeli.length?`<div class="notice" style="font-size:.85rem">Bu ürün deneme listesinde: yeni stok birkaç saniye içinde bağlı pazaryerlerine de gönderilir.</div>`:""}
       <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="devam">Devam</button></div>`;
