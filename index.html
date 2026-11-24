@@ -920,6 +920,27 @@ function tyKar(u){const kay=(state.ayarEk||{}).karHesap;if(!_tyKarAy||_tyKarKayn
   const a=Number(u.alisFiyat)||0,f=Number(u.satisFiyat)||0;if(!(a>0&&f>0)||!_tyKarAy.r)return null;
   const k=u.kdvOran!=null&&u.kdvOran!==""&&isFinite(Number(u.kdvOran))?Number(u.kdvOran):20,x=karHesapla(f,a,k,_tyKarAy.r,_tyKarAy.kdv);
   return {kar:x.kar,yuzde:_tyKarAy.marj?x.marj:x.karYuzde,marj:_tyKarAy.marj}}
+// "TY kâr %" yüzdesine basınca: Trendyol giderlerinin dökümü
+function tyKarDetay(u){const ay=karAyar(),r=ay.satirlar.find(x=>x.k==="trendyol");if(!r)return;
+  const a=Number(u.alisFiyat)||0,f=Number(u.satisFiyat)||0,k=u.kdvOran!=null&&u.kdvOran!==""&&isFinite(Number(u.kdvOran))?Number(u.kdvOran):20,b=1+k/100;
+  const x=karHesapla(f,a,k,r,ay.kdv),bar=karBaremler(r).find(z=>f<z.u);
+  const st=(l,v,ek,cls)=>`<tr${cls?` class="${cls}"`:""}><td>${l}${ek?`<div class="muted" style="font-size:.78rem">${ek}</div>`:""}</td><td class="num">${v}</td></tr>`;
+  openModal(`<div class="section-head"><h2>Trendyol kâr dökümü</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div><b>${esc(u.ad)}</b><div class="muted" style="font-size:.84rem">${esc(u.barkod||u.kod||"")} · KDV %${k}</div></div>
+    <div class="tscroll"><table class="kart-yok"><tbody>
+      ${st("Satış fiyatı (KDV dahil)",money(f))}
+      ${ay.kdv?st("Satış fiyatı (KDV hariç)",money(f/b)):""}
+      ${st("Alış fiyatı"+(ay.kdv?" (KDV hariç)":""),"− "+money(ay.kdv?a/b:a),ay.kdv?"KDV dahil "+money(a):"")}
+      ${st("Komisyon (%"+r.c+")","− "+money(x.kom),"KDV dahil satış fiyatı üzerinden")}
+      ${st("Kargo","− "+money(x.kargo),bar?"Barem: "+money(bar.u)+" altı sipariş":"Normal kargo (barem üstü)")}
+      ${st("Hizmet bedeli","− "+money(Number(r.h)||0))}
+      ${ay.kdv?"":st("Giderlerin KDV'si (%20)","− "+money(x.giderKdv))}
+      <tr style="font-weight:700"><td>Kâr</td><td class="num" style="color:${x.kar<0?"var(--out)":"var(--in)"}">${money(x.kar)} · ${karYuzde(ay.hedefTur==="marj"?x.marj:x.karYuzde)}</td></tr>
+    </tbody></table></div>
+    <div class="muted" style="font-size:.84rem">Toplam gider ${money(x.giderNet)} + KDV ${money(x.giderKdv)}${x.stopaj?` · Stopaj (%${r.st}) ${money(x.stopaj)}: kârdan düşülmez, vergiden mahsup edilir`:""}.<br>Hesabınıza geçen: <b>${money(x.gelen)}</b>.
+      ${ay.kdv?"Hesap KDV ayrılarak yapıldı (giderlerin KDV'si indirilebilir sayıldı).":"Hesap KDV ayrılmadan yapıldı."} Kâr oranı ${ay.hedefTur==="marj"?"satışa":"alışa"} göre. Giderleri Kâr hesabı sekmesinden değiştirebilirsiniz.</div>
+    <div class="modal-foot"><a class="btn" href="#kar" data-m="close">Kâr hesabını aç</a><button type="button" class="primary" data-m="close">Tamam</button></div>`,
+  root=>root.addEventListener("click",e=>{if(e.target.closest("[data-m=close]"))closeModal()}))}
 const tyKarSayi=u=>{const x=tyKar(u);return x&&isFinite(x.yuzde)?Math.round(x.yuzde*10)/10:null};
 function vKar(){const ay=karAyar(),ro=state.readonly;
   if(!ui.kh)ui.kh={ara:"",uid:"",alis:"",satis:"",kdvOran:20,kdv:ay.kdv,hedefTur:ay.hedefTur,hedef:ay.hedef,yuvarla:ay.yuvarla,taslak:{}};const h=ui.kh;
@@ -1816,7 +1837,7 @@ function vStok(){
       <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${u.marka?`<a href="#" data-act="ugAc" data-id="${esc(u.marka)}" data-p="marka" title="Bu markanın ürünlerini göster">${esc(u.marka)}</a>`:"—"}</td><td>${u.kategori?`<a href="#" data-act="ugAc" data-id="${esc(u.kategori)}" data-p="kategori" title="Bu kategorinin ürünlerini göster">${esc(u.kategori)}</a>`:"—"}</td>
       <td class="num ${u.durum==="yok"?"neg":""}" ${ro?"":`data-dbl="stok" data-id="${u.id}" title="Çift tıklayın: stoğu değiştir" style="cursor:cell"`}>${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
       <td class="num" ${ro?"":`data-dbl="alis" data-id="${u.id}" title="Çift tıklayın: alış fiyatını değiştir" style="cursor:cell"`}>${money(u.alisFiyat)}</td><td class="num" ${ro?"":`data-dbl="satis" data-id="${u.id}" title="Çift tıklayın: satış fiyatını değiştir" style="cursor:cell"`}>${money(u.satisFiyat)}</td>${(()=>{const x=tyKar(u);if(!x)return `<td class="num muted" title="Alış ya da satış fiyatı yok">—</td>`;const neg=x.kar<0;
-        return `<td class="num" title="Trendyol'da satınca kalan kâr: ${money(x.kar)} (${x.marj?"satışa göre marj":"alışa göre"}; giderler Kâr hesabı sekmesinden)" style="font-weight:600;color:${neg?"var(--out)":"var(--in)"}">${karYuzde(x.yuzde)}<div class="muted" style="font-size:.72rem;font-weight:400">${money(x.kar)}</div></td>`})()}<td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
+        return `<td class="num" title="Trendyol'da satınca kalan kâr: ${money(x.kar)} (${x.marj?"satışa göre marj":"alışa göre"}; giderler Kâr hesabı sekmesinden)" style="font-weight:600;color:${neg?"var(--out)":"var(--in)"}"><button type="button" data-act="tyKarDetay" data-id="${u.id}" title="Giderleri göster (komisyon, kargo, hizmet bedeli…)" style="all:unset;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px">${karYuzde(x.yuzde)}</button><div class="muted" style="font-size:.72rem;font-weight:400">${money(x.kar)}</div></td>`})()}<td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
       <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="stokGiris" data-id="${u.id}" type="button">Giriş</button><button class="small" data-act="stokCikis" data-id="${u.id}" type="button">Çıkış</button><button class="small ghost" data-act="stokSayim" data-id="${u.id}" type="button">Sayım</button>`}<button class="small ghost" data-act="stokGecmis" data-id="${u.id}" type="button">Hareketler</button>${state.readonly?"":`<button class="small ghost" data-act="editUrun" data-id="${u.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
     </tbody></table></div>`:`<div class="empty">${"Henüz ürün yok. <b>+ Ürün ekle</b> ile defter, kalem, boya gibi ürünlerinizi ve mevcut stok miktarlarını girin. Sonra mal geldiğinde <b>Giriş</b>, sattığınızda <b>Çıkış</b> yapın."}</div>`}
     ${sayfaSay>1?sayfaCubuk.replace('id="fSBoyut"','id="fSBoyut2"'):""}
@@ -6105,6 +6126,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="uKatDuzelt")katDuzeltModal();
   else if(a==="uExcel")urunSeciliExcel();
   else if(a==="uTumExcel")urunTumExcel();
+  else if(a==="tyKarDetay"){const u=state.urunler.find(x=>x.id===id);if(u)tyKarDetay(u)}
   else if(a==="uKolSira"){const c=URUN_KOL.find(x=>x.k===id);if(c){ui.sSira=ui.sSira===c.artan?c.azalan:c.artan;ui.sSayfa=1;try{localStorage.setItem("urun-sira",ui.sSira)}catch(err){}render()}}
   else if(a==="uKolTemizle"){ui.sKol={};render()}
   else if(a==="esKat"){e.preventDefault();if(firmaRol!=="sahip"&&state.readonly){toast("Yetkiniz yok");return}pzKatEslesModal(b.dataset.k,b.dataset.p)}
