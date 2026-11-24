@@ -2320,10 +2320,10 @@ function urunTopluForm(tip){  const sec=state.urunler.filter(u=>urunSecim.has(u.
           if(!silinecek.length){er.textContent="Silinecek ürün yok. Stok hareketi olanları da silmek için kutuyu işaretleyin.";root.querySelectorAll("button,input,select").forEach(x=>x.disabled=false);return}
           if(hepsi){const sset=new Set(hareketli.map(u=>u.id));const shIds=state.stokHareketleri.filter(s=>sset.has(s.urunId)).map(s=>s.id);
             for(let i=0;i<shIds.length;i+=200){const ids=shIds.slice(i,i+200);ids.forEach(id=>yerelUygula("stokHareketleri",id,null));
-              const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","stokHareketleri").in("id",ids);if(error){veriYenile();throw sbHata(error)}
+              const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","stokHareketleri").in("id",ids);if(error){_kHarita=null;veriYenile();throw sbHata(error)}
               du.textContent=`Stok hareketleri siliniyor… ${Math.min(i+200,shIds.length)} / ${shIds.length}`}}
           for(let i=0;i<silinecek.length;i+=200){const ids=silinecek.slice(i,i+200).map(u=>u.id);ids.forEach(id=>{yerelUygula("urunler",id,null);urunSecim.delete(id)});
-            const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","urunler").in("id",ids);if(error){veriYenile();throw sbHata(error)}
+            const {error}=await sb.from("kayitlar").delete().eq("firma_id",firmaId).eq("koleksiyon","urunler").in("id",ids);if(error){_kHarita=null;veriYenile();throw sbHata(error)}
             du.textContent=`Siliniyor… ${Math.min(i+200,silinecek.length)} / ${silinecek.length}`}
           urunSecim.clear();renderSonra();closeModal();toast(`${silinecek.length.toLocaleString("tr-TR")} ürün silindi${!hepsi&&hareketli.length?` · ${hareketli.length} ürün hareketi olduğu için silinmedi`:""}`);return}
         const satir=(tip==="barkod"?barkodAday:sec).map(u=>{const {id,miktar:_m,durum:_d,...r}=u;const y={...r};
@@ -6707,19 +6707,42 @@ function yerelUygula(col,id,veri){if(col==="ayar"){if(id==="firma")state.firma=v
 /* Okuma sürerken (birkaç saniye) yapılan kayıtlar ve canlı gelen değişiklikler not edilir; okunan eski liste uygulandıktan sonra
    bunlar yeniden uygulanır. Yoksa ör. o sırada girilen alış fiyatı birkaç saniye sonra eski haline döner gibi görünür. */
 const _yukIzle=new Set();
-function _yukNot(col,id,veri){for(const m of _yukIzle)m.set(col+"\u0001"+id,{col,id,veri})}
+/* Son okunan bütün kayıtlar (koleksiyon\u0001id → satır). Bu cihazdaki yazmalar ve canlı gelen değişiklikler de işlenir;
+   bir sonraki okumada yalnızca değişenler indirilir ve bu haritanın üstüne konur. */
+let _kHarita=null,_kHaritaF=null;
+function _yukNot(col,id,veri){for(const m of _yukIzle)m.set(col+"\u0001"+id,{col,id,veri});
+  if(_kHarita&&_kHaritaF===firmaId){const k=col+"\u0001"+id;if(veri)_kHarita.set(k,{koleksiyon:col,id,veri});else _kHarita.delete(k)}}
 async function tumunuYukle(){const iz=new Map();_yukIzle.add(iz);try{await _tumunuYukle(iz)}finally{_yukIzle.delete(iz)}}
+/* Veri trafiğini azaltmak için: her seferinde 27 bin kaydın hepsi değil, yalnızca son okumadan beri değişenler indirilir
+   ("guncelleme" sütunu; cihaz saatleri farklı olabileceği için 3 saat geriden başlanır). Sunucudaki kayıt sayısı bizimkini
+   tutmazsa (başka cihazda silinen kayıt vb.) ya da son tam okumanın üstünden 24 saat geçtiyse hepsi baştan okunur. */
+const KY_TAM_SURE=24*3600000,KY_PAY=3*3600000;
 async function _tumunuYukle(iz){const f=firmaId,N=1000;
-  const parca=async from=>{for(let d=0;;d++){const {data,error}=await sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",f).order("koleksiyon").order("id").range(from,from+N-1);if(!error)return data;if(d>=2)throw error;await new Promise(r=>setTimeout(r,800*(d+1)))}};
-  const {count,error:ce}=await sb.from("kayitlar").select("id",{count:"exact",head:true}).eq("firma_id",f);
-  let rows=[];
-  if(ce||!(count>=0)){for(let from=0;;from+=N){const d=await parca(from);rows.push(...d);if(d.length<N)break}}
-  else{const bas=[];for(let from=0;from<count+N;from+=N)bas.push(from);const sonuc=new Array(bas.length);let i=0;
-    await Promise.all(Array.from({length:Math.min(6,bas.length)},async()=>{while(i<bas.length){const k=i++;sonuc[k]=await parca(bas[k])}}));
-    rows=sonuc.flat()}
+  const tekrar=async q=>{for(let d=0;;d++){const {data,error}=await q();if(!error)return data;if(d>=2)throw error;await new Promise(r=>setTimeout(r,800*(d+1)))}};
+  const parca=from=>tekrar(()=>sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",f).order("koleksiyon").order("id").range(from,from+N-1));
+  // Sunucudaki en son değişiklik zamanı: okumadan ÖNCE alınır (okuma sırasında yazılanlar bir sonrakinde gelir)
+  let sonG=null;try{const d=await tekrar(()=>sb.from("kayitlar").select("guncelleme").eq("firma_id",f).order("guncelleme",{ascending:false}).limit(1));sonG=d&&d[0]?d[0].guncelleme:null}catch(e){}
+  const dep=await pzDepo.al("kayitlar-"+f);let rows=null,tamZaman=dep&&dep.tamZaman||0;
+  if(sonG&&dep&&dep.sonG&&Array.isArray(dep.rows)&&Date.now()-tamZaman<KY_TAM_SURE){
+    try{const bas=new Date(new Date(dep.sonG).getTime()-KY_PAY).toISOString();const deg=[];
+      for(let from=0;;from+=N){const d=await tekrar(()=>sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",f).gte("guncelleme",bas).order("guncelleme").order("koleksiyon").order("id").range(from,from+N-1));deg.push(...d);if(d.length<N)break}
+      const m=_kHaritaF===f&&_kHarita?new Map(_kHarita):new Map(dep.rows.map(r=>[r.koleksiyon+"\u0001"+r.id,r]));
+      for(const r of deg)m.set(r.koleksiyon+"\u0001"+r.id,r);
+      const {count,error:ce}=await sb.from("kayitlar").select("id",{count:"exact",head:true}).eq("firma_id",f);
+      if(!ce&&count===m.size)rows=[...m.values()]}
+    catch(e){rows=null}}
+  if(!rows){
+    const {count,error:ce}=await sb.from("kayitlar").select("id",{count:"exact",head:true}).eq("firma_id",f);
+    rows=[];
+    if(ce||!(count>=0)){for(let from=0;;from+=N){const d=await parca(from);rows.push(...d);if(d.length<N)break}}
+    else{const bas=[];for(let from=0;from<count+N;from+=N)bas.push(from);const sonuc=new Array(bas.length);let i=0;
+      await Promise.all(Array.from({length:Math.min(6,bas.length)},async()=>{while(i<bas.length){const k=i++;sonuc[k]=await parca(bas[k])}}));
+      rows=sonuc.flat()}
+    tamZaman=Date.now()}
   if(f!==firmaId)return;kayitUygula(rows);for(const x of iz.values())yerelUygula(x.col,x.id,x.veri);
   if(iz.size){const ek=new Map([...iz.values()].map(x=>[x.col+"\u0001"+x.id,x]));rows=rows.filter(r=>!ek.has(r.koleksiyon+"\u0001"+r.id));for(const x of ek.values())if(x.veri)rows.push({koleksiyon:x.col,id:x.id,veri:x.veri})}
-  pzDepo.koy("kayitlar-"+f,{zaman:Date.now(),rows})}
+  _kHarita=new Map(rows.map(r=>[r.koleksiyon+"\u0001"+r.id,r]));_kHaritaF=f;
+  pzDepo.koy("kayitlar-"+f,{zaman:Date.now(),rows,sonG:sonG||(dep&&dep.sonG)||null,tamZaman})}
 function kayitUygula(rows){for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";state.ayarEk={};
   // Aynı koleksiyondaki kayıtlar tek seferde dizilir (her kayıtta diziyi yeniden kurmak 27 bin kayıtta yavaş)
   const gr={};for(const r of rows){if(r.koleksiyon==="ayar"){yerelUygula("ayar",r.id,r.veri);continue}const k=KOLEKSIYONLAR[r.koleksiyon];if(!k)continue;(gr[k]=gr[k]||new Map()).set(r.id,{id:r.id,...r.veri})}
@@ -6818,9 +6841,9 @@ async function veriBaslat(){
   if(ob&&Array.isArray(ob.rows)&&state.mode==="loading"){kayitUygula(ob.rows);state.mode="db";state.guncelleniyor=true;render()}
   // Yazma bağlantısı okumayı beklemeden kurulur: kayıtlar arkadan güncellenirken de kaydetme çalışır
   api={newId:()=>idUret(),
-    setDoc:async(col,id,obj)=>{_yazSay++;_yukNot(col,id,obj);yerelUygula(col,id,obj);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){veriYenile();throw sbHata(error)}},
-    del:async(col,id)=>{_yazSay++;_yukNot(col,id,null);yerelUygula(col,id,null);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){veriYenile();throw sbHata(error)}},
-    setFirma:async n=>{yerelUygula("ayar","firma",{ad:n});render();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:n}});if(error)throw sbHata(error);if(firmaRol==="sahip")await sb.from("firmalar").update({ad:n}).eq("id",firmaId)}};
+    setDoc:async(col,id,obj)=>{_yazSay++;_yukNot(col,id,obj);yerelUygula(col,id,obj);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:col,id,veri:obj,guncelleme:new Date().toISOString()});if(error){_kHarita=null;veriYenile();throw sbHata(error)}},
+    del:async(col,id)=>{_yazSay++;_yukNot(col,id,null);yerelUygula(col,id,null);if(col==="stokHareketleri"||col==="urunler")pzStokTetikle();renderSonra();const {error}=await sb.from("kayitlar").delete().match({firma_id:firmaId,koleksiyon:col,id});if(error){_kHarita=null;veriYenile();throw sbHata(error)}},
+    setFirma:async n=>{yerelUygula("ayar","firma",{ad:n});render();const {error}=await sb.from("kayitlar").upsert({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:n},guncelleme:new Date().toISOString()});if(error)throw sbHata(error);if(firmaRol==="sahip")await sb.from("firmalar").update({ad:n}).eq("id",firmaId)}};
   const yaz0=_yazSay;
   try{await tumunuYukle();state.mode="db"}catch(e){state.mode="db";state.error="Kayıtlar yüklenemedi. "+sbMesaj(e)}
   if(f!==firmaId)return;
@@ -6862,8 +6885,8 @@ function yedekYukleModal(){
         root.querySelector("#yYBtn").hidden=!top}catch(err){er.textContent="Bu dosya geçerli bir yedek değil."}});
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="yukle"||!veri)return;
       const du=root.querySelector("#yYDurum"),er=root.querySelector("#yYErr");root.querySelectorAll("button,input").forEach(x=>x.disabled=true);
-      const rows=[];for(const c of Object.keys(KOLEKSIYONLAR))for(const d of (veri.koleksiyonlar[c]||[])){if(!d||!d.id)continue;const {id,...rest}=d;rows.push({firma_id:firmaId,koleksiyon:c,id:String(id),veri:rest})}
-      if(veri.firma&&!state.firma)rows.push({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:veri.firma}});
+      const rows=[];for(const c of Object.keys(KOLEKSIYONLAR))for(const d of (veri.koleksiyonlar[c]||[])){if(!d||!d.id)continue;const {id,...rest}=d;rows.push({firma_id:firmaId,koleksiyon:c,id:String(id),veri:rest,guncelleme:new Date().toISOString()})}
+      if(veri.firma&&!state.firma)rows.push({firma_id:firmaId,koleksiyon:"ayar",id:"firma",veri:{ad:veri.firma},guncelleme:new Date().toISOString()});
       let n=0;try{for(let i=0;i<rows.length;i+=500){const parca=rows.slice(i,i+500);let dene=0;for(;;){const {error}=await sb.from("kayitlar").upsert(parca);if(!error)break;if(++dene>3)throw error;await new Promise(r=>setTimeout(r,1500*dene))}n+=parca.length;du.textContent=`Yükleniyor… ${n.toLocaleString("tr-TR")} / ${rows.length.toLocaleString("tr-TR")}`}
         await tumunuYukle();render();closeModal();toast(rows.length.toLocaleString("tr-TR")+" kayıt geri yüklendi")}
       catch(err){er.textContent=sbMesaj(err)+" ("+n+" kayıt yüklendi; tekrar deneyebilirsiniz)";root.querySelectorAll("button,input").forEach(x=>x.disabled=false)}});
