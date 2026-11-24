@@ -914,6 +914,13 @@ function karFiyatBul(a,k,r,kdv,tur,deger,yuv){const bz=kdv?1/(1+(Number(k)||0)/1
   let f=yv(en),n=0;while(g(f,r)<-0.005&&n++<5000)f=yv(f+0.01);return r2(f)}
 const karHedefYazi=(tur,d)=>tur==="tl"?money(d)+" kâr":tur==="marj"?"%"+d+" marj (satışa göre)":"%"+d+" kâr (alışa göre)";
 const karYuzde=v=>v==null||!isFinite(v)?"—":"%"+v.toLocaleString("tr-TR",{maximumFractionDigits:1});
+// Ürünler listesindeki "TY kâr %" sütunu: Kâr hesabı sekmesindeki Trendyol giderleriyle (ayar değişmedikçe önbellekten)
+let _tyKarAy=null,_tyKarKaynak;
+function tyKar(u){const kay=(state.ayarEk||{}).karHesap;if(!_tyKarAy||_tyKarKaynak!==kay){const ay=karAyar();_tyKarAy={kdv:ay.kdv,marj:ay.hedefTur==="marj",r:ay.satirlar.find(x=>x.k==="trendyol")};_tyKarKaynak=kay}
+  const a=Number(u.alisFiyat)||0,f=Number(u.satisFiyat)||0;if(!(a>0&&f>0)||!_tyKarAy.r)return null;
+  const k=u.kdvOran!=null&&u.kdvOran!==""&&isFinite(Number(u.kdvOran))?Number(u.kdvOran):20,x=karHesapla(f,a,k,_tyKarAy.r,_tyKarAy.kdv);
+  return {kar:x.kar,yuzde:_tyKarAy.marj?x.marj:x.karYuzde,marj:_tyKarAy.marj}}
+const tyKarSayi=u=>{const x=tyKar(u);return x&&isFinite(x.yuzde)?Math.round(x.yuzde*10)/10:null};
 function vKar(){const ay=karAyar(),ro=state.readonly;
   if(!ui.kh)ui.kh={ara:"",uid:"",alis:"",satis:"",kdvOran:20,kdv:ay.kdv,hedefTur:ay.hedefTur,hedef:ay.hedef,yuvarla:ay.yuvarla,taslak:{}};const h=ui.kh;
   const u=h.uid?state.urunler.find(x=>x.id===h.uid):null;
@@ -1696,6 +1703,8 @@ const URUN_SIRA={
   markaZA:["Markaya göre (ters)",(a,b)=>String(b.marka||"").localeCompare(String(a.marka||""),"tr")||_ad(a,b)],
   kategoriZA:["Kategoriye göre (ters)",(a,b)=>String(b.kategori||"").localeCompare(String(a.kategori||""),"tr")||_ad(a,b)],
   alisYuksek:["Alış fiyatı: yüksekten düşüğe",(a,b)=>_sayi(b,"alisFiyat")-_sayi(a,"alisFiyat")||_ad(a,b)],
+  tyKarYuksek:["Trendyol kâr %: yüksekten düşüğe",(a,b)=>(tyKarSayi(b)??-1e9)-(tyKarSayi(a)??-1e9)||_ad(a,b)],
+  tyKarDusuk:["Trendyol kâr %: düşükten yükseğe",(a,b)=>(tyKarSayi(a)??1e9)-(tyKarSayi(b)??1e9)||_ad(a,b)],
   alisDusuk:["Alış fiyatı: düşükten yükseğe",(a,b)=>_sayi(a,"alisFiyat")-_sayi(b,"alisFiyat")||_ad(a,b)],
   degerDusuk:["Stok değeri: düşükten yükseğe",(a,b)=>Math.max(0,a.miktar)*_sayi(a,"alisFiyat")-Math.max(0,b.miktar)*_sayi(b,"alisFiyat")||_ad(a,b)]};
 // Ürün tablosu sütunları: başlığa tıklayınca sıralama (artan ↔ azalan), altındaki kutuyla sütun filtresi
@@ -1708,6 +1717,7 @@ const URUN_KOL=[
   {k:"stok",l:"Stok",sayi:true,deger:u=>u.miktar,artan:"stokAz",azalan:"stokCok"},
   {k:"alis",l:"Alış",sayi:true,deger:u=>Number(u.alisFiyat)||0,artan:"alisDusuk",azalan:"alisYuksek"},
   {k:"satis",l:"Satış",sayi:true,deger:u=>Number(u.satisFiyat)||0,artan:"satisDusuk",azalan:"satisYuksek"},
+  {k:"tykar",l:"TY kâr %",sayi:true,deger:u=>tyKarSayi(u)??"",artan:"tyKarDusuk",azalan:"tyKarYuksek"},
   {k:"deger",l:"Stok değeri",sayi:true,deger:u=>r2(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0)),artan:"degerDusuk",azalan:"degerYuksek"}];
 // Sayı filtresi: "5" (eşit) · ">10" · "<100" · ">=5" · "<=0" · "10-20" (aralık); virgüllü ondalık da olur
 function sayiFiltre(ifade,deger){const s=String(ifade).replace(/\s/g,"").replace(",",".");const v=Number(deger)||0;let m;
@@ -1805,7 +1815,8 @@ function vStok(){
     ${gorunen.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" autocomplete="off" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><div style="display:flex;gap:8px;align-items:center">${(u.gorseller||[])[0]?`<img src="${esc(u.gorseller[0])}" alt="" loading="lazy" data-buyut="${esc(u.id)}" title="Büyütmek için tıklayın" style="cursor:zoom-in;width:36px;height:36px;object-fit:cover;border-radius:6px;flex:none">`:""}<div><b>${esc(u.ad)}</b>${pzIlanRozet(u)}</div></div></td>
       <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${u.marka?`<a href="#" data-act="ugAc" data-id="${esc(u.marka)}" data-p="marka" title="Bu markanın ürünlerini göster">${esc(u.marka)}</a>`:"—"}</td><td>${u.kategori?`<a href="#" data-act="ugAc" data-id="${esc(u.kategori)}" data-p="kategori" title="Bu kategorinin ürünlerini göster">${esc(u.kategori)}</a>`:"—"}</td>
       <td class="num ${u.durum==="yok"?"neg":""}" ${ro?"":`data-dbl="stok" data-id="${u.id}" title="Çift tıklayın: stoğu değiştir" style="cursor:cell"`}>${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
-      <td class="num" ${ro?"":`data-dbl="alis" data-id="${u.id}" title="Çift tıklayın: alış fiyatını değiştir" style="cursor:cell"`}>${money(u.alisFiyat)}</td><td class="num" ${ro?"":`data-dbl="satis" data-id="${u.id}" title="Çift tıklayın: satış fiyatını değiştir" style="cursor:cell"`}>${money(u.satisFiyat)}</td><td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
+      <td class="num" ${ro?"":`data-dbl="alis" data-id="${u.id}" title="Çift tıklayın: alış fiyatını değiştir" style="cursor:cell"`}>${money(u.alisFiyat)}</td><td class="num" ${ro?"":`data-dbl="satis" data-id="${u.id}" title="Çift tıklayın: satış fiyatını değiştir" style="cursor:cell"`}>${money(u.satisFiyat)}</td>${(()=>{const x=tyKar(u);if(!x)return `<td class="num muted" title="Alış ya da satış fiyatı yok">—</td>`;const neg=x.kar<0;
+        return `<td class="num" title="Trendyol'da satınca kalan kâr: ${money(x.kar)} (${x.marj?"satışa göre marj":"alışa göre"}; giderler Kâr hesabı sekmesinden)" style="font-weight:600;color:${neg?"var(--out)":"var(--in)"}">${karYuzde(x.yuzde)}<div class="muted" style="font-size:.72rem;font-weight:400">${money(x.kar)}</div></td>`})()}<td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
       <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="stokGiris" data-id="${u.id}" type="button">Giriş</button><button class="small" data-act="stokCikis" data-id="${u.id}" type="button">Çıkış</button><button class="small ghost" data-act="stokSayim" data-id="${u.id}" type="button">Sayım</button>`}<button class="small ghost" data-act="stokGecmis" data-id="${u.id}" type="button">Hareketler</button>${state.readonly?"":`<button class="small ghost" data-act="editUrun" data-id="${u.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
     </tbody></table></div>`:`<div class="empty">${"Henüz ürün yok. <b>+ Ürün ekle</b> ile defter, kalem, boya gibi ürünlerinizi ve mevcut stok miktarlarını girin. Sonra mal geldiğinde <b>Giriş</b>, sattığınızda <b>Çıkış</b> yapın."}</div>`}
     ${sayfaSay>1?sayfaCubuk.replace('id="fSBoyut"','id="fSBoyut2"'):""}
