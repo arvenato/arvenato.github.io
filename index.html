@@ -40,17 +40,60 @@
 body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.5}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
 .wrap{max-width:none;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.ust-cubuk{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
 .top-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:12px}
 .brand{display:flex;flex-direction:column;min-width:0;flex:1}
 .brand h1{font-family:var(--font-display);font-size:1.35rem;margin:0;line-height:1.15;letter-spacing:-.01em}
 .brand .firma{color:var(--muted);font-size:.85rem;background:none;border:0;padding:0;text-align:left;cursor:pointer;font:inherit;font-size:.85rem}
 .brand .firma:hover{color:var(--accent)}
-nav.tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:0}
-nav.tabs a{padding:10px 14px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.92rem;border-bottom:2px solid transparent;white-space:nowrap}
-nav.tabs a[aria-current="page"]{color:var(--fg);border-color:var(--accent)}
-nav.tabs a.sekme-firma-sip,.alt-menu a.sekme-firma-sip{color:#d32f2f;font-size:1.05rem;font-weight:700}
-nav.tabs a.sekme-firma-sip[aria-current="page"]{color:#d32f2f;border-color:#d32f2f}
+/* Sol yan menü (bilgisayar); telefonda gizli, alttaki menü kullanılır */
+.yan-logo{display:block;padding:4px 10px 14px}
+.yan-logo img{height:40px;width:auto;border-radius:8px;display:block}
+nav.tabs{display:flex;flex-direction:column;gap:2px}
+nav.tabs a{display:flex;align-items:center;gap:10px;padding:7px 10px;color:var(--fg);text-decoration:none;font-weight:600;font-size:.9rem;border-radius:10px;white-space:nowrap}
+nav.tabs a:hover{background:var(--surface-2)}
+nav.tabs .ik{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--surface-2);font-size:.95rem;flex:none}
+nav.tabs>a[aria-current="page"],nav.tabs .yg-bas[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+nav.tabs>a[aria-current="page"] .ik,nav.tabs .yg-bas[aria-current="page"] .ik{background:var(--surface)}
+.yg:has([aria-current]) .yg-bas{color:var(--accent)}
+.yg-bas .ok{margin-left:auto;color:var(--muted);font-size:1.05rem;transition:transform .15s}
+.yg:has([aria-current]) .yg-bas .ok{transform:rotate(90deg)}
+.yg-ic{display:none;flex-direction:column;margin:2px 0 6px 23px;padding-left:10px;border-left:2px solid var(--line)}
+.yg:has([aria-current]) .yg-ic{display:flex}
+nav.tabs .yg-ic a{padding:5px 10px;font-weight:500;font-size:.86rem;color:var(--muted)}
+nav.tabs .yg-ic a[aria-current="page"]{color:var(--accent);font-weight:700}
+nav.tabs a.sekme-firma-sip,.alt-menu a.sekme-firma-sip{color:#d32f2f;font-weight:700}
+nav.tabs a.sekme-firma-sip[aria-current="page"]{background:#fdecea;color:#d32f2f}
+/* Anasayfa pazaryeri kartları */
+.pzk-izgara{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.pzk{background:var(--surface);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;overflow:hidden}
+.pzk-bas{display:flex;gap:12px;align-items:center;padding:14px 16px 4px}
+.pzk-lg{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);display:grid;place-items:center;font-weight:800;font-size:.8rem;flex:none}
+.pzk-bas small{color:var(--muted);font-size:.72rem;display:block}
+.pzk-bas b{font-size:1.05rem}
+.pzk-durum{margin-left:auto;font-size:.72rem;padding:3px 9px;border-radius:20px;background:var(--accent-soft);color:var(--accent);font-weight:700;white-space:nowrap}
+.pzk-durum.yok{background:var(--surface-2);color:var(--muted)}
+.pzk-sayilar{display:grid;grid-template-columns:repeat(3,1fr);padding:10px 6px 14px}
+.pzk-sayi{text-align:center;border-right:1px solid var(--line)}
+.pzk-sayi:last-child{border:0}
+.pzk-sayi small{color:var(--muted);font-size:.74rem}
+.pzk-nokta{width:34px;height:34px;border-radius:50%;margin:6px auto 2px;display:grid;place-items:center;background:var(--surface-2)}
+.pzk-nokta i{width:16px;height:16px;border-radius:50%;background:var(--line);display:block}
+.pzk-nokta.var i{background:var(--accent)}
+.pzk-nokta.uy i{background:#e08a1e}
+.pzk-sayi b{font-size:1.15rem;font-family:var(--font-num)}
+.pzk-alt{border-top:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pzk-alt .ghost{color:var(--accent);padding-left:2px}
+@media (max-width:520px){.pzk-izgara{grid-template-columns:1fr}}
+@media screen and (min-width:701px){
+  header.top{position:fixed;top:0;bottom:0;left:0;width:236px;z-index:6;background:var(--surface);border-right:1px solid var(--line);border-radius:0 22px 22px 0;box-shadow:0 4px 18px color-mix(in srgb,#000 6%,transparent);padding:calc(16px + env(safe-area-inset-top,0px)) 12px 24px;overflow-y:auto}
+  body:not(.kapali){padding-left:236px}
+  .ust-cubuk{background:var(--bg);border-bottom:0;padding-top:12px}
+  .ust-cubuk .top-row{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 16px}
+  .ust-cubuk .logo-baslik{display:none}
+  .brand .firma{font-weight:700;color:var(--fg);font-size:.95rem}
+}
+@media (max-width:700px){header.top{display:none}}
 button,.btn{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:8px 14px;font-weight:600;font-size:.9rem}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -180,7 +223,7 @@ body{font-size:14px;font-family:var(--font-body)}
 img{max-width:100%}
 [hidden]{display:none!important}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-body.kapali header.top,body.kapali .wrap>main{display:none}
+body.kapali header.top,body.kapali .ust-cubuk,body.kapali .wrap>main{display:none}
 #kapi{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:max(40px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px));box-sizing:border-box}
 .kapi-kart{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:14px}
 .kapi-logo{display:flex;flex-direction:column;gap:8px;align-items:stretch}
@@ -252,8 +295,29 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
 
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
+<header class="top" id="yanMenu">
+  <a href="#ozet" class="yan-logo" aria-label="Anasayfa"><img src="logo-yatay.png" alt="Arvenato" width="190" height="40"></a>
+  <nav class="tabs" id="tabs" aria-label="Ana menü">
+    <a href="#ozet"><span class="ik" aria-hidden="true">🏠</span>Anasayfa</a>
+    <a href="#satis"><span class="ik" aria-hidden="true">🧾</span>Satış</a>
+    <div class="yg"><a href="#pazaryeri" class="yg-bas"><span class="ik" aria-hidden="true">🛒</span>Pazaryeri<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
+      <a href="#pazaryeri">Siparişler ve ilanlar</a><a href="#kar">Kâr hesabı</a></div></div>
+    <div class="yg"><a href="#stok" class="yg-bas"><span class="ik" aria-hidden="true">📦</span>Ürünler<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
+      <a href="#stok">Ürün listesi</a><a href="#tedarik">Tedarikçiler</a></div></div>
+    <div class="yg"><a href="#faturalar" class="yg-bas"><span class="ik" aria-hidden="true">📄</span>Faturalar<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
+      <a href="#faturalar">Faturalar</a><a href="#teklifler">Teklifler</a></div></div>
+    <a href="#cariler"><span class="ik" aria-hidden="true">👥</span>Cariler</a>
+    <a href="#bankalar"><span class="ik" aria-hidden="true">🏦</span>Bankalar</a>
+    <div class="yg"><a href="#gelirler" class="yg-bas"><span class="ik" aria-hidden="true">💸</span>Gelir / Gider<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
+      <a href="#gelirler">Gelirler</a><a href="#giderler">Giderler</a><a href="#hareketler">Hareketler</a></div></div>
+    <a href="#odemeler"><span class="ik" aria-hidden="true">🔑</span>Kira ve Faturalar</a>
+    <a href="#ajanda"><span class="ik" aria-hidden="true">📅</span>Ajanda</a>
+    <a href="#personeller"><span class="ik" aria-hidden="true">🧑‍💼</span>Personeller</a>
+    <a href="#rapor"><span class="ik" aria-hidden="true">📈</span>Aylık rapor</a>
+    <a href="#siparis" class="sekme-firma-sip"><span class="ik" aria-hidden="true">🛍</span>Firma Siparişleri</a>
+  </nav>
+</header>
+<div class="ust-cubuk"><div class="wrap">
     <div class="top-row">
       <div class="brand">
         <h1 class="logo-baslik"><img src="logo-yatay.png" alt="Arvenato" width="190" height="40"><span class="gizli">Ön Muhasebe</span></h1>
@@ -263,28 +327,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <button class="ghost small" id="hesapBtn" type="button" title="Hesabım, kullanıcılar, yedek">Hesabım</button>
       <button class="primary" id="newBtn" type="button">+ Yeni kayıt</button>
     </div>
-    <nav class="tabs" id="tabs">
-      <a href="#satis">Satış</a>
-      <a href="#stok">Ürünler</a>
-      <a href="#tedarik">Tedarikçiler</a>
-      <a href="#pazaryeri">Pazaryeri</a>
-      <a href="#kar">Kâr hesabı</a>
-      <a href="#faturalar">Faturalar</a>
-      <a href="#cariler">Cariler</a>
-      <a href="#personeller">Personeller</a>
-      <a href="#bankalar">Bankalar</a>
-      <a href="#gelirler">Gelirler</a>
-      <a href="#giderler">Giderler</a>
-      <a href="#hareketler">Hareketler</a>
-      <a href="#teklifler">Teklifler</a>
-      <a href="#rapor">Aylık rapor</a>
-      <a href="#ozet">Özet</a>
-      <a href="#ajanda">Ajanda</a>
-      <a href="#odemeler">Kira ve Faturalar</a>
-      <a href="#siparis" class="sekme-firma-sip">Firma Siparişleri</a>
-    </nav>
-  </div>
-</header>
+</div></div>
 
 <div class="wrap"><main id="main"></main></div>
 <div id="kapi" hidden></div>
@@ -484,6 +527,89 @@ function rerenderKeepFocus(id){
   const n=document.getElementById(id);if(n){n.focus();try{if(pos!=null)n.setSelectionRange(pos,pos)}catch(e){}}
 }
 
+/* ---------- Anasayfa: pazaryeri günlük özeti ve kargo fişi ----------
+   Siparişler bu cihazda saklanan son listeden okunur (Pazaryeri sayfasıyla aynı liste); 10 dakikadan eskiyse son 3 gün arka planda yenilenir.
+   Kargo fişi: pazaryerinin verdiği kargo kodu (barkod) + teslimat adresi; 100×100 mm etiket yazıcısına uygun. */
+const PZ_SIRA=["trendyol","hepsiburada","n11","pazarama","idefix","amazon","shopify"];
+const ANA_KISA={trendyol:"TY",hepsiburada:"HB",n11:"n11",pazarama:"PZR",idefix:"İDX",amazon:"AMZ",shopify:"SHP"};
+const PZ_RENK={trendyol:"#f27a1a",hepsiburada:"#ff6000",n11:"#7b2cbf",pazarama:"#2563eb",idefix:"#0a5bd8",amazon:"#232f3e",shopify:"#5e8e3e"};
+const ANA_KANAL={trendyol:"trendyol",hepsiburada:"hepsiburada",n11:"n11",pazarama:"pazarama",idefix:"idefix",amazon:"amazon",shopify:"shopify"};
+const _anaPz={firma:null,veri:{},bagli:null,yuk:false};
+const KARGO_BEKLER=new Set(["Created","Picking","Invoiced","Open","Packaged","Unshipped"]);
+const pzKargoBekler=x=>KARGO_BEKLER.has(String(x.durum||"").trim())&&Number(x.siparisTarihi)>Date.now()-30*86400000;
+const _kanalAnahtar=k=>String(k||"").toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/[^a-z0-9]/g,"");
+async function anaPzYukle(){
+  if(_anaPz.yuk||!firmaId)return;const f=firmaId;_anaPz.yuk=true;
+  try{if(_anaPz.firma!==f){_anaPz.firma=f;_anaPz.veri={};_anaPz.bagli=null}
+    for(const k of PZ_SIRA){const d=await pzDepo.al(pzDepoAnahtari(k));if(d&&firmaId===f)_anaPz.veri[k]={liste:d.liste||[],zaman:d.zaman||0}}
+    if(view==="ozet")renderSonra();
+    if(!sb||!oturum)return;
+    _anaPz.bagli=await pzBagliAl();if(firmaId!==f)return;if(view==="ozet")renderSonra();
+    const GUN=86400000,simdi=Date.now();
+    for(const k of _anaPz.bagli){const v=_anaPz.veri[k];if(v&&simdi-v.zaman<10*60000)continue;
+      try{const yeni=await pzAralikOku("siparisler",simdi-3*GUN,simdi,14,"siparisler",{pazaryeri:k});if(firmaId!==f)return;
+        const an=pzDepoAnahtari(k),dep=await pzDepo.al(an);const m=new Map(((dep&&dep.liste)||[]).map(x=>[x.paketId,x]));for(const x of yeni)if(x.paketId)m.set(x.paketId,x);
+        const liste=[...m.values()];await pzDepo.koy(an,dep?Object.assign({},dep,{zaman:simdi,liste}):{ilk:simdi-3*GUN,tamZaman:0,zaman:simdi,liste});
+        _anaPz.veri[k]={liste,zaman:simdi};if(view==="ozet")renderSonra()}
+      catch(e){/* okunamazsa saklanan liste gösterilir */}}}
+  finally{_anaPz.yuk=false}}
+function anaPzKartlar(){
+  if(_anaPz.firma!==firmaId||!Object.keys(_anaPz.veri).length&&!_anaPz.bagli)setTimeout(anaPzYukle,0);
+  const bas=new Date().setHours(0,0,0,0),bugun=today();
+  const bagli=_anaPz.bagli||[];const goster=PZ_SIRA.filter(k=>bagli.includes(k)||_anaPz.veri[k]);
+  if(!goster.length)return "";
+  const satis={};for(const h of state.hareketler)if(h.tur==="satis"&&h.tarih===bugun){const a=_kanalAnahtar(h.kanal);satis[a]=(satis[a]||0)+1}
+  const sayi=(v,ad,c)=>`<div class="pzk-sayi"><small>${ad}</small><div class="pzk-nokta ${v?c:""}"><i></i></div><b>${v.toLocaleString("tr-TR")}</b></div>`;
+  let zaman=0;
+  const kartlar=goster.map(k=>{const v=_anaPz.veri[k]||{liste:[],zaman:0};zaman=Math.max(zaman,v.zaman||0);
+    const sip=v.liste.filter(x=>Number(x.siparisTarihi)>=bas).length,kargo=v.liste.filter(pzKargoBekler).length,fat=satis[ANA_KANAL[k]]||0,bg=bagli.includes(k);
+    return `<div class="pzk">
+      <div class="pzk-bas"><div class="pzk-lg" style="color:${PZ_RENK[k]};background:color-mix(in srgb,${PZ_RENK[k]} 10%,var(--surface))">${esc(ANA_KISA[k])}</div>
+        <div><small>Günlük özet</small><b>${esc(PZ_ADLAR[k])}</b></div><span class="pzk-durum ${bg?"":"yok"}">${bg?"Bağlı":_anaPz.bagli?"Bağlı değil":"…"}</span></div>
+      <div class="pzk-sayilar">${sayi(sip,"Bugün sipariş","var")}${sayi(kargo,"Kargo bekleyen","uy")}${sayi(fat,"Bugün satış kaydı","var")}</div>
+      <div class="pzk-alt"><button type="button" class="small ghost" data-act="pzAnaSec" data-id="${k}">Siparişleri listele</button>
+        <button type="button" class="small ${kargo?"primary":""}" data-act="kargoFis" data-id="${k}" ${kargo?"":"disabled"}>🖨 Kargo fişi${kargo?" ("+kargo+")":""}</button></div></div>`}).join("");
+  return `<section class="section-head"><h2>Pazaryeri günlük özeti</h2><span class="muted" style="font-size:.85rem">${_anaPz.yuk?"Yenileniyor… ":""}${zaman?"Son okuma "+new Date(zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}</span></section>
+  <section class="pzk-izgara">${kartlar}</section>`}
+// Kargo fişi: kargo bekleyen siparişler seçilir, barkodlu etiket yazdırılır
+function kargoFisModal(k){
+  const v=_anaPz.veri[k];const l=(v?v.liste:[]).filter(pzKargoBekler).sort((a,b)=>a.siparisTarihi-b.siparisTarihi);
+  if(!l.length){toast("Kargo bekleyen sipariş yok");return}
+  const ad=x=>(x.teslim&&x.teslim.ad)||x.faturaAd||x.musteri||"";
+  const satir=(x,i)=>{const kod=String(x.kargoTakip||"").trim(),t=x.teslim&&x.teslim.adres;
+    return `<tr><td><input type="checkbox" data-kf="${i}" ${kod?"checked":"disabled"}></td><td>${esc(x.siparisNo)}<div class="muted" style="font-size:.78rem">${new Date(Number(x.siparisTarihi)).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · ${esc(PZ_DURUM[x.durum]||x.durum)}</div></td>
+      <td>${esc(ad(x))}<div class="muted" style="font-size:.78rem">${esc([(x.teslim&&x.teslim.ilce)||x.ilce,(x.teslim&&x.teslim.il)||x.il].filter(Boolean).join(" / "))}${t?"":` · <span style="color:var(--warn)">fatura adresi</span>`}</div></td>
+      <td>${esc(x.kargo||"—")}<div style="font-family:var(--font-num);font-size:.8rem">${kod?esc(kod):`<span style="color:var(--out)">kargo kodu yok</span>`}</div></td></tr>`};
+  const eksik=l.filter(x=>!(x.teslim&&x.teslim.adres)).length,kodsuz=l.filter(x=>!String(x.kargoTakip||"").trim()).length;
+  openModal(`<div class="section-head"><h2>🖨 ${esc(PZ_ADLAR[k])} · kargo fişi</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.85rem">Kargo bekleyen ${l.length} sipariş. Etikette pazaryerinin verdiği kargo kodu barkod olarak basılır; kargo görevlisi bunu okutur. 100×100 mm etiket yazıcısına göre hazırlanır.</div>
+    ${kodsuz?`<div class="notice" style="font-size:.85rem"><b>${kodsuz} siparişte kargo kodu yok:</b> pazaryeri kodu henüz vermemiş (çoğunlukla sipariş “Hazırlanıyor”a alınınca gelir). Bunlar basılamaz.</div>`:""}
+    ${eksik?`<div class="notice" style="font-size:.85rem"><b>${eksik} siparişte teslimat adresi yok;</b> fatura adresi basılır. Pazaryeri sayfasında siparişleri yeniledikten sonra teslimat adresi gelir.</div>`:""}
+    <div class="tscroll"><table><thead><tr><th><input type="checkbox" id="kfHepsi" checked aria-label="Hepsini seç"></th><th>Sipariş</th><th>Alıcı</th><th>Kargo / kod</th></tr></thead><tbody>${l.map(satir).join("")}</tbody></table></div>
+    <div class="err" id="kfErr" role="alert"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="yazdir">🖨 Seçilenleri yazdır</button></div>`,
+  root=>{root.querySelector("#kfHepsi").addEventListener("change",e=>root.querySelectorAll("[data-kf]:not(:disabled)").forEach(c=>c.checked=e.target.checked));
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="yazdir")return;
+      const sec=[...root.querySelectorAll("[data-kf]:checked")].map(c=>l[Number(c.dataset.kf)]);if(!sec.length){root.querySelector("#kfErr").textContent="Yazdırılacak sipariş seçin.";return}
+      b.disabled=true;try{await kargoFisYazdir(k,sec);closeModal()}catch(err){root.querySelector("#kfErr").textContent="Barkod hazırlanamadı (internet bağlantısını kontrol edin): "+(err.message||err);b.disabled=false}})})}
+async function kargoFisYazdir(k,liste){
+  await loadScript(LIBS.barkod);
+  const svg=kod=>{const el=document.createElementNS("http://www.w3.org/2000/svg","svg");window.JsBarcode(el,kod,{format:"CODE128",width:2,height:70,displayValue:true,fontSize:16,margin:0});el.setAttribute("preserveAspectRatio","none");el.style.width="100%";return el.outerHTML};
+  const fis=liste.map(x=>{const t=x.teslim||{},adr=t.adres||x.adres||"",il=t.il||x.il||"",ilce=t.ilce||x.ilce||"";
+    const kal=(x.satirlar||[]).slice(0,4).map(s=>`<div class="kf-urun">${esc(s.adet)} × ${esc(String(s.ad||"").slice(0,60))}</div>`).join("")+((x.satirlar||[]).length>4?`<div class="kf-urun">+ ${(x.satirlar.length-4)} kalem daha</div>`:"");
+    return `<div class="kf">
+      <div class="kf-ust"><div><div class="kf-k">GÖNDERİCİ</div><b>${esc(state.firma||"")}</b></div><div class="kf-pz">${esc(PZ_ADLAR[k])}<div class="kf-k">${esc(x.kargo||"")}</div></div></div>
+      <div class="kf-bar">${svg(String(x.kargoTakip))}</div>
+      <div class="kf-k">ALICI</div><div class="kf-ad">${esc(t.ad||x.faturaAd||x.musteri||"")}</div>
+      <div class="kf-adr">${esc(adr)}</div><div class="kf-il">${esc([ilce,il].filter(Boolean).join(" / "))}${t.posta?" · "+esc(t.posta):""}</div>${t.tel?`<div class="kf-adr">Tel: ${esc(t.tel)}</div>`:""}
+      <div class="kf-alt"><span>Sipariş no: <b>${esc(x.siparisNo)}</b></span><span>${new Date(Number(x.siparisTarihi)).toLocaleDateString("tr-TR")}</span></div>${kal}</div>`}).join("");
+  ksEl("posSayfa").textContent=`@media print{@page{size:100mm 100mm;margin:0}#printArea{width:100mm;font-family:Arial,Helvetica,sans-serif;color:#000}
+    .kf{width:100mm;height:100mm;padding:4mm;box-sizing:border-box;page-break-after:always;break-after:page;overflow:hidden;display:flex;flex-direction:column;gap:1.2mm;font-size:9pt;line-height:1.2}
+    .kf-ust{display:flex;justify-content:space-between;gap:3mm;border-bottom:.4mm solid #000;padding-bottom:1.5mm}.kf-pz{text-align:right;font-weight:700;font-size:11pt}
+    .kf-k{font-size:6.5pt;font-weight:700;letter-spacing:.05em}.kf-bar{height:24mm;margin:1mm 0}.kf-bar svg{height:24mm}
+    .kf-ad{font-size:13pt;font-weight:700}.kf-adr{font-size:9pt}.kf-il{font-size:11pt;font-weight:700}
+    .kf-alt{display:flex;justify-content:space-between;border-top:.4mm solid #000;padding-top:1.2mm;margin-top:auto}.kf-urun{font-size:7.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}`;
+  ksEl("printArea").innerHTML=fis;setTimeout(()=>window.print(),80)}
 function vOzet(){
   const kb=kasaBanka();
   const buAy=ym(today());
@@ -504,6 +630,7 @@ function vOzet(){
     ${kpi("Alacaklar",money(alacak),"Carilerin size borcu")}
     ${kpi("Borçlar",money(borc),"Carilere borcunuz")}
   </section>
+  ${anaPzKartlar()}
   <section class="section-head"><h2>${ayAd} ${new Date().getFullYear()}</h2><span class="muted" style="font-size:.85rem">${o.adet} kayıt</span></section>
   <section class="kpis">
     ${kpi("Satış (KDV hariç)",money(o.satisNet),"Hesaplanan KDV "+money(o.satisKdv))}
@@ -728,7 +855,7 @@ function teklifHtml(t){
 function teklifMetin(t){const o=teklifTop(t.satirlar||[]);return [`${state.firma||""} – Fiyat teklifi ${t.no}`.trim(),`Sayın ${teklifMusteri(t)}`,`Tarih: ${trDate(t.tarih)}${t.gecerlilik?" · Geçerlilik: "+trDate(t.gecerlilik):""}`,"",...(t.satirlar||[]).map(s=>`• ${s.ad}: ${fmtMiktar(s.miktar)} ${s.birim||""} × ${money(s.birimFiyat)}${s.iskonto?" (%"+s.iskonto+" isk.)":""} = ${money(satirTutar(s))} + %${s.kdvOran} KDV`),"",`Ara toplam: ${money(o.ara)}`,...(o.isk?[`İskonto: −${money(o.isk)}`]:[]),`KDV: ${money(o.kdv)}`,`Genel toplam: ${money(o.toplam)}`,...(t.notlar?["",t.notlar]:[])].join("\n")}
 async function teklifIndir(id){const t=state.teklifler.find(x=>x.id===id);if(!t)return;
   await dosyaKaydet(t.no+".html",new Blob([teklifHtml(t)],{type:"text/html"}))}
-const LIBS={xlsx:"https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",jszip:"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",pdflib:"https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"};
+const LIBS={xlsx:"https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",jszip:"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",pdflib:"https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js",barkod:"https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"};
 const _yuklu={};
 function loadScript(src){if(_yuklu[src])return _yuklu[src];_yuklu[src]=new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=()=>res();s.onerror=()=>{delete _yuklu[src];rej(new Error("load"))};document.head.appendChild(s)});return _yuklu[src]}
 async function dosyaKaydet(name,blob){
@@ -6312,6 +6439,8 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzIsle")pzSiparisIsle();
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
+  else if(a==="pzAnaSec"){if(PZ_ADLAR[id]){Object.assign(pz,{pazaryeri:id,sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";if(location.hash==="#pazaryeri")render();else location.hash="#pazaryeri"}}
+  else if(a==="kargoFis")kargoFisModal(id);
   else if(a==="pzSec"){if(PZ_ADLAR[id]&&pz.pazaryeri!==id){Object.assign(pz,{pazaryeri:id,sekme:/^eslesme/.test(pz.sekme)?pz.sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";render()}}
   else if(a==="pzTamYenile"){if(!pz.yuk)pzGetir(true)}
   else if(a==="pzFatura")pzFaturaModal(id);
