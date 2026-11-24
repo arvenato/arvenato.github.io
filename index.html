@@ -892,16 +892,24 @@ const KAR_PZ=[{k:"magaza",ad:"Mağaza",c:0,kg:0,h:0,st:0},{k:"trendyol",ad:"Tren
 function karAyar(){const a=(state.ayarEk||{}).karHesap||{},s=a.satirlar||{},n=(v,d)=>v!=null&&v!==""&&isFinite(Number(v))?Number(v):d;
   return {kayitli:!!(state.ayarEk||{}).karHesap,kdv:a.kdv!==false,hedefTur:a.hedefTur||"alis",hedef:n(a.hedef,25),yuvarla:a.yuvarla||"90",
     satirlar:KAR_PZ.map(p=>{const x=s[p.k]||{},vc=(p.k==="idefix"||p.k==="pazarama")?n(pzKomisyonOrani(p.k),p.c):p.c;
-      return {k:p.k,ad:p.ad,aktif:x.aktif!==false,c:n(x.c,vc),kg:n(x.kg,p.kg),h:n(x.h,p.h),st:n(x.st,p.st)}})}}
+      const b={};for(const i of [1,2,3])for(const z of ["u","k"]){const v=x["b"+i+z];b["b"+i+z]=v!=null&&v!==""&&isFinite(Number(v))?Number(v):""}
+      return {k:p.k,ad:p.ad,aktif:x.aktif!==false,c:n(x.c,vc),kg:n(x.kg,p.kg),h:n(x.h,p.h),st:n(x.st,p.st),...b}})}}
+// Barem: sipariş tutarı (KDV dahil satış) "b{i}u" ₺'nin altındaysa kargo "b{i}k" ₺; hiçbir baremin altında değilse normal kargo (kg).
+function karBaremler(r){return [1,2,3].map(i=>({u:Number(r["b"+i+"u"])||0,k:r["b"+i+"k"]})).filter(x=>x.u>0&&x.k!==""&&x.k!=null&&isFinite(Number(x.k))).map(x=>({u:x.u,k:Number(x.k)})).sort((a,b)=>a.u-b.u)}
+function karKargo(f,r){for(const x of karBaremler(r))if(f<x.u)return x.k;return Number(r.kg)||0}
 function karHesapla(f,a,k,r,kdv){f=Number(f)||0;a=Number(a)||0;const b=1+(Number(k)||0)/100;
-  const kom=f*(Number(r.c)||0)/100,giderNet=kom+(Number(r.kg)||0)+(Number(r.h)||0),giderKdv=giderNet*0.2,stopaj=f/b*(Number(r.st)||0)/100;
+  const kargo=karKargo(f,r),kom=f*(Number(r.c)||0)/100,giderNet=kom+kargo+(Number(r.h)||0),giderKdv=giderNet*0.2,stopaj=f/b*(Number(r.st)||0)/100;
   const gelen=f-giderNet-giderKdv-stopaj,kar=kdv?f/b-a/b-giderNet:f-a-giderNet-giderKdv,ab=kdv?a/b:a,sb_=kdv?f/b:f;
-  return {kom,giderNet,giderKdv,stopaj,gelen,kar,karYuzde:ab>0?kar/ab*100:null,marj:sb_>0?kar/sb_*100:null}}
-// Hedefi tutturan en düşük satış fiyatı (kâr fiyata göre doğrusal). Tutturulamıyorsa null.
+  return {kargo,kom,giderNet,giderKdv,stopaj,gelen,kar,karYuzde:ab>0?kar/ab*100:null,marj:sb_>0?kar/sb_*100:null}}
+// Hedefi tutturan en düşük satış fiyatı. Her barem aralığında kargo sabit olduğundan kâr doğrusal: aralık aralık çözülür, en düşüğü alınır. Tutturulamıyorsa null.
 function karFiyatBul(a,k,r,kdv,tur,deger,yuv){const bz=kdv?1/(1+(Number(k)||0)/100):1,d=Number(deger)||0;
-  const g=f=>karHesapla(f,a,k,r,kdv).kar-(tur==="tl"?d:tur==="marj"?d/100*f*bz:d/100*(Number(a)||0)*bz);
-  const g0=g(0),eg=(g(1000)-g0)/1000;if(!(eg>1e-9))return null;let f=Math.max(0.01,-g0/eg);
-  if(yuv==="90")f=Math.ceil(f+0.1-1e-9)-0.1;else if(yuv==="tam")f=Math.ceil(f-1e-9);else f=Math.ceil(f*100-1e-6)/100;return r2(f)}
+  const g=(f,rr)=>karHesapla(f,a,k,rr,kdv).kar-(tur==="tl"?d:tur==="marj"?d/100*f*bz:d/100*(Number(a)||0)*bz);
+  const coz=rr=>{const g0=g(0,rr),eg=(g(1000,rr)-g0)/1000;return eg>1e-9?Math.max(0.01,-g0/eg):null};
+  const bl=karBaremler(r),bolge=[];let lo=0;for(const x of bl){bolge.push({lo,hi:x.u,kg:x.k});lo=x.u}bolge.push({lo,hi:Infinity,kg:Number(r.kg)||0});
+  let en=null;for(const z of bolge){const f=coz({...r,kg:z.kg,b1u:"",b2u:"",b3u:""});if(f==null)continue;const c=Math.max(f,z.lo);if(c<z.hi&&(en==null||c<en))en=c}
+  if(en==null)return null;
+  const yv=f=>yuv==="90"?Math.ceil(f+0.1-1e-9)-0.1:yuv==="tam"?Math.ceil(f-1e-9):Math.ceil(f*100-1e-6)/100;
+  let f=yv(en),n=0;while(g(f,r)<-0.005&&n++<5000)f=yv(f+0.01);return r2(f)}
 const karHedefYazi=(tur,d)=>tur==="tl"?money(d)+" kâr":tur==="marj"?"%"+d+" marj (satışa göre)":"%"+d+" kâr (alışa göre)";
 const karYuzde=v=>v==null||!isFinite(v)?"—":"%"+v.toLocaleString("tr-TR",{maximumFractionDigits:1});
 function vKar(){const ay=karAyar(),ro=state.readonly;
@@ -922,15 +930,24 @@ function vKar(){const ay=karAyar(),ro=state.readonly;
     </div></section>
   <section class="panel"><div class="section-head"><h2>Bu fiyattan satınca size ne kalır?</h2></div><div id="khTablo"></div></section>
   <section class="panel"><div class="section-head"><h2>Hedef kâra göre satış fiyatı</h2></div>
+    <div class="muted" style="font-size:.84rem;margin-bottom:6px">Ürün seçmeden de kullanılır: alış fiyatını buraya yazın, hedefinizi seçin; her satış yeri için satış fiyatı barem kargosu dahil hesaplanır.</div>
+    <div class="filters" style="margin-bottom:8px"><label style="display:flex;flex-direction:column;gap:2px;font-size:.8rem">Alış fiyatı, KDV dahil (₺)<input id="khHAlis" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(h.alis)}" placeholder="Örn. 100" style="max-width:150px"></label>
+      <label style="display:flex;flex-direction:column;gap:2px;font-size:.8rem">KDV<select id="khHKdv">${KDV_ORAN.map(k=>`<option value="${k}" ${Number(h.kdvOran)===k?"selected":""}>%${k}</option>`).join("")}</select></label></div>
     <div class="filters">${sel("khHTur",h.hedefTur,[["alis","Kâr % (alışa göre)"],["marj","Marj % (satışa göre)"],["tl","Sabit kâr (₺)"]])}
       <input id="khHDeger" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(h.hedef)}" style="max-width:120px" aria-label="Hedef değer">
       ${sel("khYuv",h.yuvarla,[["90","Fiyatı ,90 ile bitir"],["tam","Tam liraya yuvarla"],["yok","Yuvarlama"]])}</div>
     <div id="khHedef"></div></section>
   <section class="panel"><div class="section-head"><h2>Pazaryeri giderleri</h2>${ro?"":`<button class="small primary" type="button" data-kh="kaydet">Kaydet</button>`}</div>
     <div class="muted" style="font-size:.84rem">${ay.kayitli?"":"<b>Değerler örnektir;</b> kendi anlaşmanıza ve kategori komisyonlarınıza göre düzeltip kaydedin. "}Komisyon KDV dahil satış fiyatı üzerinden yüzde; kargo ve hizmet bedeli sipariş başına KDV hariç tutar (bunlara %20 KDV eklenir). Stopaj: pazaryerinin ödemeden kestiği e-ticaret stopajı. Kaydedince hedef kâr ayarı da varsayılan olur; ürün kartındaki fiyat önerisi bunları kullanır.</div>
-    <div class="tscroll"><table><thead><tr><th>Kullan</th><th>Satış yeri</th><th class="num">Komisyon %</th><th class="num">Kargo ₺</th><th class="num">Hizmet bedeli ₺</th><th class="num">Stopaj %</th></tr></thead><tbody>
+    <div class="tscroll"><table><thead><tr><th>Kullan</th><th>Satış yeri</th><th class="num">Komisyon %</th><th class="num">Normal kargo ₺</th><th class="num">Hizmet bedeli ₺</th><th class="num">Stopaj %</th></tr></thead><tbody>
     ${ss.map(r=>`<tr><td><input type="checkbox" data-ks="aktif" data-p="${r.k}" ${r.aktif?"checked":""} ${ro?"disabled":""} aria-label="${esc(r.ad)} hesaba katılsın"></td><td>${esc(r.ad)}</td>${["c","kg","h","st"].map(f=>`<td class="num"><input type="number" step="0.01" min="0" inputmode="decimal" data-ks="${f}" data-p="${r.k}" value="${esc(r[f])}" style="max-width:96px;text-align:right" ${ro?"disabled":""}></td>`).join("")}</tr>`).join("")}
-    </tbody></table></div><div class="err" id="khErr" role="alert"></div></section></div>`}
+    </tbody></table></div>
+    <h3 style="margin:14px 0 4px;font-size:1rem">Kargo baremleri <span class="muted" style="font-weight:400;font-size:.84rem">(sipariş tutarına göre kargo)</span></h3>
+    <div class="muted" style="font-size:.84rem">Satış fiyatı (KDV dahil) yazdığınız tutarın <b>altındaysa</b> o baremin kargosu uygulanır; hiçbir baremin altında değilse yukarıdaki normal kargo kullanılır. Kargo tutarları KDV hariç. Barem kullanmayan satış yerini boş bırakın.</div>
+    <div class="tscroll"><table><thead><tr><th>Satış yeri</th>${[1,2,3].map(i=>`<th class="num">${i}. barem: tutar altı ₺</th><th class="num">${i}. barem kargo ₺</th>`).join("")}<th class="num">Barem üstü (normal) kargo</th></tr></thead><tbody>
+    ${ss.filter(r=>r.k!=="magaza").map(r=>`<tr><td>${esc(r.ad)}</td>${[1,2,3].map(i=>["u","k"].map(z=>`<td class="num"><input type="number" step="0.01" min="0" inputmode="decimal" data-ks="b${i}${z}" data-p="${r.k}" value="${esc(r["b"+i+z])}" placeholder="${z==="u"?(["150","300","500"][i-1]):"—"}" style="max-width:90px;text-align:right" ${ro?"disabled":""}></td>`).join("")).join("")}<td class="num">${money(r.kg)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="err" id="khErr" role="alert"></div></section></div>`}
 function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||!h)return;const $=s=>kok.querySelector(s);
   const num=v=>{const n=Number(String(v??"").replace(",","."));return isFinite(n)?n:0};
   const satirlar=()=>karAyar().satirlar.map(r=>({...r,...(h.taslak[r.k]||{})}));
@@ -938,7 +955,7 @@ function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||
   const hesapCiz=()=>{const a=num(h.alis),f=num(h.satis),k=num(h.kdvOran),ss=satirlar().filter(r=>r.aktif);
     $("#khTablo").innerHTML=!(f>0)?`<div class="empty">Satış fiyatını yazın; her satış yerinde hesabınıza ne geçeceği ve kârınız burada görünür.</div>`:
       `<div class="tscroll"><table><thead><tr><th>Satış yeri</th><th class="num">Komisyon</th><th class="num">Kargo + hizmet</th><th class="num">Giderlerin KDV'si</th><th class="num">Stopaj</th><th class="num">Hesabınıza geçen</th><th class="num">Kâr</th><th class="num">Kâr % (alışa göre)</th><th class="num">Marj % (satışa göre)</th></tr></thead><tbody>
-      ${ss.map(r=>{const x=karHesapla(f,a,k,r,h.kdv);return `<tr><td>${esc(r.ad)}${r.c?` <span class="muted" style="font-size:.78rem">%${r.c}</span>`:""}</td><td class="num">${money(x.kom)}</td><td class="num">${money(num(r.kg)+num(r.h))}</td><td class="num">${money(x.giderKdv)}</td><td class="num">${money(x.stopaj)}</td><td class="num"><b>${money(x.gelen)}</b></td>${td(x.kar)}<b>${money(x.kar)}</b></td>${td(x.kar)}${a>0?karYuzde(x.karYuzde):"—"}</td>${td(x.kar)}${karYuzde(x.marj)}</td></tr>`}).join("")}</tbody></table></div>
+      ${ss.map(r=>{const x=karHesapla(f,a,k,r,h.kdv);return `<tr><td>${esc(r.ad)}${r.c?` <span class="muted" style="font-size:.78rem">%${r.c}</span>`:""}</td><td class="num">${money(x.kom)}</td><td class="num">${money(x.kargo+num(r.h))}${karBaremler(r).length?` <span class="muted" style="font-size:.75rem">${x.kargo!==num(r.kg)?"barem":"normal"}</span>`:""}</td><td class="num">${money(x.giderKdv)}</td><td class="num">${money(x.stopaj)}</td><td class="num"><b>${money(x.gelen)}</b></td>${td(x.kar)}<b>${money(x.kar)}</b></td>${td(x.kar)}${a>0?karYuzde(x.karYuzde):"—"}</td>${td(x.kar)}${karYuzde(x.marj)}</td></tr>`}).join("")}</tbody></table></div>
       <div class="muted" style="font-size:.8rem">${h.kdv?"Kâr KDV hariç: satıştaki KDV'den alışın ve giderlerin KDV'si düşülür, kalan devlete ödenir.":"Kâr KDV ayrılmadan, KDV dahil tutarlarla hesaplandı."} ${a>0?"":"Alış fiyatı yazılmadığı için kâr alışı 0 sayarak hesaplandı. "}Stopaj hesabınıza eksik geçer ama vergiden mahsup edildiği için kârdan düşülmez.</div>`;
     hedefCiz()};
   const hedefCiz=()=>{const a=num(h.alis),k=num(h.kdvOran),d=num(h.hedef),ss=satirlar().filter(r=>r.aktif),el=$("#khHedef");
@@ -957,9 +974,11 @@ function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||
     const l=(tam.length?tam:state.urunler.filter(u=>String(u.ad||"").toLocaleLowerCase("tr").includes(qn)||String(u.barkod||"").includes(q)||String(u.kod||"").toLocaleLowerCase("tr").includes(qn))).slice(0,8);
     el.innerHTML=l.length?l.map(u=>`<button type="button" class="small ghost" data-kh="sec" data-v="${u.id}" style="text-align:left;justify-content:flex-start">${esc(u.ad)} <span class="muted">· ${esc(u.barkod||u.kod||"")} · ${money(u.satisFiyat)}</span></button>`).join(""):`<span class="muted" style="font-size:.84rem">Ürün bulunamadı.</span>`};
   $("#khAra").addEventListener("input",e=>{h.ara=e.target.value;aramaCiz()});
-  $("#khAlis").addEventListener("input",e=>{h.alis=e.target.value;hesapCiz()});
+  $("#khAlis").addEventListener("input",e=>{h.alis=e.target.value;$("#khHAlis").value=h.alis;hesapCiz()});
+  $("#khHAlis").addEventListener("input",e=>{h.alis=e.target.value;$("#khAlis").value=h.alis;hesapCiz()});
+  $("#khHKdv").addEventListener("change",e=>{h.kdvOran=Number(e.target.value);$("#khKdv").value=e.target.value;hesapCiz()});
   $("#khSatis").addEventListener("input",e=>{h.satis=e.target.value;hesapCiz()});
-  $("#khKdv").addEventListener("change",e=>{h.kdvOran=Number(e.target.value);hesapCiz()});
+  $("#khKdv").addEventListener("change",e=>{h.kdvOran=Number(e.target.value);$("#khHKdv").value=e.target.value;hesapCiz()});
   $("#khKdvMod").addEventListener("change",e=>{h.kdv=e.target.value==="1";hesapCiz()});
   $("#khHTur").addEventListener("change",e=>{h.hedefTur=e.target.value;hedefCiz()});
   $("#khHDeger").addEventListener("input",e=>{h.hedef=e.target.value;hedefCiz()});
@@ -971,7 +990,7 @@ function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||
     else if(a==="birak"){h.uid="";render()}
     else if(a==="kullan"){h.satis=String(v);$("#khSatis").value=v;hesapCiz();$("#khTablo").scrollIntoView({block:"nearest",behavior:"smooth"})}
     else if(a==="urunYaz"){if(h.uid)hizliDuzenle(h.uid,"satis",Number(v))}
-    else if(a==="kaydet"){const s={};for(const r of satirlar())s[r.k]={aktif:r.aktif!==false,c:num(r.c),kg:num(r.kg),h:num(r.h),st:num(r.st)};
+    else if(a==="kaydet"){const s={};for(const r of satirlar()){s[r.k]={aktif:r.aktif!==false,c:num(r.c),kg:num(r.kg),h:num(r.h),st:num(r.st)};for(const i of [1,2,3])for(const z of ["u","k"]){const v=r["b"+i+z];s[r.k]["b"+i+z]=v===""||v==null?"":num(v)}}
       b.disabled=true;$("#khErr").textContent="";
       try{await api.setDoc("ayar","karHesap",{satirlar:s,kdv:h.kdv,hedefTur:h.hedefTur,hedef:num(h.hedef),yuvarla:h.yuvarla,guncelleme:Date.now()});h.taslak={};toast("Kâr hesabı ayarları kaydedildi")}
       catch(err){$("#khErr").textContent=errMsg(err);b.disabled=false}}});
