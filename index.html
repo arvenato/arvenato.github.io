@@ -280,6 +280,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <a href="#rapor">Aylık rapor</a>
       <a href="#ozet">Özet</a>
       <a href="#ajanda">Ajanda</a>
+      <a href="#odemeler">Kira ve Faturalar</a>
       <a href="#siparis" class="sekme-firma-sip">Firma Siparişleri</a>
     </nav>
   </div>
@@ -304,7 +305,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
   <a href="#cariler"><span class="ik">👥</span>Cariler</a><a href="#personeller"><span class="ik">🧑‍💼</span>Personeller</a><a href="#bankalar"><span class="ik">🏦</span>Bankalar</a>
   <a href="#gelirler"><span class="ik">⬇️</span>Gelirler</a><a href="#giderler"><span class="ik">⬆️</span>Giderler</a><a href="#hareketler"><span class="ik">↔️</span>Hareketler</a>
   <a href="#teklifler"><span class="ik">📝</span>Teklifler</a><a href="#rapor"><span class="ik">📈</span>Aylık rapor</a><a href="#ozet"><span class="ik">📊</span>Özet</a>
-  <a href="#ajanda"><span class="ik">📅</span>Ajanda</a><a href="#kar"><span class="ik">🧮</span>Kâr hesabı</a><a href="#siparis" class="sekme-firma-sip"><span class="ik">🛍</span>Firma Siparişleri</a><a href="#" data-alt="yedek"><span class="ik">💾</span>Yedek al</a>
+  <a href="#ajanda"><span class="ik">📅</span>Ajanda</a><a href="#kar"><span class="ik">🧮</span>Kâr hesabı</a><a href="#odemeler"><span class="ik">🏠</span>Kira ve Faturalar</a><a href="#siparis" class="sekme-firma-sip"><span class="ik">🛍</span>Firma Siparişleri</a><a href="#" data-alt="yedek"><span class="ik">💾</span>Yedek al</a>
 </div></div>
 
 <script>
@@ -389,7 +390,7 @@ function donemOzet(filter){
 }
 
 /* ---------- Görünümler ---------- */
-const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","siparis","satis","pazaryeri","kar"];
+const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","siparis","satis","pazaryeri","kar","odemeler"];
 let view="ozet";
 const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sMarka:"",sSayfa:1,sKol:{},sSira:(()=>{try{return localStorage.getItem("urun-sira")||"adAZ"}catch(e){return "adAZ"}})(),sBoyut:(()=>{try{return Number(localStorage.getItem("urun-sayfa-boyut"))||100}catch(e){return 100}})(),sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",fCari:"",fAra:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",pzGun:"bugun",pzDurum:"",pzAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
 
@@ -465,6 +466,7 @@ function render(){
   else if(view==="pazaryeri")html+=vPazaryeri();
   else if(view==="satis")html+=vSatis();
   else if(view==="kar")html+=vKar();
+  else if(view==="odemeler")html+=vOdemeler();
   else html+=vRapor();
   m.innerHTML=html;
   if(view==="kar")karBagla();
@@ -884,6 +886,46 @@ function ajSatir(e){const t=today();const gec=!e.done&&e.tarih<t;const fark=gunF
     <td>${ajChip(e)}</td><td style="min-width:180px"><b style="${e.done?"text-decoration:line-through":""}">${esc(e.baslik)}</b><div class="muted" style="font-size:.78rem">${[e.cari,ne&&"otomatik · "+ne,e.tekrar?"tekrarlı":"",e.not].filter(Boolean).map(esc).join(" · ")}</div></td>
     <td class="num ${e.tur==="Tahsilat"?"pos":e.tutar&&e.tur!=="Hatırlatma"?"neg":""}">${e.tutar?money(e.tutar):"—"}</td><td><div class="rowact">${aks}</div></td></tr>`}
 function ajTablo(list){return `<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Tür</th><th>Açıklama</th><th class="num">Tutar</th><th></th></tr></thead><tbody>${list.map(ajSatir).join("")}</tbody></table></div>`}
+/* ---------- Kira ve Faturalar ----------
+   Kira, elektrik, su, doğalgaz, internet gibi düzenli ödemeler ajanda kayıtları (tür "Ödeme" / "Vergi / SGK") olarak tutulur;
+   bu sekme onları ödeme takibi olarak gösterir. Altta vadesi gelen / açık alış faturaları listelenir. */
+const OD_HAZIR=[{b:"Dükkan kirası",k:"Kira"},{b:"Depo kirası",k:"Kira"},{b:"Elektrik faturası",k:"Elektrik / su / internet"},{b:"Su faturası",k:"Elektrik / su / internet"},{b:"Doğalgaz faturası",k:"Elektrik / su / internet"},{b:"İnternet faturası",k:"Elektrik / su / internet"},{b:"Telefon faturası",k:"Elektrik / su / internet"},{b:"Aidat",k:"Diğer"}];
+function vOdemeler(){const t=today(),ro=state.readonly,ayS=t.slice(0,7);
+  const kay=state.ajanda.filter(a=>a.tur==="Ödeme"||a.tur==="Vergi / SGK");
+  const satir=kay.map(a=>{const ev=ajandaTekrarlar(a,gunEkle(t,-400),gunEkle(t,400)),bitti=a.tamamlananlar||[];
+    const acik=ev.filter(x=>!bitti.includes(x)),gec=acik.filter(x=>x<t),sonraki=acik.find(x=>x>=t)||"",ilk=acik[0]||"";
+    const son=bitti.slice().sort().pop()||"",buAy=ev.filter(x=>x.slice(0,7)===ayS);
+    const durum=gec.length?"gec":buAy.length&&buAy.every(x=>bitti.includes(x))?"odendi":buAy.length?"bekliyor":ilk?"ileride":"bitti";
+    return {a,ilk,sonraki,gec,son,durum,tutar:Number(a.tutar)||0}}).sort((x,y)=>(x.ilk||"9999").localeCompare(y.ilk||"9999"));
+  const kira=satir.filter(s=>s.a.kategori==="Kira"||/kira/i.test(s.a.baslik)),diger=satir.filter(s=>!kira.includes(s));
+  const acikF=state.faturalar.filter(f=>f.tur==="alis"&&faturaKalan(f)>0).sort((a,b)=>(a.vade||a.tarih||"").localeCompare(b.vade||b.tarih||""));
+  const top=l=>l.reduce((s,x)=>s+x,0);
+  const gecTop=top(satir.flatMap(s=>s.gec.map(()=>s.tutar)))+top(acikF.filter(f=>f.vade&&f.vade<t).map(faturaKalan));
+  const ayKalan=top(satir.map(s=>{const bitti=s.a.tamamlananlar||[];return ajandaTekrarlar(s.a,ayS+"-01",ayS+"-31").filter(x=>!bitti.includes(x)).length*s.tutar}));
+  const ayOdenen=top(satir.map(s=>(s.a.tamamlananlar||[]).filter(x=>x.slice(0,7)===ayS).length*s.tutar));
+  const fTop=top(acikF.map(faturaKalan));
+  const yeniBtn=ro?"":`<button class="primary small" data-act="odYeni" type="button">+ Kira / fatura ekle</button>`;
+  const rozet=s=>s.durum==="gec"?`<span class="chip" style="background:var(--out);color:#fff">${s.gec.length>1?s.gec.length+" ödeme gecikti":"Gecikti"}</span>`:s.durum==="odendi"?`<span class="chip ok">Bu ay ödendi</span>`:s.durum==="bekliyor"?`<span class="chip">Bu ay ödenecek</span>`:s.durum==="bitti"?`<span class="chip">Bitti</span>`:`<span class="chip">Sırada</span>`;
+  const tablo=(l,bos)=>l.length?`<div class="tscroll"><table><thead><tr><th>Ödeme</th><th class="num">Tutar</th><th>Sıradaki ödeme</th><th>Durum</th><th>Son ödenen</th><th></th></tr></thead><tbody>${l.map(s=>{const a=s.a,fark=s.ilk?gunFarki(t,s.ilk):0;
+      return `<tr><td style="min-width:180px"><b>${esc(a.baslik)}</b><div class="muted" style="font-size:.78rem">${[a.kategori,a.tekrar==="aylik"?"her ay "+Number(a.tarih.slice(8))+".":a.tekrar==="haftalik"?"her hafta":a.tekrar==="yillik"?"her yıl":"tek sefer",(cariById(a.cariId)||{}).ad,a.not].filter(Boolean).map(esc).join(" · ")}</div></td>
+      <td class="num">${s.tutar?money(s.tutar):`<span class="muted">değişken</span>`}</td>
+      <td class="date" style="${fark<0?"color:var(--out);font-weight:600":""}">${s.ilk?trDate(s.ilk)+`<div style="font-size:.72rem;font-family:var(--font-body)">${fark<0?(-fark)+" gün gecikti":fark===0?"bugün":fark===1?"yarın":fark+" gün sonra"}</div>`:"—"}</td>
+      <td>${rozet(s)}</td><td class="date">${s.son?trDate(s.son):"—"}</td>
+      <td><div class="rowact">${ro||!s.ilk?"":`<button class="small primary" data-act="ajTamam" data-id="${a.id}" data-t="${s.ilk}" type="button">Ödendi</button>`}${ro?"":`<button class="small ghost" data-act="ajDuzenle" data-id="${a.id}" type="button">Düzenle</button>`}</div></td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty">${bos}</div>`;
+  return `<section class="section-head"><h2>Kira ve Faturalar</h2><div class="filters">${yeniBtn}</div></section>
+  <section class="kpis">
+    ${kpi("Geciken",money(gecTop),gecTop?"hemen ödenmeli":"geciken ödeme yok",gecTop>0)}
+    ${kpi("Bu ay kalan",money(ayKalan),AYLAR[new Date().getMonth()]+" sonuna kadar (tutarı yazılı olanlar)")}
+    ${kpi("Bu ay ödenen",money(ayOdenen),"kira ve düzenli faturalar",false,ayOdenen>0)}
+    ${kpi("Açık alış faturaları",money(fTop),acikF.length+" fatura")}
+  </section>
+  <section class="panel"><div class="section-head"><h2>Kiralar</h2>${ro?"":`<button class="small ghost" data-act="odYeni" data-h="0" type="button">+ Kira ekle</button>`}</div>${tablo(kira,"Kira kaydı yok. <b>+ Kira ekle</b> ile dükkan / depo kiranızı her ay tekrarlanan ödeme olarak ekleyin.")}</section>
+  <section class="panel"><div class="section-head"><h2>Ödenecek faturalar ve düzenli ödemeler</h2>${ro?"":`<button class="small ghost" data-act="odYeni" data-h="2" type="button">+ Fatura ekle</button>`}</div>${tablo(diger,"Kayıt yok. Elektrik, su, doğalgaz, internet, telefon gibi faturaları <b>+ Fatura ekle</b> ile ekleyin. Tutarı her ay değişenlerde tutarı boş bırakın; ödendi derken yazarsınız.")}</section>
+  <section class="panel"><div class="section-head"><h2>Açık alış faturaları</h2><span class="muted" style="font-size:.85rem">tedarikçilere ödenecek</span></div>
+    ${acikF.length?`<div class="tscroll"><table><thead><tr><th>Vade</th><th>Fatura</th><th>Cari</th><th class="num">Kalan</th><th></th></tr></thead><tbody>${acikF.map(f=>{const fark=f.vade?gunFarki(t,f.vade):null;
+      return `<tr><td class="date" style="${fark!=null&&fark<0?"color:var(--out);font-weight:600":""}">${f.vade?trDate(f.vade)+`<div style="font-size:.72rem;font-family:var(--font-body)">${fark<0?(-fark)+" gün gecikti":fark===0?"bugün":fark+" gün sonra"}</div>`:"vade yok"}</td><td>${esc(f.no)}<div class="muted" style="font-size:.75rem">${trDate(f.tarih)}</div></td><td>${esc(teklifMusteri(f))}</td><td class="num neg">${money(faturaKalan(f))}</td>
+        <td><div class="rowact"><button class="small ghost" data-act="fGor" data-id="${f.id}" type="button">Gör</button>${ro?"":`<button class="small primary" data-act="fOdeme" data-id="${f.id}" type="button">Öde</button>`}</div></td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty">Ödenmemiş alış faturası yok.</div>`}</section>
+  <div class="muted" style="font-size:.8rem">Kira ve fatura kayıtları Ajanda'da da görünür. "Ödendi"ye basınca ödeme gider olarak kaydedilir (Kira ya da Elektrik / su / internet kalemine).</div>`}
 /* ---------- Kâr hesabı: pazaryeri giderleriyle hesaba geçen tutar, kâr ve hedef kâra göre fiyat ----------
    Satış ve alış KDV dahil girilir. Komisyon satış fiyatı (KDV dahil) üzerinden; komisyon, kargo ve hizmet bedeline %20 KDV eklenir.
    KDV ayrılırsa kâr = satış/(1+k) − alış/(1+k) − giderler (KDV hariç). Stopaj hesaba eksik geçer, vergiden mahsup edildiği için kârdan düşülmez.
@@ -1051,11 +1093,13 @@ function vAjanda(){
   return head+(dolu.length?dolu.map(([b,l])=>`<section class="panel"><div class="section-head"><h2 style="${b==="Geciken"?"color:var(--out)":""}">${b}</h2><span class="muted" style="font-size:.85rem">${l.length} kayıt</span></div>${ajTablo(l)}</section>`).join(""):`<section class="panel"><div class="empty">Ajandada kayıt yok. <b>+ Yeni kayıt</b> ile kira, kredi taksiti, vergi ve SGK ödemeleri gibi tarihlerinizi ekleyin. Vadeli faturalar, maaş günleri ve teklif bitişleri buraya kendiliğinden gelir.</div></section>`)
     +`<div class="muted" style="font-size:.8rem">Vadeli faturalar, personel maaş günleri ve açık tekliflerin geçerlilik tarihleri ajandaya otomatik eklenir.</div>`;
 }
-function ajandaForm(existing,tarih){
-  const a=existing?{...existing}:{baslik:"",tur:"Ödeme",tarih:tarih||today(),saat:"",tutar:"",cariId:"",tekrar:"yok",tekrarBitis:"",kategori:"Diğer",not:""};
+function ajandaForm(existing,tarih,od){// od: Kira ve Faturalar sekmesinden (hazır seçenekler OD_HAZIR, varsayılan her ay); od.h: seçili hazır kayıt
+  const oh=od&&od.h!=null?OD_HAZIR[od.h]:null;
+  const a=existing?{...existing}:{baslik:oh?oh.b:"",tur:"Ödeme",tarih:tarih||today(),saat:"",tutar:"",cariId:"",tekrar:od?"aylik":"yok",tekrarBitis:"",kategori:oh?oh.k:od?"Elektrik / su / internet":"Diğer",not:""};
+  const HZ=od?OD_HAZIR.map(h=>({b:h.b,t:"Ödeme",k:h.k})):AJ_HAZIR;
   const cariOpts=state.cariler.slice().sort((x,y)=>x.ad.localeCompare(y.ad,"tr")).map(c=>`<option value="${c.id}" ${a.cariId===c.id?"selected":""}>${esc(c.ad)}</option>`).join("");
   openModal(`<div class="section-head"><h2>${existing?"Ajanda kaydını düzenle":"Yeni ajanda kaydı"}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
-    ${existing?"":`<div style="display:flex;gap:6px;flex-wrap:wrap">${AJ_HAZIR.map((h,i)=>`<button type="button" class="small ghost" data-m="hazir" data-i="${i}">${esc(h.b)}</button>`).join("")}</div>`}
+    ${existing?"":`<div style="display:flex;gap:6px;flex-wrap:wrap">${HZ.map((h,i)=>`<button type="button" class="small ghost" data-m="hazir" data-i="${i}">${esc(h.b)}</button>`).join("")}</div>`}
     <div class="field"><label for="ajBaslik">Başlık</label><input id="ajBaslik" value="${esc(a.baslik)}" placeholder="Örn. Dükkan kirası"></div>
     <div class="grid2">
       <div class="field"><label for="ajTur">Tür</label><select id="ajTur">${Object.keys(AJ_TUR).map(k=>`<option ${a.tur===k?"selected":""}>${k}</option>`).join("")}</select></div>
@@ -1073,7 +1117,7 @@ function ajandaForm(existing,tarih){
   root=>{root.addEventListener("change",e=>{if(e.target.id==="ajTekrar")root.querySelector("#ajBitisF").hidden=e.target.value==="yok"});
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;const er=root.querySelector("#ajErr");const g=id=>root.querySelector("#"+id).value.trim();
       if(m==="close")return closeModal();
-      if(m==="hazir"){const h=AJ_HAZIR[Number(b.dataset.i)];root.querySelector("#ajBaslik").value=h.b;root.querySelector("#ajTur").value=h.t;root.querySelector("#ajTekrar").value="aylik";root.querySelector("#ajBitisF").hidden=false;root.querySelector("#ajKat").value=h.k;return}
+      if(m==="hazir"){const h=HZ[Number(b.dataset.i)];root.querySelector("#ajBaslik").value=h.b;root.querySelector("#ajTur").value=h.t;root.querySelector("#ajTekrar").value="aylik";root.querySelector("#ajBitisF").hidden=false;root.querySelector("#ajKat").value=h.k;return}
       if(m==="sil"){b.outerHTML=`<span class="err" style="align-self:center">${a.tekrar!=="yok"?"Tüm tekrarlarıyla silinsin mi?":"Silinsin mi?"}</span><button type="button" class="danger" data-m="silOnay">Evet, sil</button>`;return}
       if(m==="silOnay"){try{await api.del("ajanda",existing.id);closeModal();toast("Ajanda kaydı silindi")}catch(err){er.textContent=errMsg(err)}return}
       if(m!=="kaydet")return;
@@ -1086,7 +1130,8 @@ function ajandaForm(existing,tarih){
 async function ajandaTamamla(id,tarih){
   const a=state.ajanda.find(x=>x.id===id);if(!a)return;const {id:_,...rest}=a;const list=a.tamamlananlar||[];
   if(list.includes(tarih)){await api.setDoc("ajanda",id,{...rest,tamamlananlar:list.filter(x=>x!==tarih)});toast("Geri alındı");return}
-  const para=(a.tur==="Ödeme"||a.tur==="Vergi / SGK"||(a.tur==="Tahsilat"&&a.cariId))&&Number(a.tutar)>0;
+  // Ödemelerde tutar boşsa da (ör. her ay değişen elektrik faturası) ödeme penceresi açılır, tutar orada yazılır
+  const para=a.tur==="Ödeme"||a.tur==="Vergi / SGK"||(a.tur==="Tahsilat"&&a.cariId&&Number(a.tutar)>0);
   if(!para){await api.setDoc("ajanda",id,{...rest,tamamlananlar:list.concat(tarih)});toast("Tamamlandı olarak işaretlendi");return}
   const tah=a.tur==="Tahsilat";const vb=varsayilanBanka();
   openModal(`<div class="section-head"><h2>${esc(a.baslik)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
@@ -1689,9 +1734,9 @@ function faturaGorModal(id){
   openModal(`<div class="section-head"><h2>${esc(f.no)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">${esc(teklifMusteri(f))} · ${money(f.toplam)}</div>
     <div class="muted" id="fgDurum" role="status" style="font-size:.85rem"></div>
-    <iframe id="fgCerceve" title="Fatura ${esc(f.no)}" style="width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>
+    <iframe id="fgCerceve" title="Fatura ${esc(f.no)}" style="width:100%;height:80vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>
     <div class="modal-foot"><button type="button" data-m="yazdir">Yazdır</button><button type="button" data-m="indir">İndir</button><button type="button" class="primary" data-m="close">Kapat</button></div>`,
-  root=>{const c=root.querySelector("#fgCerceve"),d=root.querySelector("#fgDurum");
+  root=>{root.style.maxWidth="min(1200px,96vw)";const c=root.querySelector("#fgCerceve"),d=root.querySelector("#fgDurum");
     const ozet=neden=>{try{c.removeAttribute("src");c.srcdoc=teklifHtml(faturaBelge(f))}catch(e){}d.innerHTML=`<span style="color:var(--out)">Orijinal fatura açılamadı${neden?" ("+esc(neden)+")":""}; programdaki bilgilerden hazırlanan özet gösteriliyor.</span>${f.ettn?" Orijinali görmek için programı e-Fatura köprüsünün kurulu olduğu bilgisayarda açın.":" Bu fatura e-Faturam'dan alınmadığı için orijinali programda yok."}`};
     const kapat=()=>{if(pdfUrl)setTimeout(()=>URL.revokeObjectURL(pdfUrl),1000);closeModal()};
     if(f.ettn&&efatProfil()){d.textContent="Orijinal fatura e-Faturam'dan alınıyor…";
@@ -6234,6 +6279,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="fTemizle"){ui.fDurum="";ui.fAy="";ui.fCari="";ui.fAra="";render()}
   else if(a==="fSekme"){ui.fTur=id==="satis"?"satis":"alis";fatSecim.clear();render()}
   else if(a==="ajYeni")ajandaForm(null,b.dataset.t);
+  else if(a==="odYeni")ajandaForm(null,null,{h:b.dataset.h!=null?Number(b.dataset.h):null});
   else if(a==="ajDuzenle"){const x=state.ajanda.find(y=>y.id===id);if(x)ajandaForm(x)}
   else if(a==="ajTamam"){b.disabled=true;try{await ajandaTamamla(id,b.dataset.t)}catch(err){toast(errMsg(err))}}
   else if(a==="ajGor"){ui.ajGor=b.dataset.v;render()}
