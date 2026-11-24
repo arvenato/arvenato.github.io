@@ -64,6 +64,8 @@ nav.tabs .yg-ic a{padding:5px 10px;font-weight:500;font-size:.86rem;color:var(--
 nav.tabs .yg-ic a[aria-current="page"]{color:var(--accent);font-weight:700}
 nav.tabs a.sekme-firma-sip,.alt-menu a.sekme-firma-sip{color:#d32f2f;font-weight:700}
 nav.tabs a.sekme-firma-sip[aria-current="page"]{background:#fdecea;color:#d32f2f}
+.sip-islem{display:flex;flex-direction:column;gap:4px;align-items:stretch;min-width:132px}
+.sip-islem .small{white-space:nowrap;text-align:left}
 /* Anasayfa pazaryeri kartları */
 .pzk-izgara{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
 .pzk{background:var(--surface);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;overflow:hidden}
@@ -1634,6 +1636,10 @@ function faturaForm(existing,opts={}){
   const bos=()=>({urunId:"",ad:"",miktar:1,birim:"Adet",birimFiyat:"",kdvOran:20,iskonto:0});
   const f=existing?JSON.parse(JSON.stringify(existing)):{tur,no:tur==="satis"?yeniFaturaNo("satis"):"",cariId:"",musteriAd:"",tarih:today(),vade:gunEkle(today(),30),odeme:"acik",bankaId:vb?vb.id:"",kanal:"Mağaza",stokEtki:true,satirlar:[bos()],notlar:""};
   if(opts.teklif){const t=opts.teklif;f.cariId=t.cariId||"";f.musteriAd=t.musteriAd||"";f.satirlar=JSON.parse(JSON.stringify(t.satirlar||[]));f.notlar="Teklif "+t.no+" esas alınmıştır.";f.teklifId=t.id}
+  if(opts.siparis){const s=opts.siparis,k=opts.pazaryeri||pz.pazaryeri;f.musteriAd=String(s.firma||s.faturaAd||s.musteri||"").trim();f.cariId="";f.kanal=PZ_KANAL[k]||PZ_ADLAR[k]||"Diğer";f.stokEtki=false;f.odeme="banka";f.vade="";
+    f.tarih=pzGun(s.teslimTarihi||s.siparisTarihi)||today();f.notlar=(PZ_ADLAR[k]||"Pazaryeri")+" sipariş "+s.siparisNo;f.siparisNo=String(s.siparisNo||"");f.pazaryeri=k;
+    f.satirlar=(s.satirlar||[]).map(x=>{const kd=Number(x.kdvOran)||20,u=state.urunler.find(y=>x.barkod&&(String(y.barkod||"")===String(x.barkod)||String(y.kod||"")===String(x.stokKodu||x.barkod)));
+      return {urunId:u?u.id:"",ad:String(x.ad||""),miktar:Number(x.adet)||1,birim:"Adet",birimFiyat:r2((Number(x.birimFiyat)||0)/(1+kd/100)),kdvOran:kd,iskonto:0}})}
   if(!f.satirlar.length)f.satirlar=[bos()];
   const satis=tur==="satis";
   const lines=()=>`<div class="tscroll"><table style="min-width:640px"><thead><tr><th>Ürün / hizmet</th><th class="num">Miktar</th><th class="num">Birim fiyat (KDV hariç)</th><th>KDV</th><th class="num">İsk. %</th><th class="num">Tutar</th><th></th></tr></thead><tbody>
@@ -1710,7 +1716,7 @@ function faturaForm(existing,opts={}){
           await api.setDoc("hareketler",hid,{tur:satis?"satis":"alis",tarih:f.tarih,odeme:f.odeme,cariId:f.cariId,kanal:satis?f.kanal:"",kategori:"",bankaId:f.odeme==="banka"?f.bankaId:"",kdvOran:Number(k),net:n,kdv:kd,toplam:r2(n+kd),aciklama:"Fatura "+f.no+" · "+cariAd,belgeNo:f.no,olusturma:Date.now()});hareketIds.push(hid)}
         for(const s of stoklu){const sid=api.newId("stokHareketleri");await api.setDoc("stokHareketleri",sid,{urunId:s.urunId,tarih:f.tarih,tip:satis?"Çıkış":"Giriş",miktar:satis?-s.miktar:s.miktar,birimFiyat:r2(satirTutar(s)/s.miktar*(1+s.kdvOran/100)),aciklama:"Fatura "+f.no,hareketId:hareketIds[0]||"",olusturma:Date.now()});stokIds.push(sid)}
         const id=existing?existing.id:api.newId("faturalar");
-        await api.setDoc("faturalar",id,{tur:f.tur,no:f.no,cariId:f.cariId,musteriAd:f.cariId?"":f.musteriAd,tarih:f.tarih,vade:f.odeme==="acik"?f.vade:"",odeme:f.odeme,bankaId:f.odeme==="banka"?f.bankaId:"",kanal:satis?f.kanal:"",stokEtki:f.stokEtki,satirlar,notlar:f.notlar,araToplam:o.ara,iskonto:o.isk,net:o.net,kdv:o.kdv,toplam:o.toplam,hareketIds,stokIds,odemeIds:existing?existing.odemeIds||[]:[],teklifId:f.teklifId||"",olusturma:existing?(existing.olusturma||Date.now()):Date.now()});
+        await api.setDoc("faturalar",id,{tur:f.tur,no:f.no,cariId:f.cariId,musteriAd:f.cariId?"":f.musteriAd,tarih:f.tarih,vade:f.odeme==="acik"?f.vade:"",odeme:f.odeme,bankaId:f.odeme==="banka"?f.bankaId:"",kanal:satis?f.kanal:"",stokEtki:f.stokEtki,satirlar,notlar:f.notlar,...(f.siparisNo?{siparisNo:f.siparisNo,pazaryeri:f.pazaryeri||""}:{}),araToplam:o.ara,iskonto:o.isk,net:o.net,kdv:o.kdv,toplam:o.toplam,hareketIds,stokIds,odemeIds:existing?existing.odemeIds||[]:[],teklifId:f.teklifId||"",olusturma:existing?(existing.olusturma||Date.now()):Date.now()});
         if(opts.teklif){const {id:tid,...rest}=opts.teklif;await api.setDoc("teklifler",tid,{...rest,durum:"Kabul edildi",satisIds:hareketIds,stokIds,faturaId:id,satisTarih:f.tarih})}
         closeModal();toast((satis?"Satış":"Alış")+" faturası "+f.no+" kaydedildi");
       }catch(err){er.textContent=errMsg(err);b.disabled=false}
@@ -5961,6 +5967,17 @@ function pzRaporHtml(){
     <details><summary style="cursor:pointer;margin-top:10px"><b>En çok satan ürünler</b> <span class="muted">(iptal / iade hariç, ilk 20)</span></summary><div class="tscroll"><table><thead><tr><th>Ürün</th><th class="num">Adet</th><th class="num">Ciro</th><th>Pazaryerleri</th></tr></thead><tbody>
       ${enCok.map(u=>`<tr><td>${esc(u.ad||"")}${u.barkod?tdKucuk(u.barkod):""}</td><td class="num">${u.adet.toLocaleString("tr-TR")}</td><td class="num">${money(r2(u.ciro))}</td><td style="font-size:.78rem" class="muted">${[...u.p].map(p=>esc(PZ_ADLAR[p])).join(", ")}</td></tr>`).join("")||`<tr><td colspan="4" class="muted">—</td></tr>`}</tbody></table></div></details>
     <div class="muted" style="font-size:.78rem;margin-top:6px">Ciro: müşterinin ödediği sipariş tutarı (iptal ve iadeler hariç). İptal: iptal / tedarik edilemedi; iade: iade edilen ya da iade süreci başlayan siparişler. Rakamlar pazaryerlerinin sipariş listelerinden hesaplanır; komisyon ve kargo düşülmez.</div>`}
+// Pazaryeri siparişinin kayıtlı satış faturası: önce sipariş numarasıyla (fatura notu / alanı), yoksa aynı alıcı + aynı tutar + yakın tarihle eşleştirilir
+let _satFatK=null,_satFatL=[];
+function pzSipFatura(s){if(_satFatK!==state.faturalar){_satFatK=state.faturalar;_satFatL=state.faturalar.filter(f=>f.tur==="satis")}
+  const no=String(s.siparisNo||"");if(!no)return null;
+  const d=_satFatL.find(f=>f.siparisNo===no||String(f.notlar||"").includes(no));if(d)return d;
+  const ad=_norm(s.firma||s.faturaAd||s.musteri||"");if(!ad)return null;const hedef=r2((Number(s.toplam)||0)+(Number(s.tyIndirim)||0)),t0=pzGun(s.siparisTarihi);
+  return _satFatL.find(f=>f.tarih>=gunEkle(t0,-1)&&f.tarih<=gunEkle(t0,30)&&Math.abs((Number(f.toplam)||0)-hedef)<0.06&&(()=>{const m=_norm(teklifMusteri(f));return m&&(m.includes(ad)||ad.includes(m))})())||null}
+function pzFaturaEkle(paketId){
+  const s=(pz.siparisler||[]).find(x=>x.paketId===paketId);if(!s){toast("Sipariş listede yok; siparişleri yenileyin");return}
+  if(state.hareketler.some(h=>h.tur==="satis"&&h.belgeNo===s.siparisNo)&&!confirm("Bu siparişin satışı programa zaten işlenmiş. Fatura eklerseniz satış ikinci kez kaydedilir. Yine de devam edilsin mi?"))return;
+  faturaForm(null,{tur:"satis",siparis:s,pazaryeri:pz.pazaryeri})}
 function vPazaryeri(){
   const pzAd=pz.pazaryeri||"trendyol",ty=pzAd==="trendyol";
   const deneme=ty?`<div class="notice"><b>Deneme modu:</b> Trendyol'a yalnızca deneme ürünlerinin stok ve fiyatı gönderilebilir. Siparişlerden yalnızca deneme ürünlerinin satırları programa işlenir; diğer siparişler yalnızca görüntülenir.</div>`
@@ -5996,12 +6013,14 @@ function vPazaryeri(){
       ${pz.okuma?`<div class="muted" style="font-size:.8rem">${pz.okuma.kismi?`Kayıtlı liste kullanıldı, son 21 gün ${esc(PZ_ADLAR[pz.pazaryeri]+PZ_EK[pz.pazaryeri])} yenilendi`:`Tamamı ${esc(PZ_ADLAR[pz.pazaryeri]+PZ_EK[pz.pazaryeri])} okundu`} (${(pz.okuma.sure/1000).toFixed(1)} sn) · son tam okuma ${new Date(pz.okuma.tamZaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})} <button class="small ghost" data-act="pzTamYenile" type="button">↻ Tamamını yeniden oku</button></div>`:""}
       <div class="filters"><select id="fPzDurum" data-filter="pzDurum" aria-label="Durum"><option value="">Tüm durumlar</option>${durumlar.map(d=>`<option value="${esc(d)}" ${ui.pzDurum===d?"selected":""}>${esc(PZ_DURUM[d]||d)}</option>`).join("")}</select>
         <input id="fPzAra" type="search" data-filter="pzAra" value="${esc(ui.pzAra||"")}" placeholder="Sipariş no, müşteri, ürün, barkod…" style="flex:1;min-width:180px"></div>
-      ${l.length?`<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Sipariş no</th><th>Müşteri</th><th>Ürünler</th><th>Durum</th><th class="num">Tutar</th></tr></thead><tbody>
-        ${l.slice(0,500).map(s=>`<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b>${pzCanli.yeniler.has(s.paketId)?` <span class="chip satis">Yeni</span>`:""}</td>
+      ${l.length?`<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Sipariş no</th><th>Müşteri</th><th>Ürünler</th><th>Durum</th><th class="num">Tutar</th><th>Kargo / fatura</th></tr></thead><tbody>
+        ${l.slice(0,500).map(s=>{const fat=pzSipFatura(s),iptal=/Cancelled|Returned|UnSupplied/.test(s.durum),kod=String(s.kargoTakip||"").trim();return `<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b>${pzCanli.yeniler.has(s.paketId)?` <span class="chip satis">Yeni</span>`:""}</td>
           <td>${esc(s.faturaAd||s.musteri)}${s.vergiNo?`<div class="muted" style="font-size:.78rem">VKN ${esc(s.vergiNo)}${s.firma?" · "+esc(s.firma):""}</div>`:""}<div class="muted" style="font-size:.78rem">${esc([s.ilce,s.il].filter(Boolean).join(" / "))}</div></td>
           <td style="font-size:.85rem">${s.satirlar.map(x=>`${esc(x.adet)} × ${esc(x.ad)} <span class="muted">(${money(x.birimFiyat)}${x.kdvOran?" · %"+x.kdvOran:""})</span>${x.barkod?tdKucuk(x.barkod):""}`).join("<br>")}</td>
           <td><span class="chip ${s.durum==="Delivered"?"satis":/Cancelled|Returned|UnSupplied|UnDelivered/.test(s.durum)?"alis":""}">${esc(PZ_DURUM[s.durum]||s.durum)}</span>${s.teslimTarihi?`<div class="muted" style="font-size:.75rem">${pzTarih(s.teslimTarihi)}</div>`:""}${s.durum==="Delivered"&&ty?`<div><button class="small ghost" data-act="pzFatura" data-id="${esc(s.paketId)}" type="button" title="e-Fatura taslağı (gönderim yalnızca TEST hesabıyla)" style="padding:2px 6px;font-size:.75rem">🧾 ${pzFatKayit(s.paketId)?"Test ✓":"Fatura"}</button></div>`:""}</td>
-          <td class="num"><b>${money(s.toplam)}</b>${s.indirim?`<div class="muted" style="font-size:.75rem">indirim ${money(s.indirim)}</div>`:""}</td></tr>`).join("")}
+          <td class="num"><b>${money(s.toplam)}</b>${s.indirim?`<div class="muted" style="font-size:.75rem">indirim ${money(s.indirim)}</div>`:""}</td>
+          <td><div class="sip-islem"><button class="small" type="button" data-act="kargoTek" data-id="${esc(s.paketId)}" ${kod&&!iptal?"":"disabled"} title="${kod?esc("Kargo kodu "+kod):"Pazaryeri henüz kargo kodu vermedi"}">🖨 Kargo fişi</button>
+            ${fat?`<button class="small ghost" type="button" data-act="fGor" data-id="${esc(fat.id)}" title="${esc(fat.no)}">📄 Faturayı gör</button>`:iptal?"":`<button class="small ghost" type="button" data-act="pzFatEkle" data-id="${esc(s.paketId)}">➕ Fatura ekle</button>`}</div></td></tr>`}).join("")}
       </tbody></table></div>${l.length>500?`<div class="muted" style="font-size:.85rem">İlk 500 sipariş gösteriliyor.</div>`:""}`:`<div class="empty">Bu filtrede sipariş yok.</div>`}`}}
   else{
     const l=pz.hakedis;
@@ -6441,6 +6460,8 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzKuru")pzKuruDeneme();
   else if(a==="pzAnaSec"){if(PZ_ADLAR[id]){Object.assign(pz,{pazaryeri:id,sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";if(location.hash==="#pazaryeri")render();else location.hash="#pazaryeri"}}
   else if(a==="kargoFis")kargoFisModal(id);
+  else if(a==="kargoTek"){const s=(pz.siparisler||[]).find(x=>x.paketId===id);if(s)kargoFisYazdir(pz.pazaryeri,[s]).catch(err=>toast("Barkod hazırlanamadı: "+(err.message||err)))}
+  else if(a==="pzFatEkle")pzFaturaEkle(id);
   else if(a==="pzSec"){if(PZ_ADLAR[id]&&pz.pazaryeri!==id){Object.assign(pz,{pazaryeri:id,sekme:/^eslesme/.test(pz.sekme)?pz.sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";render()}}
   else if(a==="pzTamYenile"){if(!pz.yuk)pzGetir(true)}
   else if(a==="pzFatura")pzFaturaModal(id);
