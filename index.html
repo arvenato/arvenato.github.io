@@ -673,16 +673,21 @@ function vHareketler(){
 }
 
 function vCariler(){
-  const list=state.cariler.filter(c=>!ui.cariTur||c.tur===ui.cariTur).map(c=>({...c,bakiye:cariBakiye(c.id)})).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  // Arama: ünvan, vergi / TC no, telefon, vergi dairesi (büyük-küçük harf ve Türkçe karakter farkı gözetmez)
+  const ara=_norm(ui.cariAra||"").trim(),araD=String(ui.cariAra||"").replace(/\D/g,"");
+  const uyar=c=>!ara||_norm([c.ad,c.vergiDairesi,c.vergiNo,c.telefon].join(" ")).includes(ara)||(araD.length>=3&&String((c.vergiNo||"")+" "+(c.telefon||"")).replace(/\D/g,"").includes(araD));
+  const list=state.cariler.filter(c=>(!ui.cariTur||c.tur===ui.cariTur)&&uyar(c)).map(c=>({...c,bakiye:cariBakiye(c.id)})).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   return `<section class="panel">
     <div class="section-head"><h2>Cari hesaplar</h2>${state.readonly?"":`<button class="small primary" data-act="newCari" type="button">+ Cari ekle</button>`}</div>
-    <div class="filters"><select id="fCari" data-filter="cariTur" aria-label="Cari türü"><option value="">Tümü</option><option value="musteri" ${ui.cariTur==="musteri"?"selected":""}>Müşteriler</option><option value="tedarikci" ${ui.cariTur==="tedarikci"?"selected":""}>Tedarikçiler</option></select></div>
+    <div class="filters"><select id="fCari" data-filter="cariTur" aria-label="Cari türü"><option value="">Tümü</option><option value="musteri" ${ui.cariTur==="musteri"?"selected":""}>Müşteriler</option><option value="tedarikci" ${ui.cariTur==="tedarikci"?"selected":""}>Tedarikçiler</option></select>
+      <input id="fCariAra" type="search" data-filter="cariAra" value="${esc(ui.cariAra||"")}" placeholder="🔍 Cari ara: ünvan, vergi / TC no, telefon…" aria-label="Cari ara" style="flex:1;min-width:200px">
+      ${ara?`<span class="muted" style="font-size:.85rem;align-self:center">${list.length} cari bulundu</span>`:""}</div>
     ${list.length?`<div class="tscroll"><table><thead><tr><th>Ünvan</th><th>Tür</th><th>Vergi / TC no</th><th>Telefon</th><th class="num">Bakiye</th><th></th></tr></thead><tbody>
       ${list.map(c=>`<tr><td><b>${esc(c.ad)}</b>${c.ornek?` <span class="chip ornek">Örnek</span>`:""}${c.vergiDairesi?`<div class="muted" style="font-size:.78rem">${esc(c.vergiDairesi)} V.D.</div>`:""}</td>
         <td>${c.tur==="tedarikci"?"Tedarikçi":"Müşteri"}</td><td class="date">${esc(c.vergiNo||"—")}</td><td class="date">${esc(c.telefon||"—")}</td>
         <td class="num ${c.bakiye>0?"pos":c.bakiye<0?"neg":""}">${money(Math.abs(c.bakiye))}<div style="font-size:.72rem;font-family:var(--font-body)" class="muted">${c.bakiye>0?"bize borçlu":c.bakiye<0?"biz borçluyuz":"kapalı"}</div></td>
         <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="cariOdeme" data-id="${c.id}" type="button">${(c.bakiye<0||(c.bakiye===0&&c.tur==="tedarikci"))?"Öde":"Tahsil et"}</button>`}<button class="small ghost" data-act="ekstre" data-id="${c.id}" type="button">Ekstre</button>${state.readonly?"":`<button class="small ghost" data-act="editCari" data-id="${c.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
-    </tbody></table></div>`:`<div class="empty">Henüz cari yok. Müşteri ve tedarikçilerinizi ekleyerek açık hesap satış ve alışlarını takip edebilirsiniz.</div>`}
+    </tbody></table></div>`:ara?`<div class="empty">"${esc(ui.cariAra)}" ile eşleşen cari bulunamadı.</div>`:`<div class="empty">Henüz cari yok. Müşteri ve tedarikçilerinizi ekleyerek açık hesap satış ve alışlarını takip edebilirsiniz.</div>`}
   </section>`;
 }
 
