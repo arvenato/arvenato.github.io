@@ -2088,7 +2088,10 @@ function faturaIndirModal(id){
 /* ---------- Stok ---------- */
 const BIRIMLER=["Adet","Paket","Kutu","Koli","Set","Top","Kg","Lt","Metre"];
 function fmtMiktar(n){return (Math.round((Number(n)||0)*100)/100).toLocaleString("tr-TR")}
-function stokMiktar(u){return r2((Number(u.acilis)||0)+state.stokHareketleri.filter(s=>s.urunId===u.id).reduce((t,s)=>t+(Number(s.miktar)||0),0))}
+// Ürün başına stok hareketi toplamı önbellekte (hareket listesi değişince — yeni dizi — yeniden hesaplanır); her çağrıda tüm hareketler taranmaz
+let _stokTopK=null,_stokTop=null;
+function stokMiktar(u){if(_stokTopK!==state.stokHareketleri){_stokTopK=state.stokHareketleri;_stokTop=new Map();for(const s of state.stokHareketleri)_stokTop.set(s.urunId,(_stokTop.get(s.urunId)||0)+(Number(s.miktar)||0))}
+  return r2((Number(u.acilis)||0)+(_stokTop.get(u.id)||0))}
 function stokDurum(u){const m=stokMiktar(u);if(m<=0)return "yok";if(Number(u.kritik)>0&&m<=Number(u.kritik))return "kritik";return "ok"}
 const urunSecim=new Set();let stokListeSon=[],stokSayfaSon=[],stokFiltreSon=null;
 const _ad=(a,b)=>a.ad.localeCompare(b.ad,"tr"),_sayi=(x,k)=>Number(x[k])||0;
@@ -4358,7 +4361,11 @@ function pzDenemeKimlikler(){const k=new Set(pzDenemeKodlar().map(pzKimlik).filt
   for(const u of state.urunler)if(k.has(pzKimlik(u.kod))||k.has(pzKimlik(u.barkod))){if(u.kod)k.add(pzKimlik(u.kod));if(u.barkod)k.add(pzKimlik(u.barkod))}
   for(const t of (pz.deneme&&pz.deneme.liste)||[])if(!t.bulunamadi){if(t.barkod)k.add(pzKimlik(t.barkod));if(t.stokKodu)k.add(pzKimlik(t.stokKodu))}
   return k}
-function pzKimlikUrun(x){const a=[x.barkod,x.stokKodu].map(pzKimlik).filter(Boolean);return state.urunler.find(u=>a.includes(pzKimlik(u.barkod))||a.includes(pzKimlik(u.kod)))||null}
+// Barkod / stok kodu → ürün haritası (ürün listesi değişince yeniden kurulur; sipariş listesinde her satırda tüm ürünler taranmasın)
+let _pzKH=null,_pzKHK=null;
+// Eski davranışla aynı: listede İLK eşleşen ürün (barkodu ya da kodu, siparişin barkodu ya da stok koduna eşit)
+function pzKimlikUrun(x){if(_pzKHK!==state.urunler){_pzKHK=state.urunler;_pzKH=new Map();state.urunler.forEach((u,i)=>{for(const k of [u.barkod,u.kod]){const kk=pzKimlik(k);if(kk&&!_pzKH.has(kk))_pzKH.set(kk,i)}})}
+  let en=-1;for(const k of [x.barkod,x.stokKodu]){const kk=pzKimlik(k);if(kk&&_pzKH.has(kk)){const i=_pzKH.get(kk);if(en<0||i<en)en=i}}return en<0?null:state.urunler[en]||null}
 // Teslim edilen siparişin satış tutarı (KDV oranına göre gruplanmış, KDV dahil).
 // Satırların tamamı işleniyorsa müşterinin ödediği toplam esas alınır; değilse satırların birim fiyat × adedi.
 const pzSatisHedef=s=>r2((Number(s.toplam)||0)+(Number(s.tyIndirim)||0));
@@ -4468,8 +4475,8 @@ function pzSiparisPanel(){
     <div class="muted" style="font-size:.82rem">Yalnızca deneme ürünlerinin satırları işlenir. Sipariş gelince stok düşer; <b>teslim edilince</b> “${esc(P.cari?P.cari.ad:pzIsim)}” carisine açık hesap satış yazılır${P.cari?"":" (cari yoksa oluşturulur)"}${ty?`; Trendyol hakedişi oluşturunca kestiği komisyon aynı cariden gider olarak düşülür (cari bakiyesi = Trendyol'un ödeyeceği tutar)${PZ_KOMISYON_ACIK?"":" — <b>şu an kapalı</b>"}`:` (${esc(pzIsim)} komisyonu henüz işlenmiyor)`}. İptal / iade olursa ${ty?"stok, satış ve komisyon":"stok ve satış"} geri alınır. Aynı sipariş tekrar işlense de kayıt çoğalmaz. Başlangıç zamanı bütün pazaryerleri için ortaktır.</div>
     <div class="filters" style="font-size:.85rem;align-items:center"><label for="pzBas">Bu zamandan sonraki siparişler:</label><input id="pzBas" type="datetime-local" value="${yerel}" style="max-width:220px"><span class="muted" style="font-size:.8rem">${b.kayitli?"kayıtlı":"öneri: deneme ürünlerine son stok gönderimi · ilk işlemde kaydedilir"}</span></div>
     ${P.liste.length?`<div class="tscroll"><table><thead><tr><th>Sipariş</th><th>Durum</th><th>Deneme ürünleri</th><th>Programda</th><th>Yapılacak</th><th>Paket / fatura</th></tr></thead><tbody>
-      ${P.liste.map(p=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(p.s.siparisNo)}</b><div class="muted" style="font-size:.75rem">${pzTarih(p.s.siparisTarihi)}</div></td><td>${esc(PZ_DURUM[p.s.durum]||p.s.durum)}</td>
-        <td style="font-size:.85rem">${p.es.concat(p.eslesmeyen).map(o=>`${esc(o.x.adet)} × ${esc((o.u&&o.u.ad)||o.x.ad)}`).join("<br>")}</td><td style="font-size:.85rem">${esc(p.durumMetin)}</td><td style="font-size:.82rem">${ne(p)}</td>
+      ${P.liste.map(p=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(p.s.siparisNo)}</b><div class="muted" style="font-size:.75rem">${pzTarih(p.s.siparisTarihi)}</div>${p.s.faturaAd||p.s.musteri?`<div style="font-size:.8rem;font-family:var(--font-body)">👤 ${esc(p.s.faturaAd||p.s.musteri)}</div>`:""}${pzSonGonderimHtml(p.s)}</td><td>${esc(PZ_DURUM[p.s.durum]||p.s.durum)}</td>
+        <td style="font-size:.85rem">${p.es.concat(p.eslesmeyen).map(o=>`<div style="display:flex;gap:8px;align-items:center;margin:2px 0">${pzUrunResim(o.u||pzKimlikUrun(o.x))}<div>${esc(o.x.adet)} × ${esc((o.u&&o.u.ad)||o.x.ad)}${pzUrunStokHtml(o.u||pzKimlikUrun(o.x))}</div></div>`).join("")}</td><td style="font-size:.85rem">${esc(p.durumMetin)}</td><td style="font-size:.82rem">${ne(p)}</td>
         <td style="font-size:.82rem"><div class="sip-islem">${pzPaketDestek(p.s,pzAd)?`<button class="small" data-act="pzPaket" data-id="${esc(p.s.paketId)}" type="button" title="Paketle / faturalandır / iptal et">📦 Paket durumu</button>`:""}
           ${ty&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?(p.s.faturaNo?`<span class="muted" title="Trendyol'daki fatura numarası">🧾 ${esc(p.s.faturaNo)}</span>`:(k=>k&&k.ortam==="canli"?`<span class="muted">🧾 ${esc(k.invoiceId)}</span>`:`<button class="small ghost" data-act="pzFatura" data-id="${esc(p.s.paketId)}" type="button">🧾 ${k?"Test ✓":"Faturalandır"}</button>`)(pzFatKayit(p.s.paketId))):""}
           ${!pzPaketDestek(p.s,pzAd)&&!ty?`<span class="muted">—</span>`:""}</div></td></tr>`).join("")}
@@ -4513,59 +4520,109 @@ const pzFatKayit=paketId=>((state.ayarEk||{})["tyfat-"+paketId])||null;
 const pzFatCanli=()=>!!(((state.ayarEk||{}).pzFaturaAyar||{}).canli);
 const PZ_PAKET_ACIK=/^(Created|Picking|Invoiced)$/;
 const PZ_IPTAL_NEDEN={500:"Stok tükendi / ürün yok",501:"Ürün kusurlu",502:"Fiyat hatalı",504:"Entegrasyon (stok/fiyat aktarım) hatası",505:"Toplu alım",506:"Mücbir sebep"};
+// Siparişteki ürünün küçük görseli (programdaki ürün kartından); tıklayınca büyür (gorselBuyut, data-buyut = ürün id)
+function pzUrunResim(u,boy){const g=u&&(u.gorseller||[])[0];const b=boy||44;
+  return g?`<img src="${esc(g)}" alt="" loading="lazy" data-buyut="${esc(u.id)}" title="Büyütmek için tıklayın" style="width:${b}px;height:${b}px;flex:none;object-fit:cover;border-radius:6px;cursor:zoom-in;background:#fff;border:1px solid var(--line)">`
+    :`<span style="width:${b}px;height:${b}px;flex:none;border-radius:6px;border:1px dashed var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:.7rem" class="muted" title="Programda görseli yok">—</span>`}
+// Programdaki kalan stok ve satış fiyatı (sipariş satırının altına); stok 0 / eksi ise kırmızı, kritik seviyedeyse turuncu
+function pzUrunStokHtml(u){if(!u)return `<div class="muted" style="font-size:.75rem">Programda eşleşen ürün yok</div>`;
+  const m=stokMiktar(u),kr=u.kritik===""||u.kritik==null?null:Number(u.kritik);
+  const renk=m<=0?"var(--neg,#c0392b)":kr!=null&&m<=kr?"#b26a00":"var(--muted)";
+  return `<div style="font-size:.75rem;color:${renk}">Kalan stok <b>${m.toLocaleString("tr-TR")}</b> ${esc(u.birim||"Adet")} · satış ${money(Number(u.satisFiyat)||0)}</div>`}
+// Kargoya son teslim zamanı: açık (kargolanmamış) siparişte kalan süreyle; geçtiyse / 6 saatten az kaldıysa kırmızı
+function pzSonGonderimHtml(s){const t=Number(s&&s.sonGonderim);if(!(t>0)||!PZ_PAKET_ACIK.test(s.durum||""))return "";
+  const kal=t-Date.now(),sa=Math.floor(Math.abs(kal)/3600000),dk=Math.floor(Math.abs(kal)%3600000/60000);
+  const sure=sa>=24?Math.floor(sa/24)+" gün "+(sa%24)+" sa":sa+" sa "+dk+" dk";
+  const z=new Date(t).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const renk=kal<0||kal<6*3600000?"var(--neg,#c0392b)":kal<24*3600000?"#b26a00":"var(--muted)";
+  return `<div style="font-size:.75rem;color:${renk}" title="Kargoya son teslim zamanı">🚚 Son gönderim ${z} · ${kal<0?"<b>"+sure+" geçti</b>":sure+" kaldı"}</div>`}
 // Bu siparişte programdan paket işlemi yapılabilir mi (pazaryerine göre)
+/* Pazaryerine göre programdan yapılabilen paket işlemleri (Hepsiburada ayrı pencerede: yalnız paketleme).
+   kismi: bir ürünün adedinin bir kısmı iptal edilebilir mi; neden: pazaryerinin iptal nedeni kodları (null = kod yok). Amazon / Shopify: henüz yok. */
+const PZ_PAKET_YETKI={
+  trendyol:{acik:/^(Created|Picking|Invoiced)$/,fatura:true,kismi:true,neden:PZ_IPTAL_NEDEN,not:'Trendyol panelinde "Sipariş işleme alındı" görünür',kargo:"Trendyol"},
+  n11:{acik:/^(Created|Picking)$/,fatura:false,kismi:true,neden:{61:"Stok tükendi",62:"Kusurlu / defolu ürün",63:"Hatalı fiyat",64:"Mücbir sebep",65:"Diğer"},not:"N11'de sipariş onaylanır",iptalNot:"N11 yeni siparişin doğrudan iptaline izin vermiyor: yeni sipariş önce onaylanır, hemen ardından seçilen ürünler iptal edilir.",kargo:"N11"},
+  pazarama:{acik:/^(Created|Picking)$/,fatura:false,kismi:false,neden:null,not:'Pazarama\'da "Siparişiniz hazırlanıyor" olur',iptalNot:"Pazarama'da bir ürünün yalnız bir kısmı iptal edilemez; ürünün tamamı iptal edilir.",kargo:"Pazarama"},
+  idefix:{acik:/^(Created|Picking|Invoiced)$/,fatura:false,kismi:false,neden:{500:"Stok tükendi",501:"Kusurlu / defolu ürün",502:"Hatalı fiyat",504:"Entegrasyon hatası"},not:"İdefix'te \"Toplanıyor\" olur; müşteri artık iptal edemez",kargo:"İdefix"}};
 function pzPaketDestek(s,pzAd){if(!s||state.readonly)return false;const p=s.pazaryeri||pzAd||pz.pazaryeri;
-  if(p==="trendyol")return PZ_PAKET_ACIK.test(s.durum);if(p==="hepsiburada")return s.durum==="Created";return false}
+  if(p==="hepsiburada")return s.durum==="Created";const Y=PZ_PAKET_YETKI[p];return !!Y&&Y.acik.test(s.durum||"")}
 function pzSipBul(paketId){return (pz.siparisler||[]).find(x=>x.paketId===paketId)||null}
 async function pzPaketGonder(s,tur,ek){
-  const r=await pzCagir(Object.assign({islem:"paketGuncelle",pazaryeri:s.pazaryeri||pz.pazaryeri||"trendyol",paketId:s.paketId,siparisNo:s.siparisNo,tur},ek||{}));
+  const r=await pzCagir(Object.assign({islem:"paketGuncelle",pazaryeri:s.pazaryeri||pz.pazaryeri||"trendyol",paketId:s.paketId,siparisNo:s.siparisNo,ipucu:Number(s.siparisTarihi)||0,tur},ek||{}));
   if(tur==="iptal"&&!(ek&&ek.satirlar&&ek.satirlar.length<s.satirlar.length))s.durum="UnSupplied";else if(tur==="Picking"&&!r.zaten)s.durum="Picking";else if(tur==="Invoiced")s.durum="Invoiced";
   if(ek&&ek.faturaNo)s.faturaNo=ek.faturaNo;
   setTimeout(()=>{try{pzCanliYenile&&pzCanliYenile()}catch(e){}},4000);return r}
+/* İptal edilen (tedarik edilemeyen) ürünlerin stoğu 0'a çekilir: programda "Sayım" hareketi; deneme listesindeki ürünler
+   otomatik gönderimle bütün bağlı pazaryerlerinde 0 olur. Siparişin stok çıkış kaydı sonra iptal işlenince silinip stoğu geri
+   artıracağı için o miktar da şimdiden düşülür (iptal işlendikten sonra stok 0 kalır). */
+async function pzIptalStokSifirla(s,sec){
+  const O=pzOnek(s.pazaryeri||pz.pazaryeri||"trendyol"),kods=pzDenemeKimlikler(),urunler=new Map();
+  for(const x of sec){const i=s.satirlar.findIndex(y=>y.satirId===x.satirId);const sat=s.satirlar[i];const u=sat&&pzKimlikUrun(sat);if(!u)continue;
+    const r=urunler.get(u.id)||{u,geri:0,deneme:kods.has(pzKimlik(u.barkod))||kods.has(pzKimlik(u.kod))};
+    const cik=state.stokHareketleri.find(h=>h.id===`${O.s}-${s.paketId}-${i}`);if(cik)r.geri+=Math.abs(Number(cik.miktar)||0);urunler.set(u.id,r)}
+  let sifir=0,deneme=0;const disari=[];
+  for(const r of urunler.values()){const fark=r2(-(stokMiktar(r.u)+r.geri));
+    if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:r.u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(r.u.alisFiyat)||0,aciklama:"Pazaryeri iptali (sipariş "+s.siparisNo+"): stok 0",hareketId:"",olusturma:Date.now()});
+    sifir++;if(r.deneme)deneme++;else disari.push(r.u.ad)}
+  if(deneme)pzStokTetikle();
+  return {sifir,deneme,disari,eslesmeyen:sec.length-[...urunler.values()].length}}
 function pzPaketModal(paketId){
   const s=pzSipBul(paketId);if(!s){toast("Sipariş listede yok; siparişleri yenileyin");return}
   if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}
-  if((s.pazaryeri||pz.pazaryeri)==="hepsiburada")return pzHbPaketModal(s);
-  const acik=PZ_PAKET_ACIK.test(s.durum);
-  const adim=[["Created","Yeni (paketlenecek)"],["Picking","Paketleniyor"],["Invoiced","Faturalandı"],["Shipped","Kargoya verildi"],["Delivered","Teslim edildi"]];
-  const sira=adim.findIndex(a=>a[0]===s.durum);const kay=pzFatKayit(paketId),kayC=kay&&kay.ortam==="canli"?kay:null;
-  openModal(`<div class="section-head"><h2>📦 Paket · ${esc(s.siparisNo)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
-    <div class="muted" style="font-size:.88rem">${esc(s.faturaAd||s.musteri||"")} · ${money(s.toplam)} · Trendyol'daki durum: <b>${esc(PZ_DURUM[s.durum]||s.durum)}</b>${s.faturaNo?` · fatura ${esc(s.faturaNo)}`:""}</div>
+  const pzK=s.pazaryeri||pz.pazaryeri||"trendyol";
+  if(pzK==="hepsiburada")return pzHbPaketModal(s);
+  const Y=PZ_PAKET_YETKI[pzK];if(!Y){toast((PZ_ADLAR[pzK]||pzK)+" için paket işlemleri henüz yok");return}
+  const PA=PZ_ADLAR[pzK]||pzK,acik=Y.acik.test(s.durum||""),nedenler=Y.neden;
+  const adim=[["Created","Yeni (paketlenecek)"],["Picking","Paketleniyor"],...(Y.fatura?[["Invoiced","Faturalandı"]]:[]),["Shipped","Kargoya verildi"],["Delivered","Teslim edildi"]];
+  const sira=adim.findIndex(a=>a[0]===s.durum);const kay=Y.fatura?pzFatKayit(paketId):null,kayC=kay&&kay.ortam==="canli"?kay:null;
+  openModal(`<div class="section-head"><h2>📦 ${esc(PA)} paketi · ${esc(s.siparisNo)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.88rem">${esc(s.faturaAd||s.musteri||"")} · ${money(s.toplam)} · ${esc(PA)}'daki durum: <b>${esc(PZ_DURUM[s.durum]||s.durum)}</b>${s.faturaNo?` · fatura ${esc(s.faturaNo)}`:""}</div>
     <div class="filters" style="gap:4px;font-size:.8rem">${adim.map((a,i)=>`<span class="chip ${i<=sira&&sira>=0?"satis":""}">${i+1}. ${esc(a[1])}</span>`).join("")}</div>
     ${acik?`<div style="display:grid;gap:8px">
-      <button type="button" class="primary" data-m="picking" ${s.durum!=="Created"?"disabled":""} style="text-align:left;padding:10px 14px">📦 Paketleniyor olarak işaretle<div style="font-weight:400;font-size:.8rem;opacity:.85">Trendyol panelinde "Sipariş işleme alındı" görünür${s.durum!=="Created"?" · zaten paketleniyor":""}</div></button>
-      ${kayC&&s.durum!=="Invoiced"?`<button type="button" class="primary" data-m="bildir" style="text-align:left;padding:10px 14px">📨 Trendyol'a "Faturalandı" bildir<div style="font-weight:400;font-size:.8rem;opacity:.85">Programdan kesilen fatura ${esc(kayC.invoiceId)} henüz Trendyol'a bildirilmemiş</div></button>`
-        :`<button type="button" data-m="fatura" ${s.durum==="Invoiced"||s.faturaNo?"disabled":""} style="text-align:left;padding:10px 14px">🧾 Faturalandır<div class="muted" style="font-weight:400;font-size:.8rem">e-Fatura / e-Arşiv keser, Trendyol'a fatura numarasıyla "Faturalandı" bildirir${pzFatCanli()?"":" · gerçek fatura kapalı (TEST)"}</div></button>`}
-      <div class="muted" style="font-size:.8rem">"Kargoya verildi" ve "Teslim edildi" durumlarını kargo firması okutunca Trendyol kendisi değiştirir.</div>
+      <button type="button" class="primary" data-m="picking" ${s.durum!=="Created"?"disabled":""} style="text-align:left;padding:10px 14px">📦 Paketleniyor olarak işaretle<div style="font-weight:400;font-size:.8rem;opacity:.85">${esc(Y.not)}${s.durum!=="Created"?" · zaten paketleniyor":""}</div></button>
+      ${!Y.fatura?"":kayC&&s.durum!=="Invoiced"?`<button type="button" class="primary" data-m="bildir" style="text-align:left;padding:10px 14px">📨 ${esc(PA)}'a "Faturalandı" bildir<div style="font-weight:400;font-size:.8rem;opacity:.85">Programdan kesilen fatura ${esc(kayC.invoiceId)} henüz bildirilmemiş</div></button>`
+        :`<button type="button" data-m="fatura" ${s.durum==="Invoiced"||s.faturaNo?"disabled":""} style="text-align:left;padding:10px 14px">🧾 Faturalandır<div class="muted" style="font-weight:400;font-size:.8rem">e-Fatura / e-Arşiv keser, ${esc(PA)}'a fatura numarasıyla "Faturalandı" bildirir${pzFatCanli()?"":" · gerçek fatura kapalı (TEST)"}</div></button>`}
+      <div class="muted" style="font-size:.8rem">"Kargoya verildi" ve "Teslim edildi" durumlarını kargo firması okutunca ${esc(Y.kargo)} kendisi değiştirir.</div>
       <details style="border:1px solid var(--line);border-radius:8px;padding:8px 12px"><summary style="cursor:pointer;color:var(--neg,#c0392b)"><b>✖ Siparişi iptal et (tedarik edilemedi)</b></summary>
         <div style="display:grid;gap:6px;margin-top:8px;font-size:.88rem">
-          ${s.satirlar.map((x,i)=>`<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-sat="${i}" checked> <span style="flex:1">${esc(x.ad)}${x.barkod?` <span class="muted">${esc(x.barkod)}</span>`:""}</span>${Number(x.adet)>1?`<input type="number" data-adet="${i}" min="1" max="${esc(x.adet)}" value="${esc(x.adet)}" style="width:70px" aria-label="İptal adedi">`:""}<span class="muted">/ ${esc(x.adet)} adet</span></label>`).join("")}
-          <label>Neden <select id="ppNeden">${Object.entries(PZ_IPTAL_NEDEN).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
-          <div class="muted" style="font-size:.8rem">Trendyol'da seçilen ürünler "tedarik edilemedi" olarak iptal edilir, müşteriye para iadesi yapılır. <b>Geri alınamaz.</b> Tedarik edememe mağaza puanınızı etkileyebilir.</div>
-          <button type="button" class="danger" data-m="iptal" style="justify-self:start">Seçilenleri Trendyol'da iptal et</button></div></details></div>`
+          ${s.satirlar.map((x,i)=>`<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-sat="${i}" checked> <span style="flex:1">${esc(x.ad)}${x.barkod?` <span class="muted">${esc(x.barkod)}</span>`:""}</span>${Y.kismi&&Number(x.adet)>1?`<input type="number" data-adet="${i}" min="1" max="${esc(x.adet)}" value="${esc(x.adet)}" style="width:70px" aria-label="İptal adedi">`:""}<span class="muted">${Y.kismi?"/ ":""}${esc(x.adet)} adet</span></label>`).join("")}
+          ${nedenler?`<label>Neden <select id="ppNeden">${Object.entries(nedenler).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join("")}</select></label>`:""}
+          <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="ppStok0" checked> <span>İptal edilen ürünlerin stoğunu <b>0</b> yap (programda ve bütün bağlı pazaryerlerinde)</span></label>
+          ${Y.iptalNot?`<div class="muted" style="font-size:.8rem">${esc(Y.iptalNot)}</div>`:""}
+          <div class="muted" style="font-size:.8rem">${esc(PA)}'da seçilen ürünler "tedarik edilemedi" olarak iptal edilir, müşteriye para iadesi yapılır. <b>Geri alınamaz.</b> Tedarik edememe mağaza puanınızı etkileyebilir.</div>
+          <button type="button" class="danger" data-m="iptal" style="justify-self:start">Seçilenleri ${esc(PA)}'da iptal et</button></div></details></div>`
       :`<div class="notice" style="font-size:.88rem">Bu siparişin durumu programdan değiştirilemez (${esc(PZ_DURUM[s.durum]||s.durum)}).</div>`}
     <div class="err" id="ppErr"></div><div class="muted" id="ppDurum" role="status"></div>`,
   root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;if(m==="close")return closeModal();
     const er=root.querySelector("#ppErr"),du=root.querySelector("#ppDurum");er.textContent="";
     if(m==="fatura"){closeModal();return pzFaturaModal(paketId)}
     const kilit=v=>root.querySelectorAll("button[data-m]").forEach(x=>{if(x.dataset.m!=="close")x.disabled=v});
-    if(m==="bildir"){kilit(true);du.textContent="Trendyol'a bildiriliyor…";
-      try{await pzPaketGonder(s,"Invoiced",{faturaNo:String(kayC.invoiceId)});closeModal();toast("Trendyol'a bildirildi: Faturalandı ✓");render()}
+    if(m==="bildir"){kilit(true);du.textContent=PA+"'a bildiriliyor…";
+      try{await pzPaketGonder(s,"Invoiced",{faturaNo:String(kayC.invoiceId)});closeModal();toast(PA+"'a bildirildi: Faturalandı ✓");render()}
       catch(err){er.textContent=err.message||String(err);du.textContent="";kilit(false)}return}
-    if(m==="picking"){if(!confirm(`Sipariş ${s.siparisNo} Trendyol'da "Paketleniyor" olarak işaretlensin mi?`))return;
-      kilit(true);du.textContent="Trendyol'a bildiriliyor…";
-      try{const r=await pzPaketGonder(s,"Picking");closeModal();toast(r.zaten?"Sipariş zaten paketleniyor":"Trendyol'a bildirildi: Paketleniyor ✓");render()}
+    if(m==="picking"){if(!confirm(`Sipariş ${s.siparisNo} ${PA}'da "Paketleniyor" olarak işaretlensin mi?`))return;
+      kilit(true);du.textContent=PA+"'a bildiriliyor…";
+      try{const r=await pzPaketGonder(s,"Picking");closeModal();toast(r.zaten?"Sipariş zaten paketleniyor":PA+"'a bildirildi: Paketleniyor ✓");render()}
       catch(err){er.textContent=err.message||String(err);du.textContent="";kilit(false)}return}
     if(m==="iptal"){const sec=[];root.querySelectorAll("[data-sat]").forEach(c=>{if(!c.checked)return;const i=Number(c.dataset.sat),x=s.satirlar[i];const a=root.querySelector(`[data-adet="${i}"]`);sec.push({satirId:x.satirId,adet:a?Math.floor(Number(a.value)):Number(x.adet),ad:x.ad})});
       if(!sec.length){er.textContent="İptal edilecek ürünü seçin";return}
       if(sec.some(x=>!x.satirId)){er.textContent="Bu siparişin satır numarası okunamadı; siparişleri yenileyip tekrar deneyin";return}
-      const neden=root.querySelector("#ppNeden").value;
-      if(!confirm(`DİKKAT: Trendyol'da İPTAL edilecek (geri alınamaz)\n\nSipariş ${s.siparisNo}\n${sec.map(x=>"• "+x.adet+" × "+x.ad).join("\n")}\nNeden: ${PZ_IPTAL_NEDEN[neden]}\n\nDevam edilsin mi?`))return;
-      kilit(true);du.textContent="Trendyol'a gönderiliyor…";
+      const nEl=root.querySelector("#ppNeden"),neden=nEl?nEl.value:"";
+      if(!confirm(`DİKKAT: ${PA}'da İPTAL edilecek (geri alınamaz)\n\nSipariş ${s.siparisNo}\n${sec.map(x=>"• "+x.adet+" × "+x.ad).join("\n")}${neden?"\nNeden: "+nedenler[neden]:""}${Y.iptalNot?"\n\n"+Y.iptalNot:""}\n\nDevam edilsin mi?`))return;
+      kilit(true);du.textContent=PA+"'a gönderiliyor…";
       const hepsi=sec.length===s.satirlar.length&&sec.every(x=>{const y=s.satirlar.find(z=>z.satirId===x.satirId);return y&&Number(y.adet)===x.adet});
-      try{await pzPaketGonder(s,"iptal",{neden:Number(neden),satirlar:hepsi?[]:sec.map(x=>({satirId:x.satirId,adet:x.adet}))});closeModal();toast(`Sipariş ${s.siparisNo} Trendyol'da iptal edildi (tedarik edilemedi) ✓`);render()}
+      const stok0=root.querySelector("#ppStok0").checked;
+      try{await pzPaketGonder(s,"iptal",{...(neden?{neden:Number(neden)}:{}),satirlar:hepsi?[]:sec.map(x=>({satirId:x.satirId,adet:x.adet}))});
+        let ek="";if(stok0){du.textContent="Stok 0 yapılıyor…";try{const r=await pzIptalStokSifirla(s,sec);
+          ek=r.sifir?` · ${r.sifir} ürünün stoğu 0 yapıldı${r.deneme?` (${r.deneme} tanesi pazaryerlerine gönderiliyor)`:""}${r.disari.length?` · ${r.disari.length} ürün deneme listesinde değil, yalnız programda 0 (pazaryeri stoğunu Yengeç yönetiyor)`:""}`:"";
+          if(r.eslesmeyen)ek+=` · ${r.eslesmeyen} ürün programda bulunamadı`}catch(e2){ek=" · stok 0 yapılamadı: "+errMsg(e2)}}
+        closeModal();toast(`Sipariş ${s.siparisNo} ${PA}'da iptal edildi (tedarik edilemedi) ✓`+ek);render()}
       catch(err){er.textContent=err.message||String(err);du.textContent="";kilit(false)}}}))}
 // Hepsiburada: yalnız paketleme (açık kalemlerin hepsi tek pakete; desi ve koli adedi). Fatura bildirimi ve iptal HB'de henüz yok.
+// Hepsiburada iptal nedenleri ve satıcı iptal cezası (kalem bedeline göre basamaklı; kalem başına hesaplanıp toplanır — tahmini)
+const PZ_HB_IPTAL_NEDEN={83:"Ürün tedarik edilemedi",12:"Stok yok",80:"Üründe fiyat hatası"};
+function pzHbCeza(satirlar){const B=[[50,10],[100,30],[200,50],[1000,100],[3000,300],[6000,600],[10000,1000],[20000,1500],[Infinity,2000]];
+  return (satirlar||[]).reduce((t,x)=>{const v=Number(x.tutar)||Number(x.birimFiyat)*(Number(x.adet)||1)||0;return t+(B.find(b=>v<=b[0])||B[B.length-1])[1]},0)}
 function pzHbPaketModal(s){
   const acik=s.durum==="Created";const desi0=Math.max(1,Math.ceil((s.satirlar||[]).reduce((t,x)=>{const u=pzKimlikUrun?pzKimlikUrun(x):null;return t+(Number(u&&u.desi)||0)*(Number(x.adet)||1)},0))||1);
   openModal(`<div class="section-head"><h2>📦 Hepsiburada paketi · ${esc(s.siparisNo)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
@@ -4573,11 +4630,32 @@ function pzHbPaketModal(s){
     <div style="font-size:.88rem">${(s.satirlar||[]).map(x=>`${esc(x.adet)} × ${esc(x.ad)}`).join("<br>")}</div>
     ${acik?`<div class="filters" style="align-items:center;font-size:.88rem"><label>Desi <input id="hpDesi" type="number" min="1" max="500" value="${desi0}" style="width:80px"></label><label>Koli adedi <input id="hpKoli" type="number" min="1" max="20" value="1" style="width:70px"></label></div>
       <div class="muted" style="font-size:.8rem">Siparişin açık kalemlerinin hepsi tek pakete konur. Paketlenince Hepsiburada kargo barkodu oluşturur (birkaç dakika içinde listede görünür).</div>
-      <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="paketle">📦 Hepsiburada'da paketle</button></div>`
-      :`<div class="notice" style="font-size:.88rem">Bu sipariş paketlenmeye hazır değil ya da zaten paketlenmiş (${esc(PZ_DURUM[s.durum]||s.durum)}).</div>`}
+      <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="paketle">📦 Hepsiburada'da paketle</button></div>
+      <details style="border:1px solid var(--line);border-radius:8px;padding:8px 12px"><summary style="cursor:pointer;color:var(--neg,#c0392b)"><b>✖ Siparişi iptal et (tedarik edilemedi)</b></summary>
+        <div style="display:grid;gap:6px;margin-top:8px;font-size:.88rem">
+          ${s.satirlar.map((x,i)=>`<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-sat="${i}" checked> <span style="flex:1">${esc(x.ad)}${x.barkod?` <span class="muted">${esc(x.barkod)}</span>`:""}</span><span class="muted">${esc(x.adet)} adet · ${money(Number(x.tutar)||Number(x.birimFiyat)*Number(x.adet)||0)}</span></label>`).join("")}
+          <label>Neden <select id="hpNeden">${Object.entries(PZ_HB_IPTAL_NEDEN).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+          <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="hpStok0" checked> <span>İptal edilen ürünlerin stoğunu <b>0</b> yap (programda ve bütün bağlı pazaryerlerinde)</span></label>
+          <div class="notice" style="font-size:.8rem"><b>Hepsiburada satıcı iptalinde ceza keser</b> (ürün bedeline göre 10 TL – 2.000 TL; bu sipariş için tahmini <b id="hpCeza">${money(pzHbCeza(s.satirlar))}</b>). Ürünü başka satıcı satıyorsa sipariş ona aktarılır ve fiyat farkı da size fatura edilir. Hepsiburada'da bir ürünün yalnız bir kısmı iptal edilemez, ürünün tamamı gider. Günde en fazla 100 iptal yapılabilir. <b>Geri alınamaz.</b></div>
+          <button type="button" class="danger" data-m="iptal" style="justify-self:start">Seçilenleri Hepsiburada'da iptal et</button></div></details>`
+      :`<div class="notice" style="font-size:.88rem">Bu sipariş paketlenmeye hazır değil ya da zaten paketlenmiş (${esc(PZ_DURUM[s.durum]||s.durum)}). Hepsiburada'da paketlenmiş sipariş programdan iptal edilemez.</div>`}
     <div class="err" id="hpErr"></div><div class="muted" id="hpDurum" role="status"></div>`,
-  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();if(b.dataset.m!=="paketle")return;
+  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;if(b.dataset.m==="close")return closeModal();
     const er=root.querySelector("#hpErr"),du=root.querySelector("#hpDurum");er.textContent="";
+    if(b.dataset.m==="iptal"){const sec=[];root.querySelectorAll("[data-sat]").forEach(c=>{if(!c.checked)return;const x=s.satirlar[Number(c.dataset.sat)];sec.push({satirId:x.satirId,adet:Number(x.adet),ad:x.ad,x})});
+      if(!sec.length){er.textContent="İptal edilecek ürünü seçin";return}
+      if(sec.some(x=>!x.satirId)){er.textContent="Bu siparişin kalem numarası okunamadı; siparişleri yenileyip tekrar deneyin";return}
+      const neden=root.querySelector("#hpNeden").value,ceza=pzHbCeza(sec.map(x=>x.x));
+      if(!confirm(`DİKKAT: Hepsiburada'da İPTAL edilecek (geri alınamaz)\n\nSipariş ${s.siparisNo}\n${sec.map(x=>"• "+x.adet+" × "+x.ad).join("\n")}\nNeden: ${PZ_HB_IPTAL_NEDEN[neden]}\n\nHepsiburada tahmini ${money(ceza)} ceza keser; ürünü başka satıcı satıyorsa fiyat farkı da size fatura edilir.\n\nDevam edilsin mi?`))return;
+      root.querySelectorAll("button[data-m]").forEach(x=>{if(x.dataset.m!=="close")x.disabled=true});du.textContent="Hepsiburada'ya gönderiliyor…";
+      const hepsi=sec.length===s.satirlar.length,stok0=root.querySelector("#hpStok0").checked;
+      try{await pzPaketGonder(s,"iptal",{neden:Number(neden),satirlar:hepsi?[]:sec.map(x=>({satirId:x.satirId,adet:x.adet}))});
+        let ek="";if(stok0){du.textContent="Stok 0 yapılıyor…";try{const r=await pzIptalStokSifirla(s,sec);
+          ek=r.sifir?` · ${r.sifir} ürünün stoğu 0 yapıldı${r.deneme?` (${r.deneme} tanesi pazaryerlerine gönderiliyor)`:""}${r.disari.length?` · ${r.disari.length} ürün deneme listesinde değil, yalnız programda 0`:""}`:"";
+          if(r.eslesmeyen)ek+=` · ${r.eslesmeyen} ürün programda bulunamadı`}catch(e2){ek=" · stok 0 yapılamadı: "+errMsg(e2)}}
+        closeModal();toast(`Sipariş ${s.siparisNo} Hepsiburada'da iptal edildi ✓`+ek);render()}
+      catch(err){er.textContent=err.message||String(err);du.textContent="";root.querySelectorAll("button[data-m]").forEach(x=>x.disabled=false)}return}
+    if(b.dataset.m!=="paketle")return;
     const desi=Math.floor(Number(root.querySelector("#hpDesi").value)),koli=Math.floor(Number(root.querySelector("#hpKoli").value));
     if(!(desi>=1&&desi<=500)||!(koli>=1&&koli<=20)){er.textContent="Desi 1–500, koli 1–20 olmalı";return}
     if(!confirm(`Sipariş ${s.siparisNo} Hepsiburada'da paketlensin mi? (desi ${desi}, ${koli} koli)`))return;
@@ -6445,9 +6523,9 @@ function vPazaryeri(){
       <div class="filters"><select id="fPzDurum" data-filter="pzDurum" aria-label="Durum"><option value="">Tüm durumlar</option>${durumlar.map(d=>`<option value="${esc(d)}" ${ui.pzDurum===d?"selected":""}>${esc(PZ_DURUM[d]||d)}</option>`).join("")}</select>
         <input id="fPzAra" type="search" data-filter="pzAra" value="${esc(ui.pzAra||"")}" placeholder="Sipariş no, müşteri, ürün, barkod…" style="flex:1;min-width:180px"></div>
       ${l.length?`<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Sipariş no</th><th>Müşteri</th><th>Ürünler</th><th>Durum</th><th class="num">Tutar</th><th>Kargo / fatura</th></tr></thead><tbody>
-        ${l.slice(0,500).map(s=>{const fat=pzSipFatura(s),iptal=/Cancelled|Returned|UnSupplied/.test(s.durum),kod=String(s.kargoTakip||"").trim();return `<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b>${pzCanli.yeniler.has(s.paketId)?` <span class="chip satis">Yeni</span>`:""}</td>
+        ${l.slice(0,500).map(s=>{const fat=pzSipFatura(s),iptal=/Cancelled|Returned|UnSupplied/.test(s.durum),kod=String(s.kargoTakip||"").trim();return `<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b>${pzCanli.yeniler.has(s.paketId)?` <span class="chip satis">Yeni</span>`:""}${pzSonGonderimHtml(s)}</td>
           <td>${esc(s.faturaAd||s.musteri)}${s.vergiNo?`<div class="muted" style="font-size:.78rem">VKN ${esc(s.vergiNo)}${s.firma?" · "+esc(s.firma):""}</div>`:""}<div class="muted" style="font-size:.78rem">${esc([s.ilce,s.il].filter(Boolean).join(" / "))}</div></td>
-          <td style="font-size:.85rem">${s.satirlar.map(x=>`${esc(x.adet)} × ${esc(x.ad)} <span class="muted">(${money(x.birimFiyat)}${x.kdvOran?" · %"+x.kdvOran:""})</span>${x.barkod?tdKucuk(x.barkod):""}`).join("<br>")}</td>
+          <td style="font-size:.85rem">${s.satirlar.map(x=>`<div style="display:flex;gap:8px;align-items:center;margin:2px 0">${pzUrunResim(pzKimlikUrun(x),40)}<div>${esc(x.adet)} × ${esc(x.ad)} <span class="muted">(${money(x.birimFiyat)}${x.kdvOran?" · %"+x.kdvOran:""})</span>${x.barkod?tdKucuk(x.barkod):""}${pzUrunStokHtml(pzKimlikUrun(x))}</div></div>`).join("")}</td>
           <td><span class="chip ${s.durum==="Delivered"?"satis":/Cancelled|Returned|UnSupplied|UnDelivered/.test(s.durum)?"alis":""}">${esc(PZ_DURUM[s.durum]||s.durum)}</span>${s.teslimTarihi?`<div class="muted" style="font-size:.75rem">${pzTarih(s.teslimTarihi)}</div>`:""}${s.durum==="Delivered"&&ty?`<div><button class="small ghost" data-act="pzFatura" data-id="${esc(s.paketId)}" type="button" title="e-Fatura taslağı (gönderim yalnızca TEST hesabıyla)" style="padding:2px 6px;font-size:.75rem">🧾 ${pzFatKayit(s.paketId)?"Test ✓":"Fatura"}</button></div>`:""}</td>
           <td class="num"><b>${money(s.toplam)}</b>${s.indirim?`<div class="muted" style="font-size:.75rem">indirim ${money(s.indirim)}</div>`:""}</td>
           <td><div class="sip-islem"><button class="small" type="button" data-act="kargoTek" data-id="${esc(s.paketId)}" ${kod&&!iptal?"":"disabled"} title="${kod?esc("Kargo kodu "+kod):"Pazaryeri henüz kargo kodu vermedi"}">🖨 Kargo fişi</button>
