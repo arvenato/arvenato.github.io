@@ -778,8 +778,9 @@ function vCariler(){
   const ara=_norm(ui.cariAra||"").trim(),araD=String(ui.cariAra||"").replace(/\D/g,"");
   const uyar=c=>!ara||_norm([c.ad,c.vergiDairesi,c.vergiNo,c.telefon].join(" ")).includes(ara)||(araD.length>=3&&String((c.vergiNo||"")+" "+(c.telefon||"")).replace(/\D/g,"").includes(araD));
   const list=state.cariler.filter(c=>(!ui.cariTur||c.tur===ui.cariTur)&&uyar(c)).map(c=>({...c,bakiye:cariBakiye(c.id)})).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  const pzAday=state.readonly?0:pzCariAdaylari().length;
   return `<section class="panel">
-    <div class="section-head"><h2>Cari hesaplar</h2>${state.readonly?"":`<button class="small primary" data-act="newCari" type="button">+ Cari ekle</button>`}</div>
+    <div class="section-head"><h2>Cari hesaplar</h2>${state.readonly?"":`<div class="rowact">${pzAday?`<button class="small ghost" data-act="pzCariTemizle" type="button" title="Yalnızca pazaryeri faturalarından açılmış müşteri carileri">🧹 Pazaryeri carilerini kaldır (${pzAday})</button>`:""}<button class="small primary" data-act="newCari" type="button">+ Cari ekle</button></div>`}</div>
     <div class="filters"><select id="fCari" data-filter="cariTur" aria-label="Cari türü"><option value="">Tümü</option><option value="musteri" ${ui.cariTur==="musteri"?"selected":""}>Müşteriler</option><option value="tedarikci" ${ui.cariTur==="tedarikci"?"selected":""}>Tedarikçiler</option></select>
       <input id="fCariAra" type="search" data-filter="cariAra" value="${esc(ui.cariAra||"")}" placeholder="🔍 Cari ara: ünvan, vergi / TC no, telefon…" aria-label="Cari ara" style="flex:1;min-width:200px">
       ${ara?`<span class="muted" style="font-size:.85rem;align-self:center">${list.length} cari bulundu</span>`:""}</div>
@@ -1412,6 +1413,46 @@ async function pzOdemeDonustur(){
     if(fl.length){toast(fl.length+" pazaryeri faturası ödendi (pazaryeri) olarak işlendi; müşteriler artık borçlu görünmez");render()}}
   catch(e){console.warn("pzOdemeDonustur",e);if(f===firmaId)toast("Pazaryeri faturaları işlenemedi: "+sbMesaj(e)+" (sonraki açılışta yeniden denenecek)")}
   finally{_pzOdDonusuyor=false}}
+/* v147: yalnızca pazaryeri satış faturalarından otomatik açılmış müşteri carileri.
+   Alış faturası, elle girilmiş hareket / tahsilat, teklif, ajanda vb. herhangi bir başka kaydı olan cari listeye girmez. */
+function pzCariAdaylari(){
+  const grup=(l)=>{const m=new Map();for(const x of l){if(!x.cariId)continue;let a=m.get(x.cariId);if(!a)m.set(x.cariId,a=[]);a.push(x)}return m};
+  const fBy=grup(state.faturalar),hBy=grup(state.hareketler);
+  const ref=new Set();for(const [k,l] of Object.entries(state)){if(k==="faturalar"||k==="hareketler"||k==="cariler"||!Array.isArray(l))continue;for(const x of l)if(x&&x.cariId)ref.add(x.cariId)}
+  return state.cariler.filter(c=>{if(c.ornek||c.tur==="tedarikci"||ref.has(c.id))return false;const fl=fBy.get(c.id)||[];
+    if(!fl.length||fl.some(f=>!(f.kaynak==="trendyol"&&f.tur==="satis")))return false;
+    const hs=new Set(fl.flatMap(f=>f.hareketIds||[]));return (hBy.get(c.id)||[]).every(h=>hs.has(h.id))})}
+let _pzCariSiliyor=false;
+async function pzCariTemizle(adaylar,durum){
+  if(_pzCariSiliyor||!sb||!firmaId||state.readonly)return;const f=firmaId;_pzCariSiliyor=true;
+  try{const ids=new Set(adaylar.map(c=>c.id)),ad=new Map(adaylar.map(c=>[c.id,c.ad]));const satir=[],simdi=new Date().toISOString();
+    // Faturalar müşteri adıyla kalır, hareketler cariden ayrılır (tutarlar ve satış raporları değişmez)
+    for(const x of state.faturalar){if(!ids.has(x.cariId))continue;const {id,...v}=x;satir.push({koleksiyon:"faturalar",id,veri:{...v,cariId:"",musteriAd:v.musteriAd||ad.get(x.cariId)||""}})}
+    for(const x of state.hareketler){if(!ids.has(x.cariId))continue;const {id,...v}=x;satir.push({koleksiyon:"hareketler",id,veri:{...v,cariId:""}})}
+    const dene=async fn=>{let n=0;for(;;){const {error}=await fn();if(!error)return;if(++n>3)throw error;await new Promise(r=>setTimeout(r,1500*n))}};
+    for(let i=0;i<satir.length;i+=500){durum&&durum("Faturalar ayrılıyor… "+Math.min(i+500,satir.length)+" / "+satir.length);
+      const parca=satir.slice(i,i+500).map(r=>({firma_id:f,...r,guncelleme:simdi}));await dene(()=>sb.from("kayitlar").upsert(parca));
+      if(f!==firmaId)return;for(const r of parca){_yukNot(r.koleksiyon,r.id,r.veri);yerelUygula(r.koleksiyon,r.id,r.veri)}}
+    const liste=[...ids];
+    for(let i=0;i<liste.length;i+=200){durum&&durum("Cariler kaldırılıyor… "+Math.min(i+200,liste.length)+" / "+liste.length);
+      const parca=liste.slice(i,i+200);await dene(()=>sb.from("kayitlar").delete().eq("firma_id",f).eq("koleksiyon","cariler").in("id",parca));
+      if(f!==firmaId)return;for(const id of parca){_yukNot("cariler",id,null);yerelUygula("cariler",id,null)}}
+    return liste.length}
+  finally{_pzCariSiliyor=false}}
+function pzCariTemizleEkrani(){
+  const ad=pzCariAdaylari();if(!ad.length){toast("Kaldırılacak pazaryeri carisi yok");return}
+  const kalan=state.cariler.length-ad.length;
+  openModal(`<div class="section-head"><h2>Pazaryeri müşteri carilerini kaldır</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <p><b>${ad.length}</b> cari yalnızca pazaryeri satış faturalarından otomatik açılmış. Bunlar kaldırılınca listede <b>${kalan}</b> cari kalır (alış / satış yaptığınız ve elle açtığınız cariler).</p>
+    <ul class="muted" style="font-size:.88rem;margin:0 0 10px 18px"><li>Faturalar silinmez; müşteri adıyla kalır.</li><li>Satış toplamları, kasa ve banka değişmez.</li><li>Bundan sonra pazaryeri müşterisine cari açılmaz.</li><li><b>Bu işlem geri alınamaz.</b></li></ul>
+    <details style="margin-bottom:10px"><summary class="muted" style="cursor:pointer">Kaldırılacak carilerden örnekler</summary><div class="muted" style="font-size:.82rem;max-height:160px;overflow:auto">${ad.slice(0,40).map(c=>esc(c.ad)).join("<br>")}${ad.length>40?"<br>… ve "+(ad.length-40)+" cari daha":""}</div></details>
+    <div class="rowact"><button type="button" class="primary" data-m="sil">${ad.length} cariyi kaldır</button><button type="button" class="ghost" data-m="close">Vazgeç</button></div>
+    <div class="muted" id="pcDurum" role="status" style="font-size:.85rem;margin-top:8px"></div>`,
+  root=>root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;
+    if(b.dataset.m==="close")return closeModal();
+    if(b.dataset.m==="sil"){root.querySelectorAll("button[data-m]").forEach(x=>x.disabled=true);const d=root.querySelector("#pcDurum");
+      try{const n=await pzCariTemizle(ad,t=>d.textContent=t);closeModal();toast((n||0)+" pazaryeri carisi kaldırıldı");render()}
+      catch(err){d.textContent="Tamamlanamadı: "+errMsg(err)+" — yeniden deneyebilirsiniz";root.querySelectorAll("button[data-m]").forEach(x=>x.disabled=false)}}}))}
 async function faturalariKaydet(list,o,ilerleme){
   const satis=o.tur==="satis";const cache={};let n=0,eklenen=0,atlanan=0,cariYeni=0,hata=0;
   const vb=varsayilanBanka();
@@ -1479,7 +1520,8 @@ async function efatSenk(elle){
     bireysel.forEach(v=>{if(!v.unvan||/^nihai/i.test(v.unvan))v.unvan=v.unvan||"Nihai tüketici";if(v.vkn==="11111111111")v.vkn=""});
     const ra=gelen.length?await faturalariKaydet(gelen,{tur:"alis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
     // v144: firmalara kesilen pazaryeri satış faturaları da ödenmiş sayılır (ödemeyi pazaryeri yapar; müşteri borçlu görünmez, banka / kasa değişmez)
-    const rk=kurumsal.length?await faturalariKaydet(kurumsal,{tur:"satis",odeme:"pazaryeri",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    // v147: pazaryeri müşterilerine cari açılmaz (fatura müşteri adıyla kaydedilir); zaten var olan bir cariyle eşleşirse ona bağlanır
+    const rk=kurumsal.length?await faturalariKaydet(kurumsal,{tur:"satis",odeme:"pazaryeri",cariAc:false,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
     const rb=bireysel.length?await faturalariKaydet(bireysel,{tur:"satis",odeme:"banka",cariAc:false,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
     const rs={eklenen:rk.eklenen+rb.eklenen,cariYeni:rk.cariYeni+rb.cariYeni,hata:rk.hata+rb.hata};
     // Trendyol siparişine ait giden faturaların satışı Trendyol carisinde sayıldığı için fatura satış hareketinden ayrılır
@@ -6590,6 +6632,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="del"){b.outerHTML=`<button class="small danger" data-act="delOnay" data-id="${id}" type="button">Silmeyi onayla</button>`}
   else if(a==="delOnay"){b.disabled=true;try{await api.del("hareketler",id);toast("Kayıt silindi")}catch(err){toast(errMsg(err))}}
   else if(a==="newCari")cariForm(null);
+  else if(a==="pzCariTemizle")pzCariTemizleEkrani();
   else if(a==="editCari"){const c=cariById(id);if(c)cariForm(c)}
   else if(a==="ekstre")ekstre(id);
   else if(a==="cariOdeme")cariOdemeForm(id);
