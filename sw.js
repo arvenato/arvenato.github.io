@@ -1,6 +1,6 @@
 // Uygulama dosyalarÄ±nÄ± Ã¶nbelleÄŸe alÄ±r. Sayfa her aÃ§Ä±lÄ±ÅŸta internetten en gÃ¼ncel sÃ¼rÃ¼mÃ¼ alÄ±r;
 // internet yoksa son kaydedilen sÃ¼rÃ¼m aÃ§Ä±lÄ±r. Veriler (Supabase) Ã¶nbelleÄŸe alÄ±nmaz.
-const SURUM="v147";
+const SURUM="v148";
 const KABUK = ["./", "./index.html", "./config.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./logo-yatay.png", "./logo.jpg"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(SURUM).then(c => c.addAll(KABUK)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== SURUM).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
