@@ -4344,11 +4344,18 @@ async function pzSiparisIsle(){
    Başlangıç zamanı kaydedilmiş ve deneme listesi olan firmada her 15 dakikada bir Trendyol siparişleri okunur,
    deneme ürünlerinin değişiklikleri "Programa işle" ile aynı kurallarla kendiliğinden işlenir. Trendyol'a hiçbir şey gönderilmez. */
 // Her dakika son 3 günün siparişleri (yeni sipariş / iptal: stoğu hemen etkiler); 15 dakikada bir başlangıçtan bugüne tamamı (teslim / iade)
-const PZ_OTO_ARALIK=60000,PZ_OTO_TAM=15*60000;
+/* v141 (Supabase kullanımını azaltma): sunucu turu (dakikada bir) siparişleri zaten işliyorsa program kısa kontrol yapmaz;
+   yalnız 30 dakikada bir tam kontrol (komisyon / teslim / iade) yapar. Sunucu çalışmıyorsa sekme görünürken 5 dakikada bir kısa kontrol.
+   Sekme arka plandayken yalnız 2 saatte bir tam kontrol. Son tam kontrol zamanı bu cihazda saklanır (program her açılışta yeniden 90 gün okumaz). */
+const PZ_OTO_ARALIK=5*60000,PZ_OTO_TAM=30*60000;
 const pzOto={zaman:0,tamZaman:0,toplam:0,son:0,hata:"",calisiyor:false,firma:null,zamanlayici:null};
+const pzOtoTamA=()=>"arv-pzoto-tam-"+firmaId;
 function pzOtoUygun(){const ay=(state.ayarEk||{}).pazaryeriTest||{};return !!(sb&&oturum&&firmaId&&state.mode==="db"&&!state.error&&!state.readonly&&(ay.kodlar||[]).length&&ay.siparisBas)}
-function pzOtoPlanla(){clearTimeout(pzOto.zamanlayici);if(pzOto.firma!==firmaId){Object.assign(pzOto,{zaman:0,tamZaman:0,toplam:0,son:0,hata:"",firma:firmaId})}
-  pzOto.zamanlayici=setTimeout(async()=>{await pzOtoKontrol();pzOtoPlanla()},pzOto.zaman?PZ_OTO_ARALIK:20000)}
+function pzOtoPlanla(){clearTimeout(pzOto.zamanlayici);if(pzOto.firma!==firmaId){let tz=0;try{tz=Number(localStorage.getItem(pzOtoTamA()))||0}catch(e){}Object.assign(pzOto,{zaman:0,tamZaman:tz>Date.now()?0:tz,toplam:0,son:0,hata:"",firma:firmaId})}
+  pzOto.zamanlayici=setTimeout(async()=>{
+    const tamSure=document.hidden?4*PZ_OTO_TAM:PZ_OTO_TAM,tamVakti=!pzOto.tamZaman||Date.now()-pzOto.tamZaman>=tamSure;
+    if(tamVakti||(!document.hidden&&!pzSunucuAktif()))await pzOtoKontrol();
+    pzOtoPlanla()},pzSunucuAktif()?60000:pzOto.zaman?PZ_OTO_ARALIK:20000)}
 async function pzOtoOku(ilk,pzAd){const simdi=Date.now(),GUN=86400000;const tum=[];
   for(let bit=simdi;bit>ilk;bit-=14*GUN){const bas=Math.max(ilk,bit-14*GUN);
     for(let s=0;s<20;s++){const r=await pzTekrarla(()=>pzCagir({islem:"siparisler",baslangic:bas,bitis:bit,sayfa:s,pazaryeri:pzAd||"trendyol"}));tum.push(...(r.siparisler||[]));if(s+1>=(r.toplamSayfa||1))break}}
@@ -4656,7 +4663,8 @@ async function pzTIYenile(){clearTimeout(pzTI.t);if(!sb||!firmaId)return;const f
   // Ürünler › Pazaryeri gönderimleri açıksa güncellenir (yazı yazılırken bozulmasın)
   if(view==="stok"&&ui.uSekme==="gonderim"&&!gdIs&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName||""))render();
   const bekl=(pzTI.veri||[]).some(x=>x.durum==="bekliyor"||x.durum==="isleniyor");
-  pzTI.t=setTimeout(()=>pzTIYenile(),bekl?15000:120000)}
+  // Sekme arka plandayken sorulmaz (dakikada bir yalnız sekmenin öne gelip gelmediğine bakılır)
+  pzTI.t=setTimeout(function bak(){if(document.hidden){pzTI.t=setTimeout(bak,60000);return}pzTIYenile()},bekl?30000:300000)}
 function pzTIBant(){let d=document.getElementById("pzTopluBant");const v=pzTI.veri||[],kap=pzTI.kapat||0,eski=pzTIEskiOku();
   const bekl=v.filter(x=>x.durum==="bekliyor"||x.durum==="isleniyor").length,bit=v.filter(x=>x.durum==="bitti"&&Date.parse(x.guncelleme)>kap);
   const ht=bit.filter(x=>!x.sonuc||x.sonuc.durum==="hata").length,ok=bit.length-ht;
@@ -5427,7 +5435,7 @@ async function pzOtoKontrol(){
       try{const sip=await pzOtoOku(ilk,pzAd);if(f!==firmaId)throw new Error("Firma değişti");
         const k=await pzPlanUygula(pzSiparisPlan(null,sip,null,pzAd));n+=k;if(k)ozet.push(PZ_ADLAR[pzAd]+": "+k)}
       catch(e){if(f!==firmaId)throw e;hatalar.push(PZ_ADLAR[pzAd]+": "+(e.message||e))}}
-    if(tam)pzOto.tamZaman=simdi;pzOto.son=n;pzOto.toplam+=n;pzOto.hata=hatalar.join(" · ");
+    if(tam){pzOto.tamZaman=simdi;try{localStorage.setItem(pzOtoTamA(),String(simdi))}catch(e){}}pzOto.son=n;pzOto.toplam+=n;pzOto.hata=hatalar.join(" · ");
     // Siparişler hatasız işlendiyse deneme ürünlerinin stoğu pazaryerlerine (açıksa)
     // Sunucu turu son 2,5 dakikada çalıştıysa dakikalık gönderimi o yapar (aynı işi iki kez yapmamak için); anında gönderim (pzStokTetikle) programda kalır
     if(!hatalar.length&&f===firmaId&&!pzSunucuAktif())try{await pzStokEsitle(liste)}catch(e){pzOto.hata="Stok gönderimi: "+(e.message||e)}
@@ -5438,8 +5446,9 @@ function pzOtoSatir(){
   const ay=(state.ayarEk||{}).pazaryeriTest||{};
   if(!ay.siparisBas)return `<div style="font-size:.85rem">⏸ <b>Otomatik takip kapalı:</b> başlamak için bir kez <b>Programa işle › Evet, işle</b> deyin (başlangıç zamanı kaydedilir).</div>`;
   if(state.readonly)return `<div class="muted" style="font-size:.85rem">Otomatik takip bu kullanıcıda çalışmaz (kayıt yetkisi yok).</div>`;
-  const ne=pzOto.calisiyor?"kontrol ediliyor…":pzOto.zaman?`son kontrol ${new Date(pzOto.zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}${pzOto.son?" · "+pzOto.son+" değişiklik işlendi":" · değişiklik yok"} · sonraki ${new Date(pzOto.zaman+PZ_OTO_ARALIK).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}`:"ilk kontrol birazdan";
-  return `<div style="font-size:.85rem">🔄 <b>Otomatik takip açık</b> (program açıkken her dakika; teslim ve iadeler 15 dakikada bir): ${ne}${pzOto.hata?` <span class="neg">· hata: ${esc(pzOto.hata)}</span>`:""} <button class="small ghost" data-act="pzOtoSimdi" type="button" ${pzOto.calisiyor?"disabled":""}>Şimdi kontrol et</button></div>`}
+  const sa=t=>new Date(t).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}),sun=pzSunucuAktif(),s0=pzSunucu();
+  const ne=pzOto.calisiyor?"kontrol ediliyor…":sun?`sunucu son tur ${sa(Number(s0.son))}${pzOto.tamZaman?" · bu cihazın son tam kontrolü "+sa(pzOto.tamZaman):""}`:pzOto.zaman?`son kontrol ${sa(pzOto.zaman)}${pzOto.son?" · "+pzOto.son+" değişiklik işlendi":" · değişiklik yok"} · sonraki ${sa(pzOto.zaman+PZ_OTO_ARALIK)}`:"ilk kontrol birazdan";
+  return `<div style="font-size:.85rem">🔄 <b>Otomatik takip açık</b> (${sun?"siparişleri sunucu her dakika işliyor; komisyon, teslim ve iadeler 30 dakikada bir":"program açıkken 5 dakikada bir; teslim ve iadeler 30 dakikada bir"}): ${ne}${pzOto.hata?` <span class="neg">· hata: ${esc(pzOto.hata)}</span>`:""} <button class="small ghost" data-act="pzOtoSimdi" type="button" ${pzOto.calisiyor?"disabled":""}>Şimdi kontrol et</button></div>`}
 /* ---------- Kuru deneme: geçmiş siparişler, hiçbir kayıt yazılmadan ----------
    Teslim edilmiş siparişlerde programın yazacağı satış tutarını Trendyol hakediş kayıtlarıyla karşılaştırır. */
 async function pzKuruDeneme(){
@@ -5648,7 +5657,7 @@ async function pzIlanYeni(sessiz){if(_pzYeniIs||pzIlanIs||state.readonly||!sb||!
     if(n)pzIlanSakla()}
   finally{_pzYeniIs=false;if(pzIlan.firma===f)render()}
   if(!sessiz)toast(bakilan?`${bakilan} yeni açılmış ürün kontrol edildi · ${n} rozet güncellendi`:"Kontrol edilecek yeni açılmış ürün yok")}
-setInterval(()=>{if(sb&&firmaId&&pzIlan.firma===firmaId&&Object.keys(pzIlan.veri).length&&Date.now()-_pzYeniSon>25*60000)pzIlanYeni(true)},5*60000);
+setInterval(()=>{if(sb&&firmaId&&!document.hidden&&pzIlan.firma===firmaId&&Object.keys(pzIlan.veri).length&&Date.now()-_pzYeniSon>25*60000)pzIlanYeni(true)},5*60000);
 setInterval(()=>{if(sb&&firmaId&&pzIlan.firma===firmaId&&!document.hidden)pzIlanOrtakCek(firmaId)},5*60000);
 const PZ_TAM_YENILE=6*3600000;
 async function pzSiparisleriOku(ilk,zorla,pzAd){pzAd=pzAd||"trendyol";const simdi=Date.now(),GUN=86400000;const anahtar=pzAd==="trendyol"?"siparis-"+firmaId:"siparis-"+pzAd+"-"+firmaId;let n=0;const ekA={pazaryeri:pzAd};
@@ -5664,7 +5673,7 @@ async function pzSiparisleriOku(ilk,zorla,pzAd){pzAd=pzAd||"trendyol";const simd
   await pzDepo.koy(anahtar,{ilk,tamZaman:simdi,zaman:simdi,liste:tekil});return {liste:tekil,kismi:false,tamZaman:simdi}}
 /* ---------- Sabit liste + canlı yenileme ----------
    Pazaryeri sayfası açılınca bu cihazda kayıtlı son liste hemen gösterilir, ardından arka planda yenilenir.
-   Sayfa açık ve görünürken seçili pazaryerinin son 3 günü her dakika okunur; yeni siparişler eklenir,
+   Sayfa açık ve görünürken seçili pazaryerinin son 3 günü 3 dakikada bir okunur (v141; önce her dakika); yeni siparişler eklenir,
    durumu değişenler güncellenir ve bu oturumda yeni gelenler listede "Yeni" olarak işaretlenir. */
 const pzDepoAnahtari=pzAd=>pzAd==="trendyol"?"siparis-"+firmaId:"siparis-"+pzAd+"-"+firmaId;
 // Tarih aralığı: ui.pzBas / ui.pzBit ("YYYY-MM-DD"); ters girilirse yer değiştirir
@@ -6859,12 +6868,13 @@ async function veriBaslat(){
     .subscribe();
   render();
   // Uygulama öne gelince (telefonda arka plandan dönüş) veriler ve öteki bilgisayarlardan gelen ilan / öneri bilgileri yenilenir
-  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId){veriYenile();pzTIYenile();if(pzIlan.firma===firmaId)pzIlanOrtakCek(firmaId).catch(()=>{});if(pzOE.firma===firmaId)pzOEOrtakCek().then(d=>{if(d)pzOEAyikla()}).catch(()=>{})}});
+  // (v141) Kısa aralıklarla sekme değiştirince her seferinde yeniden sorulmaz: en çok dakikada bir
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&firmaId){if(Date.now()-(window._gorSon||0)<60000)return;window._gorSon=Date.now();veriYenile();pzTIYenile();efatSenk(false);if(pzIlan.firma===firmaId)pzIlanOrtakCek(firmaId).catch(()=>{});if(pzOE.firma===firmaId)pzOEOrtakCek().then(d=>{if(d)pzOEAyikla()}).catch(()=>{})}});
   yengecHazirBildir();
   pzTIYenile();// sunucu gönderim sırası / bu cihazda yarım kalan gönderim varsa sol alt bant
   setTimeout(()=>efatSenk(false),4000);
-  if(!window._efatZamanlayici)window._efatZamanlayici=setInterval(()=>efatSenk(false),15*60*1000);
-  if(!window._pzCanliZamanlayici)window._pzCanliZamanlayici=setInterval(()=>pzCanliYenile(),60000);
+  if(!window._efatZamanlayici)window._efatZamanlayici=setInterval(()=>{if(!document.hidden)efatSenk(false)},15*60*1000);
+  if(!window._pzCanliZamanlayici)window._pzCanliZamanlayici=setInterval(()=>pzCanliYenile(),3*60000);
 }
 /* Yedek */
 async function yedekAl(){const k={};let n=0;for(const [c,sk] of Object.entries(KOLEKSIYONLAR)){k[c]=state[sk]||[];n+=k[c].length}
