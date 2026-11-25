@@ -40,30 +40,18 @@
 body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.5}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
 .wrap{max-width:none;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.ust-cubuk{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
 .top-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:12px}
 .brand{display:flex;flex-direction:column;min-width:0;flex:1}
 .brand h1{font-family:var(--font-display);font-size:1.35rem;margin:0;line-height:1.15;letter-spacing:-.01em}
 .brand .firma{color:var(--muted);font-size:.85rem;background:none;border:0;padding:0;text-align:left;cursor:pointer;font:inherit;font-size:.85rem}
 .brand .firma:hover{color:var(--accent)}
-/* Sol yan menü (bilgisayar); telefonda gizli, alttaki menü kullanılır */
-.yan-logo{display:block;padding:4px 10px 14px}
-.yan-logo img{height:40px;width:auto;border-radius:8px;display:block}
-nav.tabs{display:flex;flex-direction:column;gap:2px}
-nav.tabs a{display:flex;align-items:center;gap:10px;padding:7px 10px;color:var(--fg);text-decoration:none;font-weight:600;font-size:.9rem;border-radius:10px;white-space:nowrap}
-nav.tabs a:hover{background:var(--surface-2)}
-nav.tabs .ik{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--surface-2);font-size:.95rem;flex:none}
-nav.tabs>a[aria-current="page"],nav.tabs .yg-bas[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
-nav.tabs>a[aria-current="page"] .ik,nav.tabs .yg-bas[aria-current="page"] .ik{background:var(--surface)}
-.yg:has([aria-current]) .yg-bas{color:var(--accent)}
-.yg-bas .ok{margin-left:auto;color:var(--muted);font-size:1.05rem;transition:transform .15s}
-.yg:has([aria-current]) .yg-bas .ok{transform:rotate(90deg)}
-.yg-ic{display:none;flex-direction:column;margin:2px 0 6px 23px;padding-left:10px;border-left:2px solid var(--line)}
-.yg:has([aria-current]) .yg-ic{display:flex}
-nav.tabs .yg-ic a{padding:5px 10px;font-weight:500;font-size:.86rem;color:var(--muted)}
-nav.tabs .yg-ic a[aria-current="page"]{color:var(--accent);font-weight:700}
-nav.tabs a.sekme-firma-sip,.alt-menu a.sekme-firma-sip{color:#d32f2f;font-weight:700}
-nav.tabs a.sekme-firma-sip[aria-current="page"]{background:#fdecea;color:#d32f2f}
+/* Üst menü (v142: yan menüden eski üst sekmelere geri dönüldü) */
+nav.tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:0}
+nav.tabs a{padding:10px 14px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.92rem;border-bottom:2px solid transparent;white-space:nowrap}
+nav.tabs a[aria-current="page"]{color:var(--fg);border-color:var(--accent)}
+nav.tabs a.sekme-firma-sip,.alt-menu a.sekme-firma-sip{color:#d32f2f;font-size:1.05rem;font-weight:700}
+nav.tabs a.sekme-firma-sip[aria-current="page"]{color:#d32f2f;border-color:#d32f2f}
 .sip-islem{display:flex;flex-direction:column;gap:4px;align-items:stretch;min-width:132px}
 .sip-islem .small{white-space:nowrap;text-align:left}
 /* Anasayfa pazaryeri kartları */
@@ -87,15 +75,6 @@ nav.tabs a.sekme-firma-sip[aria-current="page"]{background:#fdecea;color:#d32f2f
 .pzk-alt{border-top:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .pzk-alt .ghost{color:var(--accent);padding-left:2px}
 @media (max-width:520px){.pzk-izgara{grid-template-columns:1fr}}
-@media screen and (min-width:701px){
-  header.top{position:fixed;top:0;bottom:0;left:0;width:236px;z-index:6;background:var(--surface);border-right:1px solid var(--line);border-radius:0 22px 22px 0;box-shadow:0 4px 18px color-mix(in srgb,#000 6%,transparent);padding:calc(16px + env(safe-area-inset-top,0px)) 12px 24px;overflow-y:auto}
-  body:not(.kapali){padding-left:236px}
-  .ust-cubuk{background:var(--bg);border-bottom:0;padding-top:12px}
-  .ust-cubuk .top-row{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 16px}
-  .ust-cubuk .logo-baslik{display:none}
-  .brand .firma{font-weight:700;color:var(--fg);font-size:.95rem}
-}
-@media (max-width:700px){header.top{display:none}}
 button,.btn{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:8px 14px;font-weight:600;font-size:.9rem}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -225,7 +204,7 @@ body{font-size:14px;font-family:var(--font-body)}
 img{max-width:100%}
 [hidden]{display:none!important}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-body.kapali header.top,body.kapali .ust-cubuk,body.kapali .wrap>main{display:none}
+body.kapali header.top,body.kapali .wrap>main{display:none}
 #kapi{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:max(40px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px));box-sizing:border-box}
 .kapi-kart{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:14px}
 .kapi-logo{display:flex;flex-direction:column;gap:8px;align-items:stretch}
@@ -297,29 +276,8 @@ body.kapali header.top,body.kapali .ust-cubuk,body.kapali .wrap>main{display:non
 
 </head>
 <body>
-<header class="top" id="yanMenu">
-  <a href="#ozet" class="yan-logo" aria-label="Anasayfa"><img src="logo-yatay.png" alt="Arvenato" width="190" height="40"></a>
-  <nav class="tabs" id="tabs" aria-label="Ana menü">
-    <a href="#ozet"><span class="ik" aria-hidden="true">🏠</span>Anasayfa</a>
-    <a href="#satis"><span class="ik" aria-hidden="true">🧾</span>Satış</a>
-    <div class="yg"><a href="#pazaryeri" class="yg-bas"><span class="ik" aria-hidden="true">🛒</span>Pazaryeri<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
-      <a href="#pazaryeri">Siparişler ve ilanlar</a><a href="#kar">Kâr hesabı</a></div></div>
-    <div class="yg"><a href="#stok" class="yg-bas"><span class="ik" aria-hidden="true">📦</span>Ürünler<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
-      <a href="#stok">Ürün listesi</a><a href="#tedarik">Tedarikçiler</a></div></div>
-    <div class="yg"><a href="#faturalar" class="yg-bas"><span class="ik" aria-hidden="true">📄</span>Faturalar<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
-      <a href="#faturalar">Faturalar</a><a href="#teklifler">Teklifler</a></div></div>
-    <a href="#cariler"><span class="ik" aria-hidden="true">👥</span>Cariler</a>
-    <a href="#bankalar"><span class="ik" aria-hidden="true">🏦</span>Bankalar</a>
-    <div class="yg"><a href="#gelirler" class="yg-bas"><span class="ik" aria-hidden="true">💸</span>Gelir / Gider<span class="ok" aria-hidden="true">›</span></a><div class="yg-ic">
-      <a href="#gelirler">Gelirler</a><a href="#giderler">Giderler</a><a href="#hareketler">Hareketler</a></div></div>
-    <a href="#odemeler"><span class="ik" aria-hidden="true">🔑</span>Kira ve Faturalar</a>
-    <a href="#ajanda"><span class="ik" aria-hidden="true">📅</span>Ajanda</a>
-    <a href="#personeller"><span class="ik" aria-hidden="true">🧑‍💼</span>Personeller</a>
-    <a href="#rapor"><span class="ik" aria-hidden="true">📈</span>Aylık rapor</a>
-    <a href="#siparis" class="sekme-firma-sip"><span class="ik" aria-hidden="true">🛍</span>Firma Siparişleri</a>
-  </nav>
-</header>
-<div class="ust-cubuk"><div class="wrap">
+<header class="top">
+  <div class="wrap">
     <div class="top-row">
       <div class="brand">
         <h1 class="logo-baslik"><img src="logo-yatay.png" alt="Arvenato" width="190" height="40"><span class="gizli">Ön Muhasebe</span></h1>
@@ -329,7 +287,28 @@ body.kapali header.top,body.kapali .ust-cubuk,body.kapali .wrap>main{display:non
       <button class="ghost small" id="hesapBtn" type="button" title="Hesabım, kullanıcılar, yedek">Hesabım</button>
       <button class="primary" id="newBtn" type="button">+ Yeni kayıt</button>
     </div>
-</div></div>
+    <nav class="tabs" id="tabs">
+      <a href="#ozet">Anasayfa</a>
+      <a href="#satis">Satış</a>
+      <a href="#stok">Ürünler</a>
+      <a href="#tedarik">Tedarikçiler</a>
+      <a href="#pazaryeri">Pazaryeri</a>
+      <a href="#kar">Kâr hesabı</a>
+      <a href="#faturalar">Faturalar</a>
+      <a href="#cariler">Cariler</a>
+      <a href="#personeller">Personeller</a>
+      <a href="#bankalar">Bankalar</a>
+      <a href="#gelirler">Gelirler</a>
+      <a href="#giderler">Giderler</a>
+      <a href="#hareketler">Hareketler</a>
+      <a href="#teklifler">Teklifler</a>
+      <a href="#rapor">Aylık rapor</a>
+      <a href="#ajanda">Ajanda</a>
+      <a href="#odemeler">Kira ve Faturalar</a>
+      <a href="#siparis" class="sekme-firma-sip">Firma Siparişleri</a>
+    </nav>
+  </div>
+</header>
 
 <div class="wrap"><main id="main"></main></div>
 <div id="kapi" hidden></div>
