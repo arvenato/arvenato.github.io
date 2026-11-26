@@ -337,6 +337,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <a href="#stok">Ürünler</a>
       <a href="#tedarik">Tedarikçiler</a>
       <a href="#pazaryeri">Pazaryeri</a>
+      <a href="#sorular" id="sqSekme">Sorular</a>
       <a href="#kar">Kâr hesabı</a>
       <a href="#faturalar">Faturalar</a>
       <a href="#cariler">Cariler</a>
@@ -370,7 +371,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
 </nav>
 <div class="alt-menu" id="altMenu" hidden><div class="sayfa" role="menu">
   <a href="#satis"><span class="ik">🧾</span>Satış</a><a href="#stok"><span class="ik">📦</span>Ürünler</a><a href="#tedarik"><span class="ik">🚚</span>Tedarikçiler</a>
-<a href="#pazaryeri"><span class="ik">🛒</span>Pazaryeri</a><a href="#faturalar"><span class="ik">📄</span>Faturalar</a>
+<a href="#pazaryeri"><span class="ik">🛒</span>Pazaryeri</a><a href="#sorular" id="sqSekmeM"><span class="ik">💬</span>Sorular</a><a href="#faturalar"><span class="ik">📄</span>Faturalar</a>
   <a href="#cariler"><span class="ik">👥</span>Cariler</a><a href="#personeller"><span class="ik">🧑‍💼</span>Personeller</a><a href="#bankalar"><span class="ik">🏦</span>Bankalar</a>
   <a href="#gelirler"><span class="ik">⬇️</span>Gelirler</a><a href="#giderler"><span class="ik">⬆️</span>Giderler</a><a href="#hareketler"><span class="ik">↔️</span>Hareketler</a>
   <a href="#teklifler"><span class="ik">📝</span>Teklifler</a><a href="#rapor"><span class="ik">📈</span>Aylık rapor</a><a href="#ozet"><span class="ik">📊</span>Özet</a>
@@ -459,7 +460,7 @@ function donemOzet(filter){
 }
 
 /* ---------- Görünümler ---------- */
-const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","siparis","satis","pazaryeri","kar","odemeler"];
+const VIEWS=["ozet","hareketler","gelirler","giderler","stok","teklifler","bankalar","cariler","personeller","rapor","faturalar","ajanda","tedarik","siparis","satis","pazaryeri","kar","odemeler","sorular"];
 let view="ozet";
 const ui={tur:"",ay:"",ara:"",cariTur:"",gAy:ym(today()),gKat:"",lAy:ym(today()),lKanal:"",lOdeme:"",sAra:"",sKat:"",sMarka:"",sSayfa:1,sKol:{},sSira:(()=>{try{return localStorage.getItem("urun-sira")||"adAZ"}catch(e){return "adAZ"}})(),sBoyut:(()=>{try{return Number(localStorage.getItem("urun-sayfa-boyut"))||100}catch(e){return 100}})(),sDurum:"",tDurum:"",fTur:"",fDurum:"",fAy:"",fCari:"",fAra:"",ajGor:"liste",ajAy:ym(today()),ajGun:"",pDurum:"aktif",tdAra:"",pzGun:"bugun",pzDurum:"",pzAra:"",raporYil:new Date().getFullYear(),raporAy:ym(today())};
 
@@ -572,6 +573,7 @@ function render(){
   else if(view==="tedarik")html+=vTedarik();
   else if(view==="siparis")html+=vSiparis();
   else if(view==="pazaryeri")html+=vPazaryeri();
+  else if(view==="sorular")html+=vSorular();
   else if(view==="satis")html+=vSatis();
   else if(view==="kar")html+=vKar();
   else if(view==="odemeler")html+=vOdemeler();
@@ -1209,7 +1211,7 @@ function karAyar(){const a=(state.ayarEk||{}).karHesap||{},s=a.satirlar||{},n=(v
       // En az satış adedi baremleri (m{i}u: birim fiyat bu tutarın altındaysa, m{i}n: siparişte en az bu kadar adet). Kaydedilmemişse Trendyol için panel değerleri.
       const md=KAR_ADET_VARSAYILAN[p.k]||[];for(const i of [1,2,3,4])for(const z of ["u","n"]){const v=x["m"+i+z],d=md[i-1]?md[i-1][z]:"";b["m"+i+z]=v!=null&&v!==""&&isFinite(Number(v))?Number(v):(x["m"+i+z]===""?"":d)}
       return {k:p.k,ad:p.ad,aktif:x.aktif!==false,c:n(x.c,vc),kg:n(x.kg,p.kg),h:n(x.h,p.h),st:n(x.st,p.st),...b}})}}
-const KAR_ADET_VARSAYILAN={trendyol:[{u:25,n:6},{u:35,n:4},{u:50,n:3},{u:75,n:2}]};
+const KAR_ADET_VARSAYILAN={trendyol:[{u:25,n:6},{u:35,n:4},{u:50,n:3},{u:82,n:2}]};
 // Birim satış fiyatına göre siparişteki en az adet (barem yoksa 1)
 function karMinAdet(f,r){const l=[1,2,3,4].map(i=>({u:Number(r["m"+i+"u"])||0,n:Math.round(Number(r["m"+i+"n"])||0)})).filter(x=>x.u>0&&x.n>1).sort((a,b)=>a.u-b.u);
   for(const x of l)if(f<x.u)return x.n;return 1}
@@ -4307,6 +4309,88 @@ async function pzCagir(govde){
   if(data&&data.hata)throw new Error(data.hata);
   return data;
 }
+/* MÜŞTERİ SORULARI (2026-11-26): bağlı pazaryerlerinin soruları tek sekmede; cevap buradan yazılır, pazaryerine iletilir.
+   Soru servisi olanlar: Trendyol, N11, Hepsiburada, Pazarama (İdefix / Amazon / Shopify'da yok). Cevabı yalnız firma sahibi gönderebilir. */
+const SQ_PZ=["trendyol","hepsiburada","n11","pazarama"];
+const sq={firma:null,liste:[],hata:{},yuk:false,zaman:0,taslak:{},gonder:{},nesil:0};
+const sqKey=q=>q.pazaryeri+"|"+q.id;
+function sqBekleyen(){return sq.firma===firmaId?sq.liste.filter(q=>q.durum==="bekliyor").length:0}
+function sqRozet(){const n=sqBekleyen();for(const i of ["sqSekme","sqSekmeM"]){const a=document.getElementById(i);if(!a)continue;const ik=i==="sqSekmeM"?'<span class="ik">💬</span>':"";a.innerHTML=ik+"Sorular"+(n?` <span class="bild-sayi">${n}</span>`:"")}}
+async function sqYukle(zorla){
+  if(!sb||!firmaId)return;
+  if(sq.firma!==firmaId){Object.assign(sq,{firma:firmaId,liste:[],hata:{},zaman:0,taslak:{},gonder:{}})}
+  if(sq.yuk&&!zorla)return;if(!zorla&&Date.now()-sq.zaman<120000)return;
+  const f=firmaId,n=++sq.nesil;sq.yuk=true;if(view==="sorular")renderSonra();
+  try{const bagli=(await pzBagliAl()).filter(p=>SQ_PZ.includes(p));
+    const yeni=[],hata={};
+    await Promise.all(bagli.map(async p=>{try{const r=await pzCagir({islem:"sorular",pazaryeri:p});
+        if(r.desteklenmiyor)return;for(const q of (r.sorular||[]))yeni.push(q)}
+      catch(e){hata[p]=e.message||String(e);for(const q of sq.liste)if(q.pazaryeri===p)yeni.push(q)}}));
+    if(firmaId!==f||sq.nesil!==n)return;
+    // Bu oturumda cevaplananlar, pazaryeri henüz "cevaplandı" demese de cevaplandı görünür
+    for(const q of yeni){const g=sq.gonder[sqKey(q)];if(g&&g.durum==="tamam"&&q.durum==="bekliyor"){q.durum="cevaplandi";q.cevap=q.cevap||g.cevap}}
+    const gor=new Set();sq.liste=yeni.filter(q=>{const k=sqKey(q);if(gor.has(k))return false;gor.add(k);return true}).sort((a,b)=>(b.tarih||0)-(a.tarih||0));
+    sq.hata=hata;sq.zaman=Date.now()}
+  finally{if(sq.nesil===n){sq.yuk=false;sqRozet();if(view==="sorular")renderSonra()}}}
+function vSorular(){
+  if(sq.firma!==firmaId||(!sq.zaman&&!sq.yuk))setTimeout(()=>sqYukle(false),0);
+  else if(Date.now()-sq.zaman>120000&&!sq.yuk)setTimeout(()=>sqYukle(false),0);
+  const f=ui.sqF||"bekliyor",pzF=ui.sqPz||"",sahip=firmaRol==="sahip"&&!state.readonly;
+  const l=(sq.firma===firmaId?sq.liste:[]).filter(q=>(f==="tum"||(f==="bekliyor"?q.durum==="bekliyor":q.durum!=="bekliyor"))&&(!pzF||q.pazaryeri===pzF));
+  const say=d=>sq.liste.filter(q=>(!pzF||q.pazaryeri===pzF)&&(d==="tum"||(d==="bekliyor"?q.durum==="bekliyor":q.durum!=="bekliyor"))).length;
+  const pzler=[...new Set(sq.liste.map(q=>q.pazaryeri))];
+  const DA={bekliyor:"Cevap bekliyor",cevaplandi:"Cevaplandı",onayda:"Cevap onayda",kapandi:"Kapandı"};
+  const kalan=t=>{if(!t)return "";const d=t-Date.now();if(d<=0)return `<span class="chip alis">Süre doldu</span>`;const s=Math.floor(d/3600000);return `<span class="chip ${s<6?"alis":"ornek"}">⏱ ${s>=24?Math.floor(s/24)+" gün ":""}${s%24} sa kaldı</span>`};
+  const kart=q=>{const k=sqKey(q),g=sq.gonder[k]||{},tx=sq.taslak[k]!=null?sq.taslak[k]:"";
+    return `<div class="card" style="padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        ${q.gorsel?`<img src="${esc(q.gorsel)}" alt="" loading="lazy" style="width:52px;height:52px;object-fit:contain;border-radius:6px;background:#fff;flex:none">`:""}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:.8rem">
+            <span class="chip">${esc(PZ_ADLAR[q.pazaryeri]||q.pazaryeri)}</span>
+            <span class="chip ${q.durum==="bekliyor"?"ornek":q.durum==="cevaplandi"?"ok":""}">${DA[q.durum]||esc(q.durum)}</span>
+            ${q.durum==="bekliyor"?kalan(q.sonTarih):""}${q.sureNot&&q.durum==="bekliyor"?`<span class="muted">${esc(q.sureNot)}</span>`:""}
+            <span class="muted">${pzTarih(q.tarih)}</span>${q.siparisNo?`<span class="muted">· Sipariş ${esc(q.siparisNo)}</span>`:""}
+          </div>
+          <div style="font-weight:600;margin-top:4px">${q.link?`<a href="${esc(q.link)}" target="_blank" rel="noopener">${esc(q.urun||"Ürün")}</a>`:esc(q.urun||"")}${q.barkod?` <span class="muted" style="font-weight:400;font-size:.8rem">${esc(q.barkod)}</span>`:""}</div>
+          ${q.konu?`<div class="muted" style="font-size:.8rem">Konu: ${esc(q.konu)}</div>`:""}
+          <div style="margin-top:6px;white-space:pre-wrap">❓ ${esc(q.soru)}${q.musteri?` <span class="muted" style="font-size:.8rem">— ${esc(q.musteri)}</span>`:""}</div>
+          ${q.cevap?`<div style="margin-top:6px;white-space:pre-wrap;padding:8px 10px;border-radius:8px;background:rgba(23,98,77,.07)">💬 ${esc(q.cevap)}${q.cevapTarih?` <span class="muted" style="font-size:.78rem">${pzTarih(q.cevapTarih)}</span>`:""}</div>`:""}
+          ${q.red?`<div class="neg" style="font-size:.82rem;margin-top:4px">Reddedilen cevap nedeni: ${esc(q.red)}</div>`:""}
+          ${q.durum==="bekliyor"&&sahip?`<div style="margin-top:8px">
+            <textarea data-sq="${esc(k)}" rows="3" maxlength="2000" placeholder="Cevabınızı yazın (Trendyol en az 10 karakter ister)" style="width:100%;box-sizing:border-box" ${g.durum==="gidiyor"?"disabled":""}>${esc(tx)}</textarea>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+              <button class="small primary" type="button" data-act="sqGonder" data-id="${esc(k)}" ${g.durum==="gidiyor"?"disabled":""}>${g.durum==="gidiyor"?"Gönderiliyor…":"📨 "+esc(PZ_ADLAR[q.pazaryeri]||"")+"'a gönder"}</button>
+              ${g.durum==="hata"?`<span class="neg" style="font-size:.85rem">${esc(g.mesaj||"")}</span>`:""}
+            </div></div>`:""}
+          ${g.durum==="tamam"?`<div class="pos" style="font-size:.85rem;margin-top:4px">✓ Cevap gönderildi${g.onayBekler?" (Pazarama onayından sonra yayınlanır)":""}</div>`:""}
+        </div></div></div>`};
+  const hata=Object.entries(sq.hata||{}).map(([p,m])=>`<div class="notice" style="font-size:.85rem">⚠️ ${esc(PZ_ADLAR[p]||p)} soruları okunamadı: ${esc(m)}</div>`).join("");
+  return `<div class="section-head"><h2>💬 Müşteri soruları</h2><div class="filters">
+      <button class="small" type="button" data-act="sqYenile" ${sq.yuk?"disabled":""}>${sq.yuk?"Okunuyor…":"↻ Yenile"}</button></div></div>
+    <div class="muted" style="font-size:.82rem;margin-bottom:8px">Trendyol, Hepsiburada, N11 ve Pazarama'daki son 14 günün soruları. ${sq.zaman?"Son okuma "+pzTarih(sq.zaman)+".":""} ${sahip?"":"<b>Cevap göndermek için firma sahibi olmalısınız.</b>"} İdefix, Amazon ve Shopify'ın soru servisi yok.</div>
+    ${hata}
+    <div class="filters" style="margin-bottom:10px;flex-wrap:wrap">
+      ${[["bekliyor","Cevap bekleyen"],["cevaplanan","Cevaplanan / kapanan"],["tum","Tümü"]].map(([k,a])=>`<button class="small ${f===k?"primary":"ghost"}" type="button" data-act="sqFiltre" data-id="${k}">${a} (${say(k)})</button>`).join("")}
+      <span style="width:12px"></span>
+      <button class="small ${!pzF?"primary":"ghost"}" type="button" data-act="sqPz" data-id="">Hepsi</button>
+      ${pzler.map(p=>`<button class="small ${pzF===p?"primary":"ghost"}" type="button" data-act="sqPz" data-id="${p}">${esc(PZ_ADLAR[p]||p)}</button>`).join("")}
+    </div>
+    ${l.length?l.map(kart).join(""):`<div class="empty">${sq.yuk&&!sq.zaman?"Sorular okunuyor…":f==="bekliyor"?"Cevap bekleyen soru yok. 👍":"Soru yok."}</div>`}`}
+async function sqGonder(k){
+  const q=sq.liste.find(x=>sqKey(x)===k);if(!q)return;
+  const ta=document.querySelector(`textarea[data-sq="${CSS.escape(k)}"]`);const metin=String(ta?ta.value:(sq.taslak[k]||"")).trim();sq.taslak[k]=metin;
+  if(!metin){toast("Önce cevabı yazın");return}
+  if(q.pazaryeri==="trendyol"&&metin.length<10){toast("Trendyol cevabı en az 10 karakter olmalı");return}
+  if(!confirm(`${PZ_ADLAR[q.pazaryeri]}'daki soruya bu cevap gönderilsin mi?\n\n"${metin.slice(0,300)}"\n\nGönderilen cevap müşteriye görünür ve geri alınamaz.`))return;
+  const f=firmaId;sq.gonder[k]={durum:"gidiyor"};render();
+  try{const r=await pzCagir({islem:"soruCevapla",pazaryeri:q.pazaryeri,soruId:q.id,cevap:metin});
+    if(firmaId!==f)return;sq.gonder[k]={durum:"tamam",cevap:metin,onayBekler:!!r.onayBekler};q.durum=r.onayBekler?"onayda":"cevaplandi";q.cevap=metin;delete sq.taslak[k];toast("Cevap gönderildi");sqRozet()}
+  catch(e){if(firmaId!==f)return;sq.gonder[k]={durum:"hata",mesaj:e.message||String(e)}}
+  render()}
+document.addEventListener("input",e=>{const t=e.target;if(t&&t.dataset&&t.dataset.sq!=null)sq.taslak[t.dataset.sq]=t.value});
+// Sekmedeki sayaç: açılıştan 20 sn sonra, sonra 10 dakikada bir (sekme açıkken 2 dakikada bir) okunur
+setTimeout(()=>{sqYukle(false);setInterval(()=>{if(!document.hidden&&(view==="sorular"||Date.now()-sq.zaman>600000))sqYukle(false)},60000)},20000);
 /* Deneme ürünleri: yalnızca izinli listedeki ürünlerin Trendyol stok/fiyatını göster ve onaylı gönder */
 const PZ_DENEME_UST=Infinity;// deneme listesinde sınır yok (kullanıcı isteği 2026-11-23); pazaryerlerine yazma yine yalnız bu listedeki ürünlere yapılır
 function pzDenemeKodlar(){return (((state.ayarEk||{}).pazaryeriTest||{}).kodlar||[])}
@@ -7036,6 +7120,10 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
   else if(a==="pzAnaYenile"){_anaPz.yukBas=0;anaPzYukle(true);render()}
+  else if(a==="sqYenile")sqYukle(true);
+  else if(a==="sqFiltre"){ui.sqF=id||"bekliyor";render()}
+  else if(a==="sqPz"){ui.sqPz=id||"";render()}
+  else if(a==="sqGonder")sqGonder(id);
   else if(a==="pzAnaSec"){if(PZ_ADLAR[id]){Object.assign(pz,{pazaryeri:id,sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";if(location.hash==="#pazaryeri")render();else location.hash="#pazaryeri"}}
   else if(a==="kargoFis")kargoFisModal(id);
   else if(a==="kargoTek"){const s=(pz.siparisler||[]).find(x=>x.paketId===id);if(s)kargoFisYazdir(pz.pazaryeri,[s]).catch(err=>toast("Barkod hazırlanamadı: "+(err.message||err)))}
