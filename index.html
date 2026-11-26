@@ -7250,7 +7250,9 @@ function firmaOlusturEkrani(ek){kapiGoster(`<h2>${ek?"Yeni firma ekle":"Firmanı
     if(yeniId)try{localStorage.setItem("secili-firma",yeniId)}catch(err){}
     await firmaSec()})}
 async function firmaAc(d){const degisti=firmaId&&firmaId!==d.firma_id;firmaId=d.firma_id;firmaRol=d.rol;try{localStorage.setItem("secili-firma",firmaId)}catch(e){}kapiKapat();
-  if(degisti){urunSecim.clear();fatSecim.clear();pz.siparisler=null;pz.hakedis=null;pz.bag=null;pz.hata="";pz.deneme=null;pzAyar=null}document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
+  // Firma değişince aramalar ve filtreler sıfırlanır (önceki firmanın araması yeni firmada kalmasın); sıralama/sayfa boyutu tercihleri korunur
+  if(degisti){for(const k of ["ara","tur","cariTur","gKat","lKanal","lOdeme","sAra","sKat","sMarka","sDurum","sPz","tDurum","fTur","fDurum","fCari","fAra","tdAra","pzDurum","pzAra"])if(typeof ui[k]==="string")ui[k]="";ui.sSayfa=1;
+    urunSecim.clear();fatSecim.clear();pz.siparisler=null;pz.hakedis=null;pz.bag=null;pz.hata="";pz.deneme=null;pzAyar=null}document.getElementById("hesapBtn").textContent=oturum.user.email.split("@")[0];await veriBaslat()}
 async function cikisYap(){try{if(kanal)sb.removeChannel(kanal);kanal=null;await sb.auth.signOut()}catch(e){}
   // Çıkışta bu cihazda saklanan kayıtlar silinir (başka biri aynı cihazdan girerse görmesin)
   await pzDepo.temizle();oturum=null;firmaId=null;for(const s of Object.values(KOLEKSIYONLAR))state[s]=[];state.firma="";girisEkrani()}
