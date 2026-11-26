@@ -1198,20 +1198,32 @@ function karAyar(){const a=(state.ayarEk||{}).karHesap||{},s=a.satirlar||{},n=(v
   return {kayitli:!!(state.ayarEk||{}).karHesap,kdv:false/* kâr her yerde KDV dahil tutarlarla hesaplanır */,hedefTur:a.hedefTur||"alis",hedef:n(a.hedef,25),yuvarla:a.yuvarla||"90",
     satirlar:KAR_PZ.map(p=>{const x=s[p.k]||{},vc=(p.k==="idefix"||p.k==="pazarama")?n(pzKomisyonOrani(p.k),p.c):p.c;
       const b={};for(const i of [1,2,3])for(const z of ["u","k"]){const v=x["b"+i+z];b["b"+i+z]=v!=null&&v!==""&&isFinite(Number(v))?Number(v):""}
+      // En az satış adedi baremleri (m{i}u: birim fiyat bu tutarın altındaysa, m{i}n: siparişte en az bu kadar adet). Kaydedilmemişse Trendyol için panel değerleri.
+      const md=KAR_ADET_VARSAYILAN[p.k]||[];for(const i of [1,2,3,4])for(const z of ["u","n"]){const v=x["m"+i+z],d=md[i-1]?md[i-1][z]:"";b["m"+i+z]=v!=null&&v!==""&&isFinite(Number(v))?Number(v):(x["m"+i+z]===""?"":d)}
       return {k:p.k,ad:p.ad,aktif:x.aktif!==false,c:n(x.c,vc),kg:n(x.kg,p.kg),h:n(x.h,p.h),st:n(x.st,p.st),...b}})}}
+const KAR_ADET_VARSAYILAN={trendyol:[{u:25,n:6},{u:35,n:4},{u:50,n:3},{u:75,n:2}]};
+// Birim satış fiyatına göre siparişteki en az adet (barem yoksa 1)
+function karMinAdet(f,r){const l=[1,2,3,4].map(i=>({u:Number(r["m"+i+"u"])||0,n:Math.round(Number(r["m"+i+"n"])||0)})).filter(x=>x.u>0&&x.n>1).sort((a,b)=>a.u-b.u);
+  for(const x of l)if(f<x.u)return x.n;return 1}
 // Barem: sipariş tutarı (KDV dahil satış) "b{i}u" ₺'nin altındaysa kargo "b{i}k" ₺; hiçbir baremin altında değilse normal kargo (kg).
 function karBaremler(r){return [1,2,3].map(i=>({u:Number(r["b"+i+"u"])||0,k:r["b"+i+"k"]})).filter(x=>x.u>0&&x.k!==""&&x.k!=null&&isFinite(Number(x.k))).map(x=>({u:x.u,k:Number(x.k)})).sort((a,b)=>a.u-b.u)}
 function karKargo(f,r){for(const x of karBaremler(r))if(f<x.u)return x.k;return Number(r.kg)||0}
-function karHesapla(f,a,k,r,kdv){f=Number(f)||0;a=Number(a)||0;const b=1+(Number(k)||0)/100;
-  const kargo=karKargo(f,r),kom=f*(Number(r.c)||0)/100,giderNet=kom+kargo+(Number(r.h)||0),giderKdv=giderNet*0.2,stopaj=f/b*(Number(r.st)||0)/100;
-  const gelen=f-giderNet-giderKdv-stopaj,kar=kdv?f/b-a/b-giderNet:f-a-giderNet-giderKdv,ab=kdv?a/b:a,sb_=kdv?f/b:f;
-  return {kargo,kom,giderNet,giderKdv,stopaj,gelen,kar,karYuzde:ab>0?kar/ab*100:null,marj:sb_>0?kar/sb_*100:null}}
+// f, a: birim satış / alış. Adet baremi varsa sipariş en az o adetle hesaplanır (kargo ve hizmet bedeli siparişe bir kez);
+// dönen tutarlar SİPARİŞ toplamıdır (adet: kaç adetlik sipariş). Yüzdeler adetten bağımsızdır.
+function karHesapla(f,a,k,r,kdv){f=Number(f)||0;a=Number(a)||0;const b=1+(Number(k)||0)/100,adet=karMinAdet(f,r),F=f*adet,A=a*adet;
+  const kargo=karKargo(F,r),kom=F*(Number(r.c)||0)/100,giderNet=kom+kargo+(Number(r.h)||0),giderKdv=giderNet*0.2,stopaj=F/b*(Number(r.st)||0)/100;
+  const gelen=F-giderNet-giderKdv-stopaj,kar=kdv?F/b-A/b-giderNet:F-A-giderNet-giderKdv,ab=kdv?A/b:A,sb_=kdv?F/b:F;
+  return {kargo,kom,giderNet,giderKdv,stopaj,gelen,kar,karYuzde:ab>0?kar/ab*100:null,marj:sb_>0?kar/sb_*100:null,adet,satisT:F,alisT:A}}
+const karAdetNot=x=>x&&x.adet>1?` <span class="muted" style="font-size:.75rem">${x.adet} adetlik sipariş</span>`:"";
 // Hedefi tutturan en düşük satış fiyatı. Her barem aralığında kargo sabit olduğundan kâr doğrusal: aralık aralık çözülür, en düşüğü alınır. Tutturulamıyorsa null.
 function karFiyatBul(a,k,r,kdv,tur,deger,yuv){const bz=kdv?1/(1+(Number(k)||0)/100):1,d=Number(deger)||0;
-  const g=(f,rr)=>karHesapla(f,a,k,rr,kdv).kar-(tur==="tl"?d:tur==="marj"?d/100*f*bz:d/100*(Number(a)||0)*bz);
-  const coz=rr=>{const g0=g(0,rr),eg=(g(1000,rr)-g0)/1000;return eg>1e-9?Math.max(0.01,-g0/eg):null};
-  const bl=karBaremler(r),bolge=[];let lo=0;for(const x of bl){bolge.push({lo,hi:x.u,kg:x.k});lo=x.u}bolge.push({lo,hi:Infinity,kg:Number(r.kg)||0});
-  let en=null;for(const z of bolge){const f=coz({...r,kg:z.kg,b1u:"",b2u:"",b3u:""});if(f==null)continue;const c=Math.max(f,z.lo);if(c<z.hi&&(en==null||c<en))en=c}
+  // Hedef: sabit kâr sipariş başına; yüzdeler sipariş toplamına göre
+  const g=(f,rr)=>{const x=karHesapla(f,a,k,rr,kdv);return x.kar-(tur==="tl"?d:tur==="marj"?d/100*f*x.adet*bz:d/100*(Number(a)||0)*x.adet*bz)};
+  // Adet baremi ve kargo baremi sınırları arasında adet ve kargo sabittir, kâr doğrusal: her aralıkta çözülür, en düşüğü alınır
+  const au=[1,2,3,4].map(i=>({u:Number(r["m"+i+"u"])||0,n:Math.round(Number(r["m"+i+"n"])||0)})).filter(x=>x.u>0),ns=[1,...au.map(x=>Math.max(1,x.n))];
+  const sin=[...new Set([0,...au.map(x=>x.u),...karBaremler(r).flatMap(x=>ns.map(n=>x.u/n))])].filter(x=>x>=0).sort((p,q)=>p-q);
+  let en=null;for(let i=0;i<sin.length;i++){const lo=sin[i],hi=i+1<sin.length?sin[i+1]:Infinity,p1=lo+1e-6,p2=hi===Infinity?lo+1000:hi-1e-6;if(p2<=p1)continue;
+    const g1=g(p1,r),eg=(g(p2,r)-g1)/(p2-p1);let c;if(g1>=0)c=lo;else if(eg>1e-9)c=p1-g1/eg;else continue;c=Math.max(c,lo,0.01);if(c<hi&&(en==null||c<en))en=c}
   if(en==null)return null;
   const yv=f=>yuv==="90"?Math.ceil(f+0.1-1e-9)-0.1:yuv==="tam"?Math.ceil(f-1e-9):Math.ceil(f*100-1e-6)/100;
   let f=yv(en),n=0;while(g(f,r)<-0.005&&n++<5000)f=yv(f+0.01);return r2(f)}
@@ -1226,13 +1238,14 @@ function tyKar(u){const kay=(state.ayarEk||{}).karHesap;if(!_tyKarAy||_tyKarKayn
 // "TY kâr %" yüzdesine basınca: Trendyol giderlerinin dökümü
 function tyKarDetay(u){const ay=karAyar(),r=ay.satirlar.find(x=>x.k==="trendyol");if(!r)return;
   const a=Number(u.alisFiyat)||0,f=Number(u.satisFiyat)||0,k=u.kdvOran!=null&&u.kdvOran!==""&&isFinite(Number(u.kdvOran))?Number(u.kdvOran):20,b=1+k/100;
-  const x=karHesapla(f,a,k,r,ay.kdv),bar=karBaremler(r).find(z=>f<z.u);
+  const x=karHesapla(f,a,k,r,ay.kdv),bar=karBaremler(r).find(z=>x.satisT<z.u);
   const st=(l,v,ek,cls)=>`<tr${cls?` class="${cls}"`:""}><td>${l}${ek?`<div class="muted" style="font-size:.78rem">${ek}</div>`:""}</td><td class="num">${v}</td></tr>`;
   openModal(`<div class="section-head"><h2>Trendyol kâr dökümü</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div><b>${esc(u.ad)}</b><div class="muted" style="font-size:.84rem">${esc(u.barkod||u.kod||"")} · KDV %${k}</div></div>
     <div class="tscroll"><table class="kart-yok"><tbody>
-      ${st("Satış fiyatı (KDV dahil)",money(f))}
-      ${st("Alış fiyatı (KDV dahil)","− "+money(a))}
+      ${x.adet>1?st("Sipariş adedi",x.adet+" adet","Satış fiyatı "+money(f)+" olduğu için Trendyol en az "+x.adet+" adetlik sipariş alır (en az satış adedi baremi); tutarlar sipariş toplamı"):""}
+      ${st("Satış fiyatı (KDV dahil)",money(x.satisT),x.adet>1?x.adet+" × "+money(f):"")}
+      ${st("Alış fiyatı (KDV dahil)","− "+money(x.alisT),x.adet>1?x.adet+" × "+money(a):"")}
       ${st("Komisyon (%"+r.c+", KDV dahil)","− "+money(x.kom*1.2),"KDV dahil satış fiyatı üzerinden; KDV hariç "+money(x.kom))}
       ${st("Kargo (KDV dahil)","− "+money(x.kargo*1.2),(bar?"Barem: "+money(bar.u)+" altı sipariş":"Normal kargo (barem üstü)")+"; KDV hariç "+money(x.kargo))}
       ${st("Hizmet bedeli (KDV dahil)","− "+money((Number(r.h)||0)*1.2),"KDV hariç "+money(Number(r.h)||0))}
@@ -1277,6 +1290,11 @@ function vKar(){const ay=karAyar(),ro=state.readonly;
     <div class="tscroll"><table><thead><tr><th>Satış yeri</th>${[1,2,3].map(i=>`<th class="num">${i}. barem: tutar altı ₺</th><th class="num">${i}. barem kargo ₺</th>`).join("")}<th class="num">Barem üstü (normal) kargo</th></tr></thead><tbody>
     ${ss.filter(r=>r.k!=="magaza").map(r=>`<tr><td>${esc(r.ad)}</td>${[1,2,3].map(i=>["u","k"].map(z=>`<td class="num"><input type="number" step="0.01" min="0" inputmode="decimal" data-ks="b${i}${z}" data-p="${r.k}" value="${esc(r["b"+i+z])}" placeholder="${z==="u"?(["150","300","500"][i-1]):"—"}" style="max-width:90px;text-align:right" ${ro?"disabled":""}></td>`).join("")).join("")}<td class="num">${money(r.kg)}</td></tr>`).join("")}
     </tbody></table></div>
+    <h3 style="margin:14px 0 4px;font-size:1rem">En az satış adedi baremleri <span class="muted" style="font-weight:400;font-size:.84rem">(ucuz ürünlerde siparişteki en az adet)</span></h3>
+    <div class="muted" style="font-size:.84rem">Ürünün satış fiyatı (KDV dahil) yazdığınız tutarın <b>altındaysa</b> sipariş en az o kadar adetle gelir; kâr bu adetle hesaplanır (kargo ve hizmet bedeli siparişe bir kez, komisyon ve alış adet kadar). Trendyol değerleri panelinizdeki baremlerden (25 ₺ altı 6, 35 ₺ altı 4, 50 ₺ altı 3, 75 ₺ altı 2 adet). Kullanmayan satış yerini boş bırakın.</div>
+    <div class="tscroll"><table><thead><tr><th>Satış yeri</th>${[1,2,3,4].map(i=>`<th class="num">${i}. fiyat altı ₺</th><th class="num">en az adet</th>`).join("")}</tr></thead><tbody>
+    ${ss.filter(r=>r.k!=="magaza").map(r=>`<tr><td>${esc(r.ad)}</td>${[1,2,3,4].map(i=>["u","n"].map(z=>`<td class="num"><input type="number" step="${z==="u"?"0.01":"1"}" min="0" inputmode="decimal" data-ks="m${i}${z}" data-p="${r.k}" value="${esc(r["m"+i+z])}" placeholder="—" style="max-width:80px;text-align:right" ${ro?"disabled":""}></td>`).join("")).join("")}</tr>`).join("")}
+    </tbody></table></div>
     <div class="err" id="khErr" role="alert"></div></section></div>`}
 function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||!h)return;const $=s=>kok.querySelector(s);
   const num=v=>{const n=Number(String(v??"").replace(",","."));return isFinite(n)?n:0};
@@ -1285,8 +1303,8 @@ function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||
   const hesapCiz=()=>{const a=num(h.alis),f=num(h.satis),k=num(h.kdvOran),ss=satirlar().filter(r=>r.aktif);
     $("#khTablo").innerHTML=!(f>0)?`<div class="empty">Satış fiyatını yazın; her satış yerinde hesabınıza ne geçeceği ve kârınız burada görünür.</div>`:
       `<div class="tscroll"><table><thead><tr><th>Satış yeri</th><th class="num">Komisyon (KDV dahil)</th><th class="num">Kargo + hizmet (KDV dahil)</th><th class="num">Stopaj</th><th class="num">Hesabınıza geçen</th><th class="num">Kâr</th><th class="num">Kâr % (alışa göre)</th><th class="num">Marj % (satışa göre)</th></tr></thead><tbody>
-      ${ss.map(r=>{const x=karHesapla(f,a,k,r,h.kdv);return `<tr><td>${esc(r.ad)}${r.c?` <span class="muted" style="font-size:.78rem">%${r.c}</span>`:""}</td><td class="num">${money(x.kom*1.2)}</td><td class="num">${money((x.kargo+num(r.h))*1.2)}${karBaremler(r).length?` <span class="muted" style="font-size:.75rem">${x.kargo!==num(r.kg)?"barem":"normal"}</span>`:""}</td><td class="num">${money(x.stopaj)}</td><td class="num"><b>${money(x.gelen)}</b></td>${td(x.kar)}<b>${money(x.kar)}</b></td>${td(x.kar)}${a>0?karYuzde(x.karYuzde):"—"}</td>${td(x.kar)}${karYuzde(x.marj)}</td></tr>`}).join("")}</tbody></table></div>
-      <div class="muted" style="font-size:.8rem">Bütün tutarlar KDV dahil: kâr = satış − alış − komisyon − kargo − hizmet bedeli (giderler KDV'leriyle birlikte). ${a>0?"":"Alış fiyatı yazılmadığı için kâr alışı 0 sayarak hesaplandı. "}Stopaj hesabınıza eksik geçer ama vergiden mahsup edildiği için kârdan düşülmez.</div>`;
+      ${ss.map(r=>{const x=karHesapla(f,a,k,r,h.kdv);return `<tr><td>${esc(r.ad)}${r.c?` <span class="muted" style="font-size:.78rem">%${r.c}</span>`:""}${karAdetNot(x)}</td><td class="num">${money(x.kom*1.2)}</td><td class="num">${money((x.kargo+num(r.h))*1.2)}${karBaremler(r).length?` <span class="muted" style="font-size:.75rem">${x.kargo!==num(r.kg)?"barem":"normal"}</span>`:""}</td><td class="num">${money(x.stopaj)}</td><td class="num"><b>${money(x.gelen)}</b></td>${td(x.kar)}<b>${money(x.kar)}</b></td>${td(x.kar)}${a>0?karYuzde(x.karYuzde):"—"}</td>${td(x.kar)}${karYuzde(x.marj)}</td></tr>`}).join("")}</tbody></table></div>
+      <div class="muted" style="font-size:.8rem">Bütün tutarlar KDV dahil: kâr = satış − alış − komisyon − kargo − hizmet bedeli (giderler KDV'leriyle birlikte). ${a>0?"":"Alış fiyatı yazılmadığı için kâr alışı 0 sayarak hesaplandı. "}Stopaj hesabınıza eksik geçer ama vergiden mahsup edildiği için kârdan düşülmez. "N adetlik sipariş" yazan satırlarda tutarlar en az satış adedi baremine göre o kadar adetlik siparişin toplamıdır.</div>`;
     hedefCiz()};
   const hedefCiz=()=>{const a=num(h.alis),k=num(h.kdvOran),d=num(h.hedef),ss=satirlar().filter(r=>r.aktif),el=$("#khHedef");
     if(h.hedefTur==="alis"&&!(a>0)){el.innerHTML=`<div class="empty">Alışa göre kâr için alış fiyatını yazın.</div>`;return}
@@ -1295,7 +1313,7 @@ function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||
     el.innerHTML=`<div class="tscroll"><table><thead><tr><th>Satış yeri</th><th class="num">Önerilen fiyat</th><th class="num">Bu fiyatta kâr</th><th class="num">Hesabınıza geçen</th>${enY?`<th class="num">${money(enY)} olursa kâr</th>`:""}<th></th></tr></thead><tbody>
       ${l.map(({r,f})=>{if(f==null)return `<tr><td>${esc(r.ad)}</td><td colspan="${enY?5:4}" class="neg">Bu hedef bu giderlerle tutturulamaz (komisyon ve marj toplamı çok yüksek).</td></tr>`;
         const x=karHesapla(f,a,k,r,h.kdv),y=enY?karHesapla(enY,a,k,r,h.kdv):null;
-        return `<tr><td>${esc(r.ad)}</td><td class="num"><b>${money(f)}</b></td><td class="num">${money(x.kar)} <span class="muted" style="font-size:.8rem">${karYuzde(h.hedefTur==="marj"?x.marj:x.karYuzde)}</span></td><td class="num">${money(x.gelen)}</td>${y?`${td(y.kar)}${money(y.kar)}</td>`:""}<td><button class="small ghost" type="button" data-kh="kullan" data-v="${f}">Hesapla</button></td></tr>`}).join("")}</tbody></table></div>
+        return `<tr><td>${esc(r.ad)}${karAdetNot(x)}</td><td class="num"><b>${money(f)}</b></td><td class="num">${money(x.kar)} <span class="muted" style="font-size:.8rem">${karYuzde(h.hedefTur==="marj"?x.marj:x.karYuzde)}</span></td><td class="num">${money(x.gelen)}</td>${y?`${td(y.kar)}${money(y.kar)}</td>`:""}<td><button class="small ghost" type="button" data-kh="kullan" data-v="${f}">Hesapla</button></td></tr>`}).join("")}</tbody></table></div>
       ${enY?`<div class="notice" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><span style="flex:1;min-width:220px"><b>Bütün satış yerlerinde hedefi tutturan fiyat: ${money(enY)}</b><br><span style="font-size:.84rem">Pazaryerlerine aynı satış fiyatı gittiği için en yüksek giderli yere göre seçildi.</span></span>
         <button class="small" type="button" data-kh="kullan" data-v="${enY}">Bu fiyatla hesapla</button>${u&&!state.readonly?`<button class="small primary" type="button" data-kh="urunYaz" data-v="${enY}">Ürünün fiyatını ${money(enY)} yap</button>`:""}</div>`:""}`};
   const aramaCiz=()=>{const q=String(h.ara||"").trim(),el=$("#khSonuc");if(q.length<2){el.innerHTML="";return}
@@ -1319,7 +1337,8 @@ function karBagla(){const kok=document.getElementById("khKok"),h=ui.kh;if(!kok||
     else if(a==="birak"){h.uid="";render()}
     else if(a==="kullan"){h.satis=String(v);$("#khSatis").value=v;hesapCiz();$("#khTablo").scrollIntoView({block:"nearest",behavior:"smooth"})}
     else if(a==="urunYaz"){if(h.uid)hizliDuzenle(h.uid,"satis",Number(v))}
-    else if(a==="kaydet"){const s={};for(const r of satirlar()){s[r.k]={aktif:r.aktif!==false,c:num(r.c),kg:num(r.kg),h:num(r.h),st:num(r.st)};for(const i of [1,2,3])for(const z of ["u","k"]){const v=r["b"+i+z];s[r.k]["b"+i+z]=v===""||v==null?"":num(v)}}
+    else if(a==="kaydet"){const s={};for(const r of satirlar()){s[r.k]={aktif:r.aktif!==false,c:num(r.c),kg:num(r.kg),h:num(r.h),st:num(r.st)};for(const i of [1,2,3])for(const z of ["u","k"]){const v=r["b"+i+z];s[r.k]["b"+i+z]=v===""||v==null?"":num(v)}
+        for(const i of [1,2,3,4])for(const z of ["u","n"]){const v=r["m"+i+z];s[r.k]["m"+i+z]=v===""||v==null?"":num(v)}}
       b.disabled=true;$("#khErr").textContent="";
       try{await api.setDoc("ayar","karHesap",{satirlar:s,kdv:h.kdv,hedefTur:h.hedefTur,hedef:num(h.hedef),yuvarla:h.yuvarla,guncelleme:Date.now()});h.taslak={};toast("Kâr hesabı ayarları kaydedildi")}
       catch(err){$("#khErr").textContent=errMsg(err);b.disabled=false}}});
@@ -2469,8 +2488,8 @@ function urunTopluForm(tip){  const sec=state.urunler.filter(u=>urunSecim.has(u.
   else if(tip==="kdv")govde=`<div class="field"><label for="tpDeger">KDV oranı</label><select id="tpDeger">${KDV_ORAN.map(k=>`<option value="${k}" ${k===20?"selected":""}>%${k}</option>`).join("")}</select></div>`;
   else if(tip==="birim")govde=`<div class="field"><label for="tpDeger">Birim</label><select id="tpDeger">${BIRIMLER.map(b=>`<option>${b}</option>`).join("")}</select></div>`;
   else if(tip==="kritik")govde=`<div class="field"><label for="tpDeger">Kritik stok seviyesi</label><input id="tpDeger" type="number" min="0" step="1" placeholder="Örn. 10"></div>`;
-  else if(fiyat)govde=`<div class="grid2"><div class="field"><label for="tpYol">Nasıl</label><select id="tpYol"><option value="yuzde">Yüzde artır / azalt</option><option value="tutar">Tutar ekle / çıkar (₺)</option><option value="sabit">Hepsine aynı fiyat (₺)</option></select></div>
-      <div class="field"><label for="tpDeger">Değer</label><input id="tpDeger" type="number" step="0.01" inputmode="decimal" placeholder="Örn. 10 (azaltmak için −10)"></div></div>
+  else if(fiyat)govde=`<div class="grid2"><div class="field"><label for="tpYol">Nasıl</label><select id="tpYol"><option value="sabit" selected>Hepsine aynı fiyat (₺)</option><option value="yuzde">Yüzde artır / azalt</option><option value="tutar">Tutar ekle / çıkar (₺)</option></select></div>
+      <div class="field"><label for="tpDeger">Değer</label><input id="tpDeger" type="number" step="0.01" inputmode="decimal" placeholder="Örn. 81,90 · yüzde / tutarda azaltmak için −10"></div></div>
       <label style="display:flex;gap:8px;align-items:center;font-size:.88rem"><input id="tpYuvarla" type="checkbox"> Kuruşları yuvarla (tam liraya)</label>`;
   else if(stokTip)govde=`<div class="grid2"><div class="field"><label for="tpYol">Nasıl</label><select id="tpYol"><option value="ekle">Ekle (giriş)</option><option value="cikar">Çıkar (çıkış, satış kaydı açılmaz)</option><option value="esitle">Hepsini şu adede eşitle (sayım)</option></select></div>
       <div class="field"><label for="tpDeger">Adet</label><input id="tpDeger" type="number" min="0" step="1" inputmode="numeric" placeholder="Örn. 5"></div></div>
