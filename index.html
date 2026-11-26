@@ -618,12 +618,20 @@ async function anaPzYukle(zorla){
     let bl=null;try{const {data,error}=await _anaSure(sb.rpc("pazaryeri_hesap_durum",{p_firma:f}),30000);if(!error)bl=(data||[]).map(x=>x.pazaryeri).filter(k=>PZ_ADLAR[k])}catch(e){}
     if(bitti())return;_anaPz.bagli=bl||await pzBagliAl();if(bitti())return;if(view==="ozet")renderSonra();
     const GUN=86400000,simdi=Date.now();
-    for(const k of _anaPz.bagli){const v=_anaPz.veri[k];if(!zorla&&v&&simdi-v.zaman<5*60000)continue;
-      try{const yeni=await _anaSure(pzAralikOku("siparisler",simdi-3*GUN,simdi,14,"siparisler",{pazaryeri:k}),60000);if(bitti())return;
+    // v157: pazaryerleri AYNI ANDA ve tekrar denemesiz okunur. Önceden sırayla ve 429'da uzun bekleyen tekrar denemeyle
+    // okunuyordu; Amazon'un "çok fazla istek" (429) yanıtı bütün okumayı dakikalarca bekletiyordu.
+    // Amazon'un sipariş servisi dakikada ~1 isteğe izin verir: özet için en fazla 15 dakikada bir sorulur.
+    const ARALIK={amazon:15*60000};_anaPz.deneme=_anaPz.deneme||{};
+    const oku=async(k)=>{const v=_anaPz.veri[k],en=ARALIK[k]||(zorla?0:5*60000);
+      if(v&&simdi-v.zaman<en)return;if(simdi-(_anaPz.deneme[k]||0)<(ARALIK[k]||60000))return;_anaPz.deneme[k]=simdi;
+      try{const yeni=[],ilk=simdi-3*GUN;
+        await _anaSure((async()=>{for(let s=0;s<20;s++){const r=await pzCagir({islem:"siparisler",baslangic:ilk,bitis:simdi,sayfa:s,pazaryeri:k});yeni.push(...(r.siparisler||[]));if(s+1>=(r.toplamSayfa||1))break}})(),45000);
+        if(bitti())return;
         const an=pzDepoAnahtari(k),dep=await pzDepo.al(an);const m=new Map(((dep&&dep.liste)||[]).map(x=>[x.paketId,x]));for(const x of yeni)if(x.paketId)m.set(x.paketId,x);
-        const liste=[...m.values()];await pzDepo.koy(an,dep?Object.assign({},dep,{zaman:simdi,liste}):{ilk:simdi-3*GUN,tamZaman:0,zaman:simdi,liste});
+        const liste=[...m.values()];await pzDepo.koy(an,dep?Object.assign({},dep,{zaman:simdi,liste}):{ilk,tamZaman:0,zaman:simdi,liste});
         _anaPz.veri[k]={liste,zaman:simdi};if(view==="ozet")renderSonra()}
-      catch(e){/* okunamazsa saklanan liste gösterilir */}}}
+      catch(e){/* okunamazsa saklanan liste gösterilir */}};
+    await Promise.all(_anaPz.bagli.map(oku))}
   finally{if(_anaPz.nesil===n){_anaPz.yuk=false;if(view==="ozet")renderSonra()}}}
 function anaPzKartlar(){
   // İlk açılışta ve sonra 5 dakikada bir (ekran açıkken) yeniden okunur
