@@ -2172,10 +2172,17 @@ const URUN_KOL=[
   {k:"satis",l:"Satış",sayi:true,deger:u=>Number(u.satisFiyat)||0,artan:"satisDusuk",azalan:"satisYuksek"},
   {k:"tykar",l:"TY kâr %",sayi:true,deger:u=>tyKarSayi(u)??"",artan:"tyKarDusuk",azalan:"tyKarYuksek"},
   {k:"deger",l:"Stok değeri",sayi:true,deger:u=>r2(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0)),artan:"degerDusuk",azalan:"degerYuksek"}];
-// Sayı filtresi: "5" (eşit) · ">10" · "<100" · ">=5" · "<=0" · "10-20" (aralık); virgüllü ondalık da olur
-function sayiFiltre(ifade,deger){const s=String(ifade).replace(/\s/g,"").replace(",",".");const v=Number(deger)||0;let m;
-  if((m=/^(>=|<=|>|<|=)?(-?\d+(?:\.\d+)?)$/.exec(s))){const n=Number(m[2]);switch(m[1]){case ">":return v>n;case "<":return v<n;case ">=":return v>=n;case "<=":return v<=n;default:return Math.abs(v-n)<0.005}}
-  if((m=/^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/.exec(s))){const a=Number(m[1]),b=Number(m[2]);return v>=Math.min(a,b)&&v<=Math.max(a,b)}
+// Sayı filtresi: 5 · >10 · <100 · >=5 · 70-100 (aralık; 70 ve 100 dahil). Aralık ayırıcı: - – — .. ile ~ /
+// Türkçe yazım: 70,50 · 1.000 · 1.250,75 ; ₺ / TL yok sayılır. "70-" = 70 ve üstü.
+function sayiOku(t){t=String(t||"").replace(/[₺\s]|tl/gi,"");if(!t)return NaN;
+  if(t.includes(",")&&t.includes("."))t=t.replace(/\./g,"").replace(",",".");else if(t.includes(","))t=t.replace(",",".");else if(/^-?\d{1,3}(\.\d{3})+$/.test(t))t=t.replace(/\./g,"");
+  return /^-?\d+(\.\d+)?$/.test(t)?Number(t):NaN}
+function sayiFiltre(ifade,deger){const s=String(ifade).toLocaleLowerCase("tr").trim();const v=Number(deger)||0;let m;
+  if(!s)return true;
+  // Aralık: "70-100", "70 – 100", "70..100", "70 ile 100", "70~100", "70/100"
+  if((m=/^(.*?\d)\s*(?:\.\.|–|—|~|\/|\bile\b|-)\s*(.*)$/.exec(s))&&!/^[<>=]/.test(s)){const a=sayiOku(m[1]),b=m[2]===""?NaN:sayiOku(m[2]);
+    if(isFinite(a)&&(isFinite(b)||m[2]==="")){if(m[2]==="")return v>=a;return v>=Math.min(a,b)-0.005&&v<=Math.max(a,b)+0.005}}
+  if((m=/^(>=|<=|>|<|=)?\s*(.+)$/.exec(s))){const n=sayiOku(m[2]);if(!isFinite(n))return true;switch(m[1]){case ">":return v>n;case "<":return v<n;case ">=":return v>=n;case "<=":return v<=n;default:return Math.abs(v-n)<0.005}}
   return true}
 // Ürünler sayfası sekmeleri: Ürünler · Kategoriler · Markalar (her kategori/markada kaç ürün olduğu)
 function urunSekmeHtml(){const s=ui.uSekme||"urunler";
@@ -2264,7 +2271,7 @@ function vStok(){
     ${sayfaCubuk}
     ${all.length?`<div class="tscroll"><table><thead><tr>${ro?"":`<th style="width:28px"><input type="checkbox" data-act="uSayfaSec" aria-label="Bu sayfadakileri seç" title="Bu sayfadakileri seç" ${sayfaSecili?"checked":""}></th>`}${URUN_KOL.map(c=>{const ak=URUN_SIRA[ui.sSira]&&(ui.sSira===c.artan||ui.sSira===c.azalan);const ok=ui.sSira===c.artan?"▲":ui.sSira===c.azalan?"▼":"↕";
         return `<th class="${c.sayi?"num":""}"><button type="button" data-act="uKolSira" data-id="${c.k}" title="${esc(c.l)} sütununa göre sırala (tekrar basınca ters çevirir)" style="all:unset;cursor:pointer;white-space:nowrap;${ak?"color:var(--fg);font-weight:700":""}">${c.l} <span style="opacity:${ak?1:.45}">${ok}</span></button></th>`}).join("")}<th></th></tr>
-      <tr class="kol-filtre">${ro?"":"<th></th>"}${URUN_KOL.map(c=>`<th style="padding-top:0"><input id="fK_${c.k}" data-kolf="${c.k}" value="${esc(kf[c.k]||"")}" placeholder="${c.sayi?"örn. >10":"Filtrele…"}" title="${c.sayi?"Sayı filtresi: 5 · >10 · <100 · >=5 · 10-20":"Bu sütunda içerenleri göster"}" style="width:100%;min-width:${c.sayi?"64px":"80px"};padding:4px 6px;font-size:.78rem;font-weight:400;${c.sayi?"text-align:right;":""}${(kf[c.k]||"").trim()?"border-color:var(--accent,#17624d);background:rgba(23,98,77,.06)":""}"></th>`).join("")}<th>${kolVar?`<button class="small ghost" data-act="uKolTemizle" type="button" title="Sütun filtrelerini temizle">✕ Temizle</button>`:""}</th></tr></thead><tbody>
+      <tr class="kol-filtre">${ro?"":"<th></th>"}${URUN_KOL.map(c=>`<th style="padding-top:0"><input id="fK_${c.k}" data-kolf="${c.k}" value="${esc(kf[c.k]||"")}" placeholder="${c.sayi?"örn. 70-100":"Filtrele…"}" title="${c.sayi?"Sayı filtresi — aralık: 70-100 (70 ve 100 dahil) · 70- (70 ve üstü) · tek değer: 5 · >10 · <100 · >=5 · <=20. Kuruş: 70,50":"Bu sütunda içerenleri göster"}" style="width:100%;min-width:${c.sayi?"64px":"80px"};padding:4px 6px;font-size:.78rem;font-weight:400;${c.sayi?"text-align:right;":""}${(kf[c.k]||"").trim()?"border-color:var(--accent,#17624d);background:rgba(23,98,77,.06)":""}"></th>`).join("")}<th>${kolVar?`<button class="small ghost" data-act="uKolTemizle" type="button" title="Sütun filtrelerini temizle">✕ Temizle</button>`:""}</th></tr></thead><tbody>
     ${gorunen.length?"":`<tr><td colspan="${URUN_KOL.length+(ro?1:2)}" class="empty">Filtreye uyan ürün yok.</td></tr>`}
     ${gorunen.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" autocomplete="off" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><div style="display:flex;gap:8px;align-items:center">${(u.gorseller||[])[0]?`<img src="${esc(u.gorseller[0])}" alt="" loading="lazy" data-buyut="${esc(u.id)}" title="Büyütmek için tıklayın" style="cursor:zoom-in;width:36px;height:36px;object-fit:cover;border-radius:6px;flex:none">`:""}<div><b>${esc(u.ad)}</b>${pzIlanRozet(u)}</div></div></td>
       <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${u.marka?`<a href="#" data-act="ugAc" data-id="${esc(u.marka)}" data-p="marka" title="Bu markanın ürünlerini göster">${esc(u.marka)}</a>`:"—"}</td><td>${u.kategori?`<a href="#" data-act="ugAc" data-id="${esc(u.kategori)}" data-p="kategori" title="Bu kategorinin ürünlerini göster">${esc(u.kategori)}</a>`:"—"}</td>
