@@ -2912,10 +2912,15 @@ function hizliDuzenle(uid,alan,onDeger){
           :asiri?`<div class="notice"><b>Dikkat:</b> fiyat ${yeni<eski?"yarısından fazla düşüyor":"iki katından fazla artıyor"}; onaydan sonra bir kez daha sorulacak.</div>`:""}
         <div class="err" id="hdErr" role="alert"></div>
         <div class="modal-foot"><button type="button" data-m="geri">Geri</button><button type="button" class="primary" data-m="onay">${adim===3?"Evet, eminim — kaydet":asiri?"Onayla":"Evet, kaydet"}</button></div>`}
-    const i=root.querySelector("#hdDeger");if(i){i.focus();i.select()}};
+    const i=root.querySelector("#hdDeger");if(i){i.focus();i.select()}else{const o=root.querySelector('[data-m="onay"]');if(o)o.focus()}};
   openModal(`<div class="section-head"><h2>${esc(u.ad)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div><div id="hdGovde" style="display:flex;flex-direction:column;gap:10px"></div>`,
     root=>{ciz(root);
-      root.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="hdDeger"){e.preventDefault();root.querySelector('[data-m="devam"]').click()}});
+      // Enter: 1. adımda "Devam", onay adımlarında "Evet, kaydet" (basılı tutulan Enter'ın tekrarı ve adım değişiminden hemen sonraki Enter sayılmaz)
+      root.addEventListener("keydown",e=>{if(e.key!=="Enter"||e.repeat||e.isComposing)return;
+        if(e.target.id==="hdDeger"){e.preventDefault();root.querySelector('[data-m="devam"]').click();root._adimZ=Date.now();return}
+        if(adim===1||e.target.tagName==="TEXTAREA"||(e.target.tagName==="BUTTON"&&e.target.dataset.m!=="onay"))return;
+        const o=root.querySelector('[data-m="onay"]');if(!o||o.disabled||Date.now()-(root._adimZ||0)<300)return;
+        e.preventDefault();o.click();root._adimZ=Date.now()});
       root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const m=b.dataset.m;
         if(m==="close")return closeModal();
         if(m==="geri"){adim=1;ciz(root);return}
