@@ -2132,6 +2132,15 @@ function fmtMiktar(n){return (Math.round((Number(n)||0)*100)/100).toLocaleString
 let _stokTopK=null,_stokTop=null;
 function stokMiktar(u){if(_stokTopK!==state.stokHareketleri){_stokTopK=state.stokHareketleri;_stokTop=new Map();for(const s of state.stokHareketleri)_stokTop.set(s.urunId,(_stokTop.get(s.urunId)||0)+(Number(s.miktar)||0))}
   return r2((Number(u.acilis)||0)+(_stokTop.get(u.id)||0))}
+/* Gerçek (depo) stok: pazaryerine giden stoktan (tedarikçi stoğu dahil, örn. 500) ayrı, depoda sayılan adet.
+   Ürün kartında gercekSayim (sayılan adet) ve gercekZaman (sayım anı) tutulur; sayımdan SONRA oluşan satış / giriş / çıkış
+   hareketleri eklenir. "Sayım" hareketleri (pazaryeri stoğunu düzeltmek için) gerçek stoğu etkilemez.
+   Gerçek stok 0'ın altına inse de pazaryeri satışı kapanmaz: pazaryerine giden stok yine "Stok" sütunudur. */
+let _gercekK=null,_gercekH=null;
+function gercekStok(u){const z=Number(u.gercekZaman);if(!(z>0)||u.gercekSayim==null||u.gercekSayim==="")return null;
+  if(_gercekK!==state.stokHareketleri){_gercekK=state.stokHareketleri;_gercekH=new Map();
+    for(const s of state.stokHareketleri){if(s.tip==="Sayım")continue;const l=_gercekH.get(s.urunId)||[];l.push(s);_gercekH.set(s.urunId,l)}}
+  let t=Number(u.gercekSayim)||0;for(const s of (_gercekH.get(u.id)||[]))if((Number(s.olusturma)||0)>z)t+=Number(s.miktar)||0;return r2(t)}
 function stokDurum(u){const m=stokMiktar(u);if(m<=0)return "yok";if(Number(u.kritik)>0&&m<=Number(u.kritik))return "kritik";return "ok"}
 const urunSecim=new Set();let stokListeSon=[],stokSayfaSon=[],stokFiltreSon=null;
 const _ad=(a,b)=>a.ad.localeCompare(b.ad,"tr"),_sayi=(x,k)=>Number(x[k])||0;
@@ -2144,6 +2153,8 @@ const URUN_SIRA={
   eski:["İlk eklenenler",(a,b)=>_eklenme(a)-_eklenme(b)||_ad(a,b)],
   stokCok:["Stok: çoktan aza",(a,b)=>b.miktar-a.miktar||_ad(a,b)],
   stokAz:["Stok: azdan çoğa",(a,b)=>a.miktar-b.miktar||_ad(a,b)],
+  gercekCok:["Gerçek stok: çoktan aza",(a,b)=>(b.gercek??-1e9)-(a.gercek??-1e9)||_ad(a,b)],
+  gercekAz:["Gerçek stok: azdan çoğa",(a,b)=>(a.gercek??1e9)-(b.gercek??1e9)||_ad(a,b)],
   satisYuksek:["Satış fiyatı: yüksekten düşüğe",(a,b)=>_sayi(b,"satisFiyat")-_sayi(a,"satisFiyat")||_ad(a,b)],
   satisDusuk:["Satış fiyatı: düşükten yükseğe",(a,b)=>_sayi(a,"satisFiyat")-_sayi(b,"satisFiyat")||_ad(a,b)],
   degerYuksek:["Stok değeri: yüksekten düşüğe",(a,b)=>Math.max(0,b.miktar)*_sayi(b,"alisFiyat")-Math.max(0,a.miktar)*_sayi(a,"alisFiyat")||_ad(a,b)],
@@ -2168,6 +2179,7 @@ const URUN_KOL=[
   {k:"marka",l:"Marka",deger:u=>u.marka||"",artan:"marka",azalan:"markaZA"},
   {k:"kategori",l:"Kategori",deger:u=>u.kategori||"",artan:"kategori",azalan:"kategoriZA"},
   {k:"stok",l:"Stok",sayi:true,deger:u=>u.miktar,artan:"stokAz",azalan:"stokCok"},
+  {k:"gercek",l:"Gerçek stok",sayi:true,deger:u=>u.gercek??"",artan:"gercekAz",azalan:"gercekCok"},
   {k:"alis",l:"Alış",sayi:true,deger:u=>Number(u.alisFiyat)||0,artan:"alisDusuk",azalan:"alisYuksek"},
   {k:"satis",l:"Satış",sayi:true,deger:u=>Number(u.satisFiyat)||0,artan:"satisDusuk",azalan:"satisYuksek"},
   {k:"tykar",l:"TY kâr %",sayi:true,deger:u=>tyKarSayi(u)??"",artan:"tyKarDusuk",azalan:"tyKarYuksek"},
@@ -2215,7 +2227,7 @@ function vStok(){
   const ilanPz=PZ_ILAN.filter(p=>pzIlan.veri[p]);if(ui.sPz&&!ilanPz.includes(ui.sPz.split(":")[0]))ui.sPz="";
   const kats=[...new Set(state.urunler.map(u=>u.kategori).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
   const markalar=[...new Set(state.urunler.map(u=>u.marka).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
-  const all=state.urunler.map(u=>({...u,miktar:stokMiktar(u),durum:stokDurum(u)}));
+  const all=state.urunler.map(u=>({...u,miktar:stokMiktar(u),durum:stokDurum(u),gercek:gercekStok(u)}));
   const kf=ui.sKol||{};const kolUy=u=>URUN_KOL.every(c=>{const v=(kf[c.k]||"").trim();if(!v)return true;return c.sayi?sayiFiltre(v,c.deger(u)):_norm(c.deger(u)).includes(_norm(v))});
   const list=all.filter(u=>(!q||[u.ad,u.kod,u.barkod,u.kategori,u.marka].join(" ").toLocaleLowerCase("tr").includes(q))&&(!ui.sKat||u.kategori===ui.sKat)&&(!ui.sMarka||u.marka===ui.sMarka)&&(!ui.sDurum||u.durum===ui.sDurum)&&pzIlanFiltre(u,ui.sPz)&&kolUy(u)).sort(URUN_SIRA[ui.sSira]?URUN_SIRA[ui.sSira][1]:URUN_SIRA.adAZ[1]);
   const kolVar=URUN_KOL.some(c=>(kf[c.k]||"").trim());
@@ -2276,6 +2288,7 @@ function vStok(){
     ${gorunen.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" autocomplete="off" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><div style="display:flex;gap:8px;align-items:center">${(u.gorseller||[])[0]?`<img src="${esc(u.gorseller[0])}" alt="" loading="lazy" data-buyut="${esc(u.id)}" title="Büyütmek için tıklayın" style="cursor:zoom-in;width:36px;height:36px;object-fit:cover;border-radius:6px;flex:none">`:""}<div><b>${esc(u.ad)}</b>${pzIlanRozet(u)}</div></div></td>
       <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${u.marka?`<a href="#" data-act="ugAc" data-id="${esc(u.marka)}" data-p="marka" title="Bu markanın ürünlerini göster">${esc(u.marka)}</a>`:"—"}</td><td>${u.kategori?`<a href="#" data-act="ugAc" data-id="${esc(u.kategori)}" data-p="kategori" title="Bu kategorinin ürünlerini göster">${esc(u.kategori)}</a>`:"—"}</td>
       <td class="num ${u.durum==="yok"?"neg":""}" ${ro?"":`data-dbl="stok" data-id="${u.id}" title="Çift tıklayın: stoğu değiştir" style="cursor:cell"`}>${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
+      <td class="num ${u.gercek!=null&&u.gercek<=0?"neg":""}" ${ro?"":`data-dbl="gercek" data-id="${u.id}" title="Çift tıklayın: depoda sayılan adedi girin${u.gercekZaman?" (son sayım "+new Date(Number(u.gercekZaman)).toLocaleDateString("tr-TR")+")":""}" style="cursor:cell"`}>${u.gercek==null?`<span class="muted" style="font-size:.8rem">sayılmadı</span>`:`${fmtMiktar(u.gercek)}${u.gercek<=0&&u.miktar>0?`<div><span class="chip ornek" title="Depoda kalmadı; pazaryerinde tedarikçi stoğuyla satış sürüyor">Tedarikçiden</span></div>`:""}`}</td>
       <td class="num" ${ro?"":`data-dbl="alis" data-id="${u.id}" title="Çift tıklayın: alış fiyatını değiştir" style="cursor:cell"`}>${money(u.alisFiyat)}</td><td class="num" ${ro?"":`data-dbl="satis" data-id="${u.id}" title="Çift tıklayın: satış fiyatını değiştir" style="cursor:cell"`}>${money(u.satisFiyat)}</td>${(()=>{const x=tyKar(u);if(!x)return `<td class="num muted" title="Alış ya da satış fiyatı yok">—</td>`;const neg=x.kar<0;
         return `<td class="num" title="Trendyol'da satınca kalan kâr: ${money(x.kar)} (kâr % satış fiyatına göre; giderler Kâr hesabı sekmesinden)" style="font-weight:600;color:${neg?"var(--out)":"var(--in)"}"><button type="button" data-act="tyKarDetay" data-id="${u.id}" title="Giderleri göster (komisyon, kargo, hizmet bedeli…)" style="all:unset;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px">${karYuzde(x.yuzde)}</button><div class="muted" style="font-size:.72rem;font-weight:400">${money(x.kar)}</div></td>`})()}<td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
       <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="stokGiris" data-id="${u.id}" type="button">Giriş</button><button class="small" data-act="stokCikis" data-id="${u.id}" type="button">Çıkış</button><button class="small ghost" data-act="stokSayim" data-id="${u.id}" type="button">Sayım</button>`}<button class="small ghost" data-act="stokGecmis" data-id="${u.id}" type="button">Hareketler</button>${state.readonly?"":`<button class="small ghost" data-act="editUrun" data-id="${u.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
@@ -2889,22 +2902,23 @@ document.addEventListener("dblclick",e=>{const td=e.target.closest&&e.target.clo
   e.preventDefault();try{window.getSelection().removeAllRanges()}catch(err){}hizliDuzenle(td.dataset.id,td.dataset.dbl)});
 function hizliDuzenle(uid,alan,onDeger){
   const u=state.urunler.find(x=>x.id===uid);if(!u)return;
-  const stokMu=alan==="stok",ad={stok:"Stok",alis:"Alış fiyatı",satis:"Satış fiyatı"}[alan];
-  const eski=stokMu?stokMiktar(u):r2(Number(alan==="alis"?u.alisFiyat:u.satisFiyat)||0);
-  const goster=v=>stokMu?fmtMiktar(v)+" "+esc(u.birim||"Adet"):money(v);
+  const gercekMu=alan==="gercek",stokMu=alan==="stok",adetMu=stokMu||gercekMu,ad={stok:"Stok",gercek:"Gerçek stok (depo sayımı)",alis:"Alış fiyatı",satis:"Satış fiyatı"}[alan];
+  const eski=stokMu?stokMiktar(u):gercekMu?(gercekStok(u)??0):r2(Number(alan==="alis"?u.alisFiyat:u.satisFiyat)||0);
+  const goster=v=>adetMu?fmtMiktar(v)+" "+esc(u.birim||"Adet"):money(v);
   const deneme=pzDenemeKodlar().some(k=>pzKimlik(k)===pzKimlik(u.kod)||pzKimlik(k)===pzKimlik(u.barkod));
   let yeni=null,adim=1;
   // Ürünün ilanı olan (yazılabilen) pazaryerleri: satış fiyatı / stok değişince bunlara da gönderilir (gönderim sırası)
-  const listeli=alan!=="alis"&&firmaRol==="sahip"&&!state.readonly&&sb?PZ_FS_YAZ.filter(k=>pzIlanDurum(u,k)):[];let pzGonder=true;
+  const listeli=alan!=="alis"&&!gercekMu&&firmaRol==="sahip"&&!state.readonly&&sb?PZ_FS_YAZ.filter(k=>pzIlanDurum(u,k)):[];let pzGonder=true;
   const ciz=root=>{const f=root.querySelector("#hdGovde");
-    if(adim===1)f.innerHTML=`<div class="field"><label for="hdDeger">Yeni ${ad.toLocaleLowerCase("tr")}${stokMu?" ("+esc(u.birim||"Adet")+")":" (₺, KDV dahil)"}</label>
-        <input id="hdDeger" type="number" ${stokMu?'step="1"':'step="0.01" min="0"'} inputmode="decimal" value="${esc(String(onDeger!=null&&yeni==null?onDeger:yeni!=null?yeni:eski))}"></div>
-      <div class="muted" style="font-size:.85rem">Şu an: <b style="color:var(--fg)">${goster(eski)}</b>${stokMu?" · fark sayım hareketi olarak kaydedilir":""}</div>
+    if(adim===1)f.innerHTML=`<div class="field"><label for="hdDeger">${gercekMu?"Depoda sayılan adet":"Yeni "+ad.toLocaleLowerCase("tr")}${adetMu?" ("+esc(u.birim||"Adet")+")":" (₺, KDV dahil)"}</label>
+        <input id="hdDeger" type="number" ${adetMu?'step="1"':'step="0.01" min="0"'} inputmode="decimal" value="${esc(String(onDeger!=null&&yeni==null?onDeger:yeni!=null?yeni:eski))}"></div>
+      <div class="muted" style="font-size:.85rem">Şu an: <b style="color:var(--fg)">${gercekMu&&gercekStok(u)==null?"sayılmadı":goster(eski)}</b>${stokMu?" · fark sayım hareketi olarak kaydedilir":""}</div>
+      ${gercekMu?`<div class="muted" style="font-size:.82rem">Yalnız programdaki depo stoğu değişir; pazaryerlerine giden stok (${fmtMiktar(stokMiktar(u))}) değişmez. Bundan sonraki satışlar ve stok girişleri bu sayıdan düşülür / eklenir.</div>`:""}
       ${stokMu&&deneme&&pzStokOtoAcik()&&!listeli.length?`<div class="notice" style="font-size:.85rem">Bu ürün deneme listesinde: yeni stok birkaç saniye içinde bağlı pazaryerlerine de gönderilir.</div>`:""}
       <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="devam">Devam</button></div>`;
     else{const fark=r2(yeni-eski),oran=eski>0?yeni/eski:null;
       const asiri=!stokMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
-      const degisim=stokMu?`${fark>0?"+":""}${fmtMiktar(fark)}`:(oran!=null?`%${(Math.abs(oran-1)*100).toLocaleString("tr-TR",{maximumFractionDigits:1})} ${yeni>=eski?"artış":"düşüş"}`:"");
+      const degisim=adetMu?`${fark>0?"+":""}${fmtMiktar(fark)}`:(oran!=null?`%${(Math.abs(oran-1)*100).toLocaleString("tr-TR",{maximumFractionDigits:1})} ${yeni>=eski?"artış":"düşüş"}`:"");
       f.innerHTML=`<table><tbody><tr><td>${ad}</td><td class="num">${goster(eski)} → <b>${goster(yeni)}</b></td></tr>${degisim?`<tr><td>Değişim</td><td class="num">${degisim}</td></tr>`:""}</tbody></table>
         ${listeli.length?`<label class="notice" style="font-size:.85rem;display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="hdPz" ${pzGonder?"checked":""} style="margin-top:3px"> <span><b>Pazaryerlerine de gönder:</b> ${esc(listeli.map(k=>PZ_ADLAR[k]).join(", "))}. ${stokMu?"Yeni stok":"Yeni fiyat (üstü çizili fiyat da)"} gönderim sırasına alınır; sonucu Fiyat / Stok farkı raporunda görünür.</span></label>`:""}
         ${alan==="satis"&&pzFiyatGider(u)&&!listeli.length?`<div class="notice" style="font-size:.85rem"><b>Pazaryerlerine de gidecek:</b> bu ürün deneme listesinde; yeni fiyat bağlı bütün pazaryerlerine gönderilir; üstü çizili (piyasa) fiyat da satış fiyatı da bu fiyat olur.</div>`:""}
@@ -2927,20 +2941,21 @@ function hizliDuzenle(uid,alan,onDeger){
         if(m==="onay"){const c=root.querySelector("#hdPz");if(c)pzGonder=c.checked}
         if(m==="devam"){const v=Number(String(root.querySelector("#hdDeger").value).replace(",","."));
           if(!isFinite(v)||(!stokMu&&v<0)){toast("Geçerli bir sayı girin");return}
-          yeni=stokMu?v:r2(v);if(yeni===eski){closeModal();return}adim=2;ciz(root);return}
+          yeni=adetMu?v:r2(v);if(yeni===eski&&!(gercekMu&&gercekStok(u)==null)){closeModal();return}adim=2;ciz(root);return}
         if(m!=="onay")return;
-        const asiri=!stokMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
+        const asiri=!adetMu&&eski>0&&(yeni<eski*0.5||yeni>eski*2);
         if(asiri&&adim===2){adim=3;ciz(root);return}
         b.disabled=true;
         try{if(stokMu){const guncel=stokMiktar(u),fark=r2(yeni-guncel);
             if(fark)await api.setDoc("stokHareketleri",api.newId("stokHareketleri"),{urunId:u.id,tarih:today(),tip:"Sayım",miktar:fark,birimFiyat:Number(u.alisFiyat)||0,aciklama:"Ürünler ekranından düzeltme",hareketId:"",olusturma:Date.now()})}
+          else if(gercekMu){const x=state.urunler.find(y=>y.id===uid)||u;const {id:_,...rest}=x;await api.setDoc("urunler",uid,{...rest,gercekSayim:yeni,gercekZaman:Date.now()})}
           else{const x=state.urunler.find(y=>y.id===uid)||u;const {id:_,...rest}=x;await api.setDoc("urunler",uid,{...rest,[alan==="alis"?"alisFiyat":"satisFiyat"]:yeni})}
           closeModal();
           if(listeli.length&&pzGonder){
             const is=listeli.map(k=>stokMu?{u,p:k,islem:"stokGonder",stok:Math.max(0,Math.floor(yeni))}:{u,p:k,islem:"fiyatGonder",satis:yeni,buyuk:true});
             try{const n=await pzFsSiraya(is);toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni))+" · "+n+" pazaryeri gönderimi sıraya alındı")}
             catch(err){toast(ad+" kaydedildi ama pazaryerlerine gönderilemedi: "+(err.message||err))}}
-          else{toast(ad+" güncellendi: "+(stokMu?fmtMiktar(yeni):money(yeni)));
+          else{toast(ad+" güncellendi: "+(adetMu?fmtMiktar(yeni):money(yeni)));
             if(alan==="satis"&&pzFiyatGider(u))pzFiyatGonder(u,yeni,asiri).catch(err=>toast("Fiyat pazaryerlerine gönderilemedi: "+(err.message||err)))}}
         catch(err){b.disabled=false;const er=root.querySelector("#hdErr");if(er)er.textContent=errMsg(err)}})})}
 function stokHareketForm(uid,tip){
@@ -4614,12 +4629,12 @@ function pzSiparisPanel(){
     ${deg?"":`<div style="font-size:.85rem"><b>Şu an işlenecek değişiklik yok.</b> ${P.liste.length?"Listedeki deneme siparişleri programda güncel.":"Seçilen dönemde, başlangıç zamanından sonra deneme ürünü içeren sipariş bulunmadı."}${P.once?` Başlangıçtan önceki ${P.once} deneme siparişi işlenmez (stoğa zaten yansımıştı).`:""}</div>`}
     <div class="muted" style="font-size:.82rem">Yalnızca deneme ürünlerinin satırları işlenir. Sipariş gelince stok düşer; <b>teslim edilince</b> “${esc(P.cari?P.cari.ad:pzIsim)}” carisine açık hesap satış yazılır${P.cari?"":" (cari yoksa oluşturulur)"}${ty?`; Trendyol hakedişi oluşturunca kestiği komisyon aynı cariden gider olarak düşülür (cari bakiyesi = Trendyol'un ödeyeceği tutar)${PZ_KOMISYON_ACIK?"":" — <b>şu an kapalı</b>"}`:` (${esc(pzIsim)} komisyonu henüz işlenmiyor)`}. İptal / iade olursa ${ty?"stok, satış ve komisyon":"stok ve satış"} geri alınır. Aynı sipariş tekrar işlense de kayıt çoğalmaz. Başlangıç zamanı bütün pazaryerleri için ortaktır.</div>
     <div class="filters" style="font-size:.85rem;align-items:center"><label for="pzBas">Bu zamandan sonraki siparişler:</label><input id="pzBas" type="datetime-local" value="${yerel}" style="max-width:220px"><span class="muted" style="font-size:.8rem">${b.kayitli?"kayıtlı":"öneri: deneme ürünlerine son stok gönderimi · ilk işlemde kaydedilir"}</span></div>
-    ${P.liste.length?`<div class="tscroll"><table><thead><tr><th>Sipariş</th><th>Durum</th><th>Deneme ürünleri</th><th>Programda</th><th>Yapılacak</th><th>Paket / fatura</th></tr></thead><tbody>
+    ${P.liste.length?`<div class="tscroll"><table><thead><tr><th>Sipariş</th><th>Durum</th><th>Deneme ürünleri</th><th>Programda</th><th>Yapılacak</th><th>Kargo / paket / fatura</th></tr></thead><tbody>
       ${P.liste.map(p=>`<tr><td class="date" style="color:var(--fg)"><b>${esc(p.s.siparisNo)}</b><div class="muted" style="font-size:.75rem">${pzTarih(p.s.siparisTarihi)}</div>${p.s.faturaAd||p.s.musteri?`<div style="font-size:.8rem;font-family:var(--font-body)">👤 ${esc(p.s.faturaAd||p.s.musteri)}</div>`:""}${pzSonGonderimHtml(p.s)}</td><td>${esc(PZ_DURUM[p.s.durum]||p.s.durum)}</td>
         <td style="font-size:.85rem">${p.es.concat(p.eslesmeyen).map(o=>`<div style="display:flex;gap:8px;align-items:center;margin:2px 0">${pzUrunResim(o.u||pzKimlikUrun(o.x))}<div>${esc(o.x.adet)} × ${esc((o.u&&o.u.ad)||o.x.ad)}${pzUrunStokHtml(o.u||pzKimlikUrun(o.x),o.x,p.s)}</div></div>`).join("")}</td><td style="font-size:.85rem">${esc(p.durumMetin)}</td><td style="font-size:.82rem">${ne(p)}</td>
-        <td style="font-size:.82rem"><div class="sip-islem">${pzPaketDestek(p.s,pzAd)?`<button class="small${pzPaketAcik(p.s,pzAd)?"":" ghost"}" data-act="pzPaket" data-id="${esc(p.s.paketId)}" type="button" title="${pzPaketAcik(p.s,pzAd)?"Paketle / faturalandır / iptal et":"Paketin durumunu göster"}">📦 Paket durumu</button>`:""}
+        <td style="font-size:.82rem"><div class="sip-islem">${(kod=>`<button class="small" type="button" data-act="kargoTek" data-id="${esc(p.s.paketId)}" ${kod&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?"":"disabled"} title="${kod?esc("Kargo kodu "+kod):"Pazaryeri henüz kargo kodu vermedi"}">🖨 Kargo fişi</button>`)(String(p.s.kargoTakip||"").trim())}${pzPaketDestek(p.s,pzAd)?`<button class="small${pzPaketAcik(p.s,pzAd)?"":" ghost"}" data-act="pzPaket" data-id="${esc(p.s.paketId)}" type="button" title="${pzPaketAcik(p.s,pzAd)?"Paketle / faturalandır / iptal et":"Paketin durumunu göster"}">📦 Paket durumu</button>`:""}
           ${ty&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?(p.s.faturaNo?`<span class="muted" title="Trendyol'daki fatura numarası">🧾 ${esc(p.s.faturaNo)}</span>`:(k=>k&&k.ortam==="canli"?`<span class="muted">🧾 ${esc(k.invoiceId)}</span>`:`<button class="small ghost" data-act="pzFatura" data-id="${esc(p.s.paketId)}" type="button">🧾 ${k?"Test ✓":"Faturalandır"}</button>`)(pzFatKayit(p.s.paketId))):""}
-          ${!pzPaketDestek(p.s,pzAd)&&!ty?`<span class="muted">—</span>`:""}</div></td></tr>`).join("")}
+          ${!ty&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?(fat=>fat?`<button class="small ghost" type="button" data-act="fGor" data-id="${esc(fat.id)}" title="${esc(fat.no)}">📄 Faturayı gör</button>`:`<button class="small ghost" type="button" data-act="pzFatEkle" data-id="${esc(p.s.paketId)}">➕ Fatura ekle</button>`)(pzSipFatura(p.s)):""}</div></td></tr>`).join("")}
     </tbody></table></div>`:""}</div>`}
 /* ---------- Teslim edilen siparişin e-Faturası (Trendyol e-Faturam, köprü üzerinden) ----------
    Taslak siparişten hazırlanır (tutarlar kuruş, fiyatlar KDV dahil; satırlar müşterinin ödediği toplama orantılanır).
