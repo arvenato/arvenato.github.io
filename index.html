@@ -600,29 +600,34 @@ const PZ_SIRA=["trendyol","hepsiburada","n11","pazarama","idefix","amazon","shop
 const ANA_KISA={trendyol:"TY",hepsiburada:"HB",n11:"n11",pazarama:"PZR",idefix:"İDX",amazon:"AMZ",shopify:"SHP"};
 const PZ_RENK={trendyol:"#f27a1a",hepsiburada:"#ff6000",n11:"#7b2cbf",pazarama:"#2563eb",idefix:"#0a5bd8",amazon:"#232f3e",shopify:"#5e8e3e"};
 const ANA_KANAL={trendyol:"trendyol",hepsiburada:"hepsiburada",n11:"n11",pazarama:"pazarama",idefix:"idefix",amazon:"amazon",shopify:"shopify"};
-const _anaPz={firma:null,veri:{},bagli:null,yuk:false};
+const _anaPz={firma:null,veri:{},bagli:null,yuk:false,yukBas:0,son:0,nesil:0};
+// Telefon uykudayken yarım kalan istek sonsuza kadar beklemesin diye her okuma en fazla 60 sn
+const _anaSure=(p,ms)=>Promise.race([p,new Promise((_,red)=>setTimeout(()=>red(new Error("zaman aşımı")),ms))]);
 const KARGO_BEKLER=new Set(["Created","Picking","Invoiced","Open","Packaged","Unshipped"]);
 const pzKargoBekler=x=>KARGO_BEKLER.has(String(x.durum||"").trim())&&Number(x.siparisTarihi)>Date.now()-30*86400000;
 const _kanalAnahtar=k=>String(k||"").toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/[^a-z0-9]/g,"");
-async function anaPzYukle(){
-  if(_anaPz.yuk||!firmaId)return;const f=firmaId;_anaPz.yuk=true;
+async function anaPzYukle(zorla){
+  // Önceki okuma 90 sn'den uzun sürdüyse (telefon uyuyunca takılmış olabilir) yenisi başlar; eskisi sonuçlarını yazamaz
+  if(!firmaId||_anaPz.yuk&&Date.now()-_anaPz.yukBas<90000)return;const f=firmaId,n=++_anaPz.nesil;
+  _anaPz.yuk=true;_anaPz.yukBas=_anaPz.son=Date.now();const bitti=()=>_anaPz.nesil!==n||firmaId!==f;
   try{if(_anaPz.firma!==f){_anaPz.firma=f;_anaPz.veri={};_anaPz.bagli=null}
-    for(const k of PZ_SIRA){const d=await pzDepo.al(pzDepoAnahtari(k));if(d&&firmaId===f)_anaPz.veri[k]={liste:d.liste||[],zaman:d.zaman||0}}
+    for(const k of PZ_SIRA){const d=await pzDepo.al(pzDepoAnahtari(k));if(bitti())return;if(d&&!(_anaPz.veri[k]&&_anaPz.veri[k].zaman>(d.zaman||0)))_anaPz.veri[k]={liste:d.liste||[],zaman:d.zaman||0}}
     if(view==="ozet")renderSonra();
     if(!sb||!oturum)return;
     // Kartlar için bütün bağlı hesaplar (otomatik sipariş işlemenin dışında tutulan Amazon dahil); okunamazsa otomatik takip listesi
-    let bl=null;try{const {data,error}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:f});if(!error)bl=(data||[]).map(x=>x.pazaryeri).filter(k=>PZ_ADLAR[k])}catch(e){}
-    _anaPz.bagli=bl||await pzBagliAl();if(firmaId!==f)return;if(view==="ozet")renderSonra();
+    let bl=null;try{const {data,error}=await _anaSure(sb.rpc("pazaryeri_hesap_durum",{p_firma:f}),30000);if(!error)bl=(data||[]).map(x=>x.pazaryeri).filter(k=>PZ_ADLAR[k])}catch(e){}
+    if(bitti())return;_anaPz.bagli=bl||await pzBagliAl();if(bitti())return;if(view==="ozet")renderSonra();
     const GUN=86400000,simdi=Date.now();
-    for(const k of _anaPz.bagli){const v=_anaPz.veri[k];if(v&&simdi-v.zaman<10*60000)continue;
-      try{const yeni=await pzAralikOku("siparisler",simdi-3*GUN,simdi,14,"siparisler",{pazaryeri:k});if(firmaId!==f)return;
+    for(const k of _anaPz.bagli){const v=_anaPz.veri[k];if(!zorla&&v&&simdi-v.zaman<5*60000)continue;
+      try{const yeni=await _anaSure(pzAralikOku("siparisler",simdi-3*GUN,simdi,14,"siparisler",{pazaryeri:k}),60000);if(bitti())return;
         const an=pzDepoAnahtari(k),dep=await pzDepo.al(an);const m=new Map(((dep&&dep.liste)||[]).map(x=>[x.paketId,x]));for(const x of yeni)if(x.paketId)m.set(x.paketId,x);
         const liste=[...m.values()];await pzDepo.koy(an,dep?Object.assign({},dep,{zaman:simdi,liste}):{ilk:simdi-3*GUN,tamZaman:0,zaman:simdi,liste});
         _anaPz.veri[k]={liste,zaman:simdi};if(view==="ozet")renderSonra()}
       catch(e){/* okunamazsa saklanan liste gösterilir */}}}
-  finally{_anaPz.yuk=false}}
+  finally{if(_anaPz.nesil===n){_anaPz.yuk=false;if(view==="ozet")renderSonra()}}}
 function anaPzKartlar(){
-  if(_anaPz.firma!==firmaId||!Object.keys(_anaPz.veri).length&&!_anaPz.bagli)setTimeout(anaPzYukle,0);
+  // İlk açılışta ve sonra 5 dakikada bir (ekran açıkken) yeniden okunur
+  if(_anaPz.firma!==firmaId||!Object.keys(_anaPz.veri).length&&!_anaPz.bagli||Date.now()-_anaPz.son>5*60000)setTimeout(()=>anaPzYukle(),0);
   const bas=new Date().setHours(0,0,0,0),bugun=today();
   const bagli=_anaPz.bagli||[];const goster=PZ_SIRA.filter(k=>bagli.includes(k)||_anaPz.veri[k]);
   if(!goster.length)return "";
@@ -647,7 +652,7 @@ function anaPzKartlar(){
       <div class="pzk-alt"><button type="button" class="small ghost" data-act="pzAnaSec" data-id="${k}">Siparişleri listele</button>
         <button type="button" class="small ${kargo?"primary":""}" data-act="kargoFis" data-id="${k}" ${kargo?"":"disabled"}>🖨 Kargo fişi${kargo?" ("+kargo+")":""}</button></div></div>`}).join("");
   const fark=topDun?Math.round((topCiro-topDun)/topDun*100):null;
-  return `<section class="section-head"><h2>Pazaryeri günlük özeti</h2><span class="muted" style="font-size:.85rem">${_anaPz.yuk?"Yenileniyor… ":""}${zaman?"Son okuma "+new Date(zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}</span></section>
+  return `<section class="section-head"><h2>Pazaryeri günlük özeti</h2><span class="muted" style="font-size:.85rem">${_anaPz.yuk?"Yenileniyor… ":""}${zaman?"Son okuma "+new Date(zaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""} <button type="button" class="small ghost" data-act="pzAnaYenile" ${_anaPz.yuk?"disabled":""}>↻ Yenile</button></span></section>
   <section class="pzk-toplam"><div><small>Bugün toplam ciro (bütün pazaryerleri, KDV dahil)</small><b>${money(r2(topCiro))}</b></div>
     <div><small>Sipariş</small><b>${topSip.toLocaleString("tr-TR")}</b></div>
     <div><small>Sepet ortalaması</small><b>${money(topSip?r2(topCiro/topSip):0)}</b></div>
@@ -6982,6 +6987,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzIsle")pzSiparisIsle();
   else if(a==="pzOtoSimdi"){if(!pzOto.calisiyor){clearTimeout(pzOto.zamanlayici);pzOto.tamZaman=0;const p=pzOtoKontrol();render();p.then(()=>pzOtoPlanla())}}
   else if(a==="pzKuru")pzKuruDeneme();
+  else if(a==="pzAnaYenile"){_anaPz.yukBas=0;anaPzYukle(true);render()}
   else if(a==="pzAnaSec"){if(PZ_ADLAR[id]){Object.assign(pz,{pazaryeri:id,sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";if(location.hash==="#pazaryeri")render();else location.hash="#pazaryeri"}}
   else if(a==="kargoFis")kargoFisModal(id);
   else if(a==="kargoTek"){const s=(pz.siparisler||[]).find(x=>x.paketId===id);if(s)kargoFisYazdir(pz.pazaryeri,[s]).catch(err=>toast("Barkod hazırlanamadı: "+(err.message||err)))}
