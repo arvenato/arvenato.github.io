@@ -1503,6 +1503,8 @@ async function faturalariKaydet(list,o,ilerleme){
   const satis=o.tur==="satis";const cache={};let n=0,eklenen=0,atlanan=0,cariYeni=0,hata=0;
   const vb=varsayilanBanka();
   for(const v of list){n++;ilerleme&&ilerleme(n,list.length);
+    // Kayıt sırasında başka firmaya geçildiyse durur: faturalar yanlış firmaya yazılmasın
+    if(o.firma&&firmaId!==o.firma){hata+=list.length-n+1;break}
     try{if(state.faturalar.some(f=>f.tur===o.tur&&f.no===v.no)){atlanan++;continue}
       // Sabit kimlik: aynı fatura (ETTN ya da tür+no) kaç kez / kaç cihazdan alınırsa alınsın aynı kayda yazılır, çift oluşmaz
       const sab=String(v.ettn||(o.tur+"-"+v.no)).replace(/[^A-Za-z0-9-]/g,"").slice(0,60);const fid=sab?"ef-"+o.tur+"-"+sab:api.newId("faturalar");
@@ -1543,20 +1545,23 @@ async function efatSenk(elle){
   const kilitA="arv-efat-kilit-"+firmaId;let kil=0;try{kil=Number(localStorage.getItem(kilitA))||0}catch(e){}
   if(!elle&&Date.now()-kil<10*60000)return;
   try{localStorage.setItem(kilitA,String(Date.now()))}catch(e){}
-  efatSenkCalisiyor=true;
+  efatSenkCalisiyor=true;const f=firmaId;
   try{
-    const prof=efatProfil();
+    // Okuma sürerken başka firmaya geçilirse (v153 öncesi) bir firmanın faturaları diğerine yazılabiliyordu:
+    // hesap (profil) başta sabitlenir, her istekte o gönderilir, kaydetmeden önce ve kayıt sırasında firma yeniden denetlenir.
+    const prof=efatProfil();const ist=(yol,gv,sure)=>efkIstek(yol,{...gv,profil:prof},sure);
     if(!prof){if(elle)toast("Bu firma için e-Faturam hesabı seçilmemiş: Hesabım › Pazaryeri ve e-Fatura ayarları");return}
-    let d;try{d=await efkIstek("/durum",{},3000)}catch(e){if(elle)toast("e-Fatura köprüsüne ulaşılamadı. Köprünün kurulu olduğu bilgisayarda açın.");return}
+    let d;try{d=await ist("/durum",{},3000)}catch(e){if(elle)toast("e-Fatura köprüsüne ulaşılamadı. Köprünün kurulu olduğu bilgisayarda açın.");return}
     // Güvenlik: köprü başka bir firmanın hesabıyla yanıt veriyorsa (eski köprü vb.) hiçbir fatura alınmaz
     if(d.profil!==prof){if(elle)toast("e-Fatura köprüsü bu firmanın hesabını tanımıyor; köprüyü güncelleyin (sürüm 1.5).");return}
     if(!d.kurulu){if(elle)toast("Köprüde bu firmanın e-Faturam hesabı kurulmamış: "+(prof==="seyfi"?"KURULUM-SEYFI.cmd":"KURULUM-ARVENATO.cmd")+" çalıştırın.");return}
     const anahtar="arv-efat-son-"+firmaId;let son="";try{son=localStorage.getItem(anahtar)||""}catch(e){}
     const g={baslangic:son?gunEkle(son,-7):new Date().getFullYear()+"-01-01",bitis:gunEkle(today(),1)};
     const gelenHam=[],gidenEf=[],gidenEa=[];
-    for(let s=0;s<50;s++){const j=await efkIstek("/gelen",{...g,sayfa:s},120000);if(j.kod!==200)throw new Error("Gelen faturalar alınamadı ("+j.kod+")");const y=j.yanit||{};gelenHam.push(...(y.content||[]));if(s+1>=(y.totalPageCount||1))break}
-    for(let s=0;s<50;s++){const j=await efkIstek("/giden",{...g,sayfa:s},120000);const a=j.efatura&&j.efatura.kod===200?j.efatura.yanit||{}:null,b=j.earsiv&&j.earsiv.kod===200?j.earsiv.yanit||{}:null;
+    for(let s=0;s<50;s++){const j=await ist("/gelen",{...g,sayfa:s},120000);if(j.kod!==200)throw new Error("Gelen faturalar alınamadı ("+j.kod+")");const y=j.yanit||{};gelenHam.push(...(y.content||[]));if(s+1>=(y.totalPageCount||1))break}
+    for(let s=0;s<50;s++){const j=await ist("/giden",{...g,sayfa:s},120000);const a=j.efatura&&j.efatura.kod===200?j.efatura.yanit||{}:null,b=j.earsiv&&j.earsiv.kod===200?j.earsiv.yanit||{}:null;
       if(a)gidenEf.push(...(a.content||[]));if(b)gidenEa.push(...(b.content||[]));if(!((a&&s+1<(a.totalPageCount||1))||(b&&s+1<(b.totalPageCount||1))))break}
+    if(firmaId!==f||efatProfil()!==prof)return; // okuma sırasında firma değişti: hiçbir şey kaydedilmez, sonraki turda yeniden alınır
     const yeni=l=>l.filter(v=>v.no&&v.tarih&&v.toplam>0&&!state.faturalar.some(f=>(v.ettn&&f.ettn===v.ettn)||f.no===v.no));
     const gelen=yeni(gelenHam.filter(x=>efatGecerli(x,true)).map(x=>efatKayit(x,true)));
     // Kesilen faturaların hepsi alınır. Firmalara (10 haneli VKN) kesilenler cariye açık hesap işlenir;
@@ -1564,13 +1569,14 @@ async function efatSenk(elle){
     const gidenTum=yeni([...gidenEf.filter(x=>efatGecerli(x,true)),...gidenEa.filter(x=>efatGecerli(x,false))].map(x=>efatKayit(x,false)));
     const kurumsal=gidenTum.filter(v=>String(v.vkn||"").replace(/\D/g,"").length===10),bireysel=gidenTum.filter(v=>String(v.vkn||"").replace(/\D/g,"").length!==10);
     bireysel.forEach(v=>{if(!v.unvan||/^nihai/i.test(v.unvan))v.unvan=v.unvan||"Nihai tüketici";if(v.vkn==="11111111111")v.vkn=""});
-    const ra=gelen.length?await faturalariKaydet(gelen,{tur:"alis",odeme:"acik",cariAc:true,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    const ra=gelen.length?await faturalariKaydet(gelen,{tur:"alis",odeme:"acik",cariAc:true,kaynak:"trendyol",firma:f}):{eklenen:0,cariYeni:0,hata:0};
     // v144: firmalara kesilen pazaryeri satış faturaları da ödenmiş sayılır (ödemeyi pazaryeri yapar; müşteri borçlu görünmez, banka / kasa değişmez)
     // v147: pazaryeri müşterilerine cari açılmaz (fatura müşteri adıyla kaydedilir); zaten var olan bir cariyle eşleşirse ona bağlanır
-    const rk=kurumsal.length?await faturalariKaydet(kurumsal,{tur:"satis",odeme:"pazaryeri",cariAc:false,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
-    const rb=bireysel.length?await faturalariKaydet(bireysel,{tur:"satis",odeme:"banka",cariAc:false,kaynak:"trendyol"}):{eklenen:0,cariYeni:0,hata:0};
+    const rk=kurumsal.length?await faturalariKaydet(kurumsal,{tur:"satis",odeme:"pazaryeri",cariAc:false,kaynak:"trendyol",firma:f}):{eklenen:0,cariYeni:0,hata:0};
+    const rb=bireysel.length?await faturalariKaydet(bireysel,{tur:"satis",odeme:"banka",cariAc:false,kaynak:"trendyol",firma:f}):{eklenen:0,cariYeni:0,hata:0};
     const rs={eklenen:rk.eklenen+rb.eklenen,cariYeni:rk.cariYeni+rb.cariYeni,hata:rk.hata+rb.hata};
     // Trendyol siparişine ait giden faturaların satışı Trendyol carisinde sayıldığı için fatura satış hareketinden ayrılır
+    if(firmaId!==f)return;
     try{const n=await pzFaturaMutabakat();if(n)toast(n+" giden fatura Trendyol siparişine bağlandı (satış Trendyol carisinde)")}catch(e){console.warn("pzFaturaMutabakat",e)}
     if(!ra.hata&&!rs.hata)try{localStorage.setItem(anahtar,today())}catch(e){}
     const yc=ra.cariYeni+rs.cariYeni;
