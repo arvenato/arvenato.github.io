@@ -4025,19 +4025,26 @@ let kamera=null;
 const KAM_VIDEO={facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080},advanced:[{focusMode:"continuous"}]};
 function barkodGecerli(t){if(!/^\d+$/.test(t)||![12,13].includes(t.length))return true;const d=t.split("").map(Number),k=d.pop();let s=0;d.reverse().forEach((x,i)=>s+=x*(i%2===0?3:1));return (10-s%10)%10===k}
 async function yerelOkuyucu(){if(!("BarcodeDetector" in window))return null;try{const v=await BarcodeDetector.getSupportedFormats();const f=["ean_13","ean_8","upc_a","upc_e","code_128","code_39","qr_code"].filter(x=>v.includes(x));return f.includes("ean_13")?new BarcodeDetector({formats:f}):null}catch(e){return null}}
-async function kameraAc(cb,{surekli=false,baslik="Barkod okut"}={}){
+// adet:true → pencerede "Adet" kutusu olur; cb(barkod, adet) çağrılır, adet sonra 1'e döner. cb metin döndürürse altta gösterilir.
+async function kameraAc(cb,{surekli=false,baslik="Barkod okut",adet=false}={}){
   openModal(`<div class="section-head"><h2>📷 ${esc(baslik)}</h2></div>
     <div id="kamKutu" style="position:relative;width:100%;min-height:240px;background:#000;border-radius:10px;overflow:hidden;border:4px solid transparent;transition:border-color .15s"></div>
+    ${adet?`<div style="display:flex;gap:8px;align-items:center;font-size:.95rem"><label for="kamAdet"><b>Adet</b></label><button type="button" class="small" id="kamEksi" style="min-width:44px;font-size:1.2rem">−</button><input id="kamAdet" type="number" min="1" step="1" inputmode="numeric" value="1" style="width:90px;font-size:1.2rem;text-align:center;padding:8px"><button type="button" class="small" id="kamArti" style="min-width:44px;font-size:1.2rem">+</button><span class="muted" style="font-size:.8rem">okutunca 1'e döner</span></div>`:""}
     <div id="kamBilgi" class="muted" style="font-size:.88rem">Kamera açılıyor…</div>
     <div class="modal-foot"><button type="button" id="kamFener" hidden>🔦 Fener</button><button type="button" id="kamZoom" hidden>🔍 1x</button><span style="flex:1"></span><button type="button" class="${surekli?"primary":""}" id="kamKapat">${surekli?"Bitti":"Vazgeç"}</button></div>`);
   modalKapanis=kameraDurdur;
   const K=id=>document.getElementById(id);
   K("kamKapat").onclick=closeModal;
+  if(adet){const ai=K("kamAdet"),d=x=>{ai.value=Math.max(1,(Math.round(Number(ai.value))||1)+x)};K("kamEksi").onclick=()=>d(-1);K("kamArti").onclick=()=>d(1)}
   const ipucu=surekli?'Ürünleri sırayla okutun. Bitince "Bitti"ye basın.':"Barkodu kırmızı çizginin üzerine, 10–20 cm uzağa tutun.";
   let son="",sonZ=0;
-  const okundu=txt=>{txt=String(txt||"").trim();if(!txt||!barkodGecerli(txt))return;const z=Date.now();if(txt===son&&z-sonZ<1500)return;son=txt;sonZ=z;
+  const okundu=txt=>{txt=String(txt||"").trim();if(!txt||!barkodGecerli(txt))return;const z=Date.now();
+    // Aynı barkod kamerada durduğu sürece bir kez sayılır: görüntüden en az 1,2 sn çıkmadan tekrar okunmaz
+    if(txt===son&&z-sonZ<1200){sonZ=z;return}son=txt;sonZ=z;try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}
     const kutu=K("kamKutu");if(kutu){kutu.style.borderColor="var(--in)";setTimeout(()=>{if(K("kamKutu"))K("kamKutu").style.borderColor="transparent"},350)}
-    if(surekli){cb(txt);const bi=K("kamBilgi");if(bi)bi.innerHTML='Okundu: <b style="font-family:var(--font-num)">'+esc(txt)+"</b> — sıradakini okutun"}else{closeModal();cb(txt)}};
+    if(surekli){const ai=K("kamAdet");let n=1;if(ai){n=Math.max(1,Math.round(Number(ai.value))||1);ai.value=1}
+      const sonuc=cb(txt,n);const bi=K("kamBilgi");
+      if(bi)bi.innerHTML=typeof sonuc==="string"?sonuc:'Okundu: <b style="font-family:var(--font-num)">'+esc(txt)+"</b> — sıradakini okutun"}else{closeModal();cb(txt)}};
   const hata=e=>{const bi=K("kamBilgi");if(bi)bi.textContent="Kamera açılamadı: "+(e&&(e.message||e.name)||e)+" — Tarayıcı ayarlarından kamera izni verin."};
   const durum={};kamera=durum;
   const det=await yerelOkuyucu();if(kamera!==durum||!K("kamKutu"))return;
@@ -4365,7 +4372,8 @@ function vSayim(){if(sy.firma!==firmaId)Object.assign(sy,{log:[],yerel:new Map()
     ${ro?`<div class="notice">Bu firmada kayıt yetkiniz yok.</div>`:`<div class="filters" style="align-items:flex-end;gap:10px">
       <label style="display:flex;flex-direction:column;gap:2px;font-size:.8rem;flex:1;min-width:220px">Barkod / stok kodu<input id="syBarkod" autocomplete="off" inputmode="text" placeholder="Barkodu okutun ve Enter" style="font-size:1.1rem;padding:10px 12px"></label>
       <label style="display:flex;flex-direction:column;gap:2px;font-size:.8rem">Adet<input id="syAdet" type="number" min="1" step="1" inputmode="numeric" placeholder="1" value="${esc(sy.adet)}" style="width:100px;font-size:1.1rem;padding:10px 12px"></label>
-      <button class="primary" type="button" id="syEkle" style="padding:10px 16px">Ekle</button></div>
+      <button class="primary" type="button" id="syEkle" style="padding:10px 16px">Ekle</button>
+      <button class="primary" type="button" id="syKamera" style="padding:10px 16px" title="Telefonun kamerasıyla art arda barkod okut">📷 Kamerayla okut</button></div>
     <label style="display:flex;gap:8px;align-items:flex-start;font-size:.85rem;cursor:pointer"><input type="checkbox" id="sySifir" ${sy.sifir?"checked":""}> <span><b>Sıfırdan sayım:</b> bu ekranda bir ürün ilk kez okutulduğunda eski gerçek stoğu yok sayılır, sayım 0'dan başlar. (İşaretli değilse okutulan adet mevcut gerçek stoğun üstüne eklenir.)</span></label>`}
     <div id="syMesaj" role="status" style="min-height:1.6em;font-weight:600"></div>
     <div id="syListe"></div>
@@ -4382,7 +4390,7 @@ function syListeCiz(){const el=document.getElementById("syListe");if(!el)return;
 function syMesaj(t,ok){const el=document.getElementById("syMesaj");if(el){el.textContent=t;el.style.color=ok?"var(--in)":"var(--out)"}}
 function syEkle(kod,n){kod=String(kod||"").trim();if(!kod)return;
   const u=pzKimlikUrun({barkod:kod,stokKodu:kod});
-  if(!u){syBip(false);syMesaj("❌ Ürün bulunamadı: "+kod,false);return}
+  if(!u){syBip(false);syMesaj("❌ Ürün bulunamadı: "+kod,false);return `<span style="color:var(--out);font-weight:700">❌ Ürün bulunamadı: ${esc(kod)}</span>`}
   n=Math.round(Number(n)||1);if(!n)return;const sifir=sy.sifir&&!sy.ilk.has(u.id)&&n>0;sy.ilk.add(u.id);
   const kayit={uid:u.id,n,z:Date.now()};sy.log.push(kayit);syBip(true);
   syMesaj((n>0?"✓ +":"↩ ")+fmtMiktar(n)+" · "+u.ad+" (yazılıyor…)",true);syListeCiz();
@@ -4390,7 +4398,10 @@ function syEkle(kod,n){kod=String(kod||"").trim();if(!kod)return;
     const once=sifir?0:(y&&Number(x.gercekZaman)!==y.z?y.v:(gercekStok(x)??0));const yeni=Math.max(0,r2(once+n)),z=Date.now();
     const {id:_,...rest}=x;await api.setDoc("urunler",x.id,{...rest,gercekSayim:yeni,gercekZaman:z});sy.yerel.set(x.id,{v:yeni,z});
     if(sy.log[sy.log.length-1]===kayit)syMesaj((n>0?"✓ +":"↩ ")+fmtMiktar(n)+" · "+x.ad+" → gerçek stok "+fmtMiktar(yeni),true);syListeCiz()})
-  .catch(err=>{sy.log.splice(sy.log.indexOf(kayit),1);syBip(false);syMesaj("❌ Kaydedilemedi ("+u.ad+"): "+errMsg(err),false);syListeCiz()})}
+  .catch(err=>{sy.log.splice(sy.log.indexOf(kayit),1);syBip(false);syMesaj("❌ Kaydedilemedi ("+u.ad+"): "+errMsg(err),false);syListeCiz();
+    const bi=document.getElementById("kamBilgi");if(bi)bi.innerHTML=`<span style="color:var(--out);font-weight:700">❌ Kaydedilemedi: ${esc(u.ad)}</span>`});
+  const top=sy.log.filter(x=>x.uid===u.id).reduce((s,x)=>s+x.n,0);
+  return `<span style="color:var(--in);font-weight:700">✓ ${n>0?"+":""}${fmtMiktar(n)}</span> · ${esc(u.ad)} <span class="muted">(bu sayımda ${fmtMiktar(top)})</span><br><span class="muted">Sıradakini okutun</span>`}
 function sayimBagla(){const k=document.getElementById("syKok");if(!k)return;syListeCiz();
   const b=k.querySelector("#syBarkod"),a=k.querySelector("#syAdet");if(!b)return;
   const gonder=()=>{const n=Number(a.value)||1;if(n<1||n>100000){syMesaj("Adet 1 ile 100000 arasında olmalı",false);return}
@@ -4399,9 +4410,12 @@ function sayimBagla(){const k=document.getElementById("syKok");if(!k)return;syLi
   a.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();b.focus()}});
   a.addEventListener("input",()=>{sy.adet=a.value});
   k.querySelector("#syEkle").addEventListener("click",gonder);
-  k.querySelector("#sySifir").addEventListener("change",e=>{sy.sifir=e.target.checked;b.focus()});
-  k.addEventListener("click",e=>{const x=e.target.closest("[data-sy=eksi]");if(!x)return;const u=state.urunler.find(y=>y.id===x.dataset.id);if(u)syEkle(u.barkod||u.kod,-1);b.focus()});
-  setTimeout(()=>b.focus(),0)}
+  k.querySelector("#syKamera").addEventListener("click",()=>kameraAc((kod,n)=>syEkle(kod,n),{surekli:true,adet:true,baslik:"Stok sayımı — barkod okut"}));
+  const dokun=!!(window.matchMedia&&matchMedia("(pointer:coarse)").matches),odak=()=>{if(!dokun)b.focus()};
+  k.querySelector("#sySifir").addEventListener("change",e=>{sy.sifir=e.target.checked;odak()});
+  k.addEventListener("click",e=>{const x=e.target.closest("[data-sy=eksi]");if(!x)return;const u=state.urunler.find(y=>y.id===x.dataset.id);if(u)syEkle(u.barkod||u.kod,-1);odak()});
+  // Dokunmatik telefonda klavye açılmasın diye kendiliğinden odaklanmaz (kamera düğmesi kullanılır); bilgisayarda barkod okuyucu için odaklanır
+  if(!(window.matchMedia&&matchMedia("(pointer:coarse)").matches))setTimeout(()=>b.focus(),0)}
 const SQ_PZ=["trendyol","hepsiburada","n11","pazarama"];
 const sq={firma:null,liste:[],hata:{},yuk:false,zaman:0,taslak:{},gonder:{},nesil:0};
 const sqKey=q=>q.pazaryeri+"|"+q.id;
