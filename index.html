@@ -42,7 +42,12 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .wrap{max-width:none;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
 .top-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:12px}
-.brand{display:flex;flex-direction:row;align-items:center;gap:12px;min-width:0;flex:1}
+.brand{display:flex;flex-direction:row;align-items:center;gap:12px;min-width:0;flex:0 1 auto;max-width:420px}
+/* Muhasebe sekmeleri: üst satırda firma adının yanında, kırmızı */
+nav.muh-tabs{flex:1 1 auto;min-width:0;margin-right:auto;gap:2px}
+nav.muh-tabs a{color:#d32f2f;padding:8px 10px}
+nav.muh-tabs a:hover{color:#b71c1c}
+nav.muh-tabs a[aria-current="page"]{color:#b71c1c;border-color:#d32f2f}
 .brand h1{font-family:var(--font-display);font-size:1.35rem;margin:0;line-height:1.15;letter-spacing:-.01em}
 .brand .firma{color:var(--muted);background:none;border:0;padding:0;text-align:left;cursor:pointer;font:inherit;font-size:.9rem;font-weight:600;line-height:1.25;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .brand .firma:hover{color:var(--accent)}
@@ -260,7 +265,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
 /* ---------- Mobil (telefon) düzeni ---------- */
 .alt-nav,.alt-menu{display:none}
 @media (max-width:700px){
-  nav.tabs{display:none}
+  nav.tabs,nav.muh-tabs{display:none}
   .top-row{gap:8px;padding-block:8px}
   .logo-baslik img{height:32px}
   .brand{gap:8px}.brand .firma{font-size:.78rem}
@@ -325,9 +330,12 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
   <div class="wrap">
     <div class="top-row">
       <div class="brand">
-        <h1 class="logo-baslik"><img src="logo-yatay.png" alt="Arvenato" width="190" height="40"><span class="gizli">Ön Muhasebe</span></h1>
+        <h1 class="logo-baslik"><a href="#ozet" title="Anasayfa" style="display:block"><img src="logo-yatay.png" alt="Arvenato — Anasayfa" width="190" height="40"><span class="gizli">Ön Muhasebe</span></a></h1>
         <button class="firma" id="firmaBtn" type="button">Firma adını girin</button>
       </div>
+      <nav class="tabs muh-tabs" id="muhTabs" aria-label="Muhasebe">
+        <a href="#faturalar">Faturalar</a><a href="#cariler">Cariler</a><a href="#bankalar">Bankalar</a><a href="#gelirler">Gelirler</a><a href="#giderler">Giderler</a><a href="#hareketler">Hareketler</a><a href="#rapor">Aylık rapor</a><a href="#odemeler">Kira ve Faturalar</a><a href="#personeller">Personeller</a>
+      </nav>
       <button class="ghost small" id="yedekBtn" type="button" title="Tüm kayıtları JSON dosyası olarak indir">Yedek al</button>
       <button class="ghost small" id="hesapBtn" type="button" title="Hesabım, kullanıcılar, yedek">Hesabım</button>
       <button class="primary" id="newBtn" type="button">+ Yeni kayıt</button>
@@ -341,17 +349,8 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
       <a href="#pazaryeri">Pazaryeri</a>
       <a href="#sorular" id="sqSekme">Sorular</a>
       <a href="#kar">Kâr hesabı</a>
-      <a href="#faturalar">Faturalar</a>
-      <a href="#cariler">Cariler</a>
-      <a href="#personeller">Personeller</a>
-      <a href="#bankalar">Bankalar</a>
-      <a href="#gelirler">Gelirler</a>
-      <a href="#giderler">Giderler</a>
-      <a href="#hareketler">Hareketler</a>
       <a href="#teklifler">Teklifler</a>
-      <a href="#rapor">Aylık rapor</a>
       <a href="#ajanda">Ajanda</a>
-      <a href="#odemeler">Kira ve Faturalar</a>
       <a href="#siparis" class="sekme-firma-sip">Firma Siparişleri</a>
       <button type="button" class="bild-btn" id="bildBtn" aria-label="Bildirimler" aria-haspopup="dialog">🔔 Bildirimler<span class="bild-sayi" id="bildSayi" hidden></span></button>
     </nav>
@@ -470,7 +469,7 @@ function setView(){
   const h=(location.hash||"").replace("#",""),once=view;
   view=VIEWS.includes(h)?h:"ozet";
   if(once!==view&&typeof urunSecim!=="undefined")urunSecim.clear();if(once!==view&&typeof cariSecim!=="undefined")cariSecim.clear();// sekme değişince ürün seçimi temizlenir
-  document.querySelectorAll("#tabs a,#altNav a,#altMenu a").forEach(a=>{
+  document.querySelectorAll("#tabs a,#muhTabs a,#altNav a,#altMenu a").forEach(a=>{
     if(a.getAttribute("href")==="#"+view)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");
   });
   altMenuAc(false);
