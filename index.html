@@ -4804,6 +4804,20 @@ function pzSiparisPanel(){
           ${ty&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?(p.s.faturaNo?`<span class="muted" title="Trendyol'daki fatura numarası">🧾 ${esc(p.s.faturaNo)}</span>`:(k=>k&&k.ortam==="canli"?`<span class="muted">🧾 ${esc(k.invoiceId)}</span>`:`<button class="small ghost" data-act="pzFatura" data-id="${esc(p.s.paketId)}" type="button">🧾 ${k?"Test ✓":"Faturalandır"}</button>`)(pzFatKayit(p.s.paketId))):""}
           ${!ty&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?(fat=>fat?`<button class="small ghost" type="button" data-act="fGor" data-id="${esc(fat.id)}" title="${esc(fat.no)}">📄 Faturayı gör</button>`:`<button class="small ghost" type="button" data-act="pzFatEkle" data-id="${esc(p.s.paketId)}">➕ Fatura ekle</button>`)(pzSipFatura(p.s)):""}</div></td></tr>`).join("")}
     </tbody></table></div>`:""}</div>`}
+/* ---------- Siparişlerde toplu seçim: kutularla seçilen siparişlere toplu işlem (kargo fişi yazdır) ----------
+   Seçim pazaryeri başına tutulur ("pz|paketId"); başka pazaryerine geçince o pazaryerinin seçimi görünür. */
+const pzSipSec=new Set();
+function pzSipSecilen(pzAd){return (pz.siparisler||[]).filter(s=>pzSipSec.has(pzAd+"|"+s.paketId))}
+function pzSipSecBar(l,pzAd){const sec=pzSipSecilen(pzAd);if(!sec.length)return `<div class="muted" style="font-size:.8rem">☑ Kutularla sipariş seçip toplu işlem yapabilirsiniz (ör. kargo fişlerini tek seferde yazdırma).</div>`;
+  const yaz=sec.filter(s=>String(s.kargoTakip||"").trim()&&!/Cancelled|Returned|UnSupplied/.test(s.durum)).length;
+  return `<div class="notice" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5"><b>${sec.length.toLocaleString("tr-TR")} sipariş seçili</b>
+    <button class="small primary" type="button" data-act="pzSecKargo" ${yaz?"":"disabled"} title="${yaz<sec.length?esc((sec.length-yaz)+" siparişin kargo kodu yok ya da iptal/iade; onlar atlanır"):""}">🖨 Kargo fişlerini yazdır (${yaz})</button>
+    <button class="small" type="button" data-act="pzSecHepsi">Listedekilerin hepsini seç (${Math.min(l.length,500)})</button>
+    <button class="small ghost" type="button" data-act="pzSecTemizle">Seçimi temizle</button></div>`}
+document.addEventListener("change",e=>{const t=e.target;if(!t||!t.dataset)return;const pzAd=pz.pazaryeri||"trendyol";
+  if(t.dataset.pzsec!==undefined){const k=pzAd+"|"+t.dataset.pzsec;if(t.checked)pzSipSec.add(k);else pzSipSec.delete(k);render();return}
+  if(t.dataset.pzsechepsi!==undefined){const tbl=t.closest("table");const ids=tbl?[...tbl.querySelectorAll("[data-pzsec]")].map(x=>x.dataset.pzsec):[];
+    for(const id of ids){if(t.checked)pzSipSec.add(pzAd+"|"+id);else pzSipSec.delete(pzAd+"|"+id)}render()}});
 /* ---------- e-Fatura / e-Arşiv kes (pazaryeri dışı satışlar; Trendyol e-Faturam canlı hesabı) ----------
    Trendyol e-Faturam yalnızca dükkan bilgisayarının internet adresini kabul ettiği için fatura her zaman o bilgisayardaki
    köprüden kesilir. Telefon ya da başka cihaz faturayı SIRAYA yazar (ayar/efkes-<id>, durum "bekliyor"); köprüsü olan
@@ -7121,8 +7135,9 @@ function vPazaryeri(){
       ${pz.okuma?`<div class="muted" style="font-size:.8rem">${pz.okuma.kismi?`Kayıtlı liste kullanıldı, son 21 gün ${esc(PZ_ADLAR[pz.pazaryeri]+PZ_EK[pz.pazaryeri])} yenilendi`:`Tamamı ${esc(PZ_ADLAR[pz.pazaryeri]+PZ_EK[pz.pazaryeri])} okundu`} (${(pz.okuma.sure/1000).toFixed(1)} sn) · son tam okuma ${new Date(pz.okuma.tamZaman).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})} <button class="small ghost" data-act="pzTamYenile" type="button">↻ Tamamını yeniden oku</button></div>`:""}
       <div class="filters"><select id="fPzDurum" data-filter="pzDurum" aria-label="Durum"><option value="">Tüm durumlar</option>${durumlar.map(d=>`<option value="${esc(d)}" ${ui.pzDurum===d?"selected":""}>${esc(PZ_DURUM[d]||d)}</option>`).join("")}</select>
         <input id="fPzAra" type="search" data-filter="pzAra" value="${esc(ui.pzAra||"")}" placeholder="Sipariş no, müşteri, ürün, barkod…" style="flex:1;min-width:180px"></div>
-      ${l.length?`<div class="tscroll"><table><thead><tr><th>Tarih</th><th>Sipariş no</th><th>Müşteri</th><th>Ürünler</th><th>Durum</th><th class="num">Tutar</th><th>Kargo / fatura</th></tr></thead><tbody>
-        ${l.slice(0,500).map(s=>{const fat=pzSipFatura(s),iptal=/Cancelled|Returned|UnSupplied/.test(s.durum),kod=String(s.kargoTakip||"").trim();return `<tr><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b>${pzCanli.yeniler.has(s.paketId)?` <span class="chip satis">Yeni</span>`:""}${pzSonGonderimHtml(s)}</td>
+      ${l.length?pzSipSecBar(l,pzAd):""}
+      ${l.length?`<div class="tscroll"><table><thead><tr><th style="width:34px"><input type="checkbox" data-pzsechepsi="1" aria-label="Görünen siparişlerin hepsini seç" title="Görünen siparişlerin hepsini seç" ${l.slice(0,500).every(s=>pzSipSec.has(pzAd+"|"+s.paketId))?"checked":""}></th><th>Tarih</th><th>Sipariş no</th><th>Müşteri</th><th>Ürünler</th><th>Durum</th><th class="num">Tutar</th><th>Kargo / fatura</th></tr></thead><tbody>
+        ${l.slice(0,500).map(s=>{const fat=pzSipFatura(s),iptal=/Cancelled|Returned|UnSupplied/.test(s.durum),kod=String(s.kargoTakip||"").trim();return `<tr${pzSipSec.has(pzAd+"|"+s.paketId)?' style="background:rgba(23,98,77,.07)"':""}><td><input type="checkbox" data-pzsec="${esc(s.paketId)}" ${pzSipSec.has(pzAd+"|"+s.paketId)?"checked":""} aria-label="Siparişi seç"></td><td class="date">${pzTarih(s.siparisTarihi)}</td><td class="date" style="color:var(--fg)"><b>${esc(s.siparisNo)}</b>${pzCanli.yeniler.has(s.paketId)?` <span class="chip satis">Yeni</span>`:""}${pzSonGonderimHtml(s)}</td>
           <td>${esc(s.faturaAd||s.musteri)}${s.vergiNo?`<div class="muted" style="font-size:.78rem">VKN ${esc(s.vergiNo)}${s.firma?" · "+esc(s.firma):""}</div>`:""}<div class="muted" style="font-size:.78rem">${esc([s.ilce,s.il].filter(Boolean).join(" / "))}</div></td>
           <td style="font-size:.85rem">${s.satirlar.map(x=>`<div style="display:flex;gap:8px;align-items:center;margin:2px 0">${pzUrunResim(pzKimlikUrun(x),40)}<div>${esc(x.adet)} × ${esc(x.ad)} <span class="muted">(${money(x.birimFiyat)}${x.kdvOran?" · %"+x.kdvOran:""})</span>${x.barkod?tdKucuk(x.barkod):""}${pzUrunStokHtml(pzKimlikUrun(x),x,s)}</div></div>`).join("")}</td>
           <td><span class="chip ${s.durum==="Delivered"?"satis":/Cancelled|Returned|UnSupplied|UnDelivered/.test(s.durum)?"alis":""}">${esc(PZ_DURUM[s.durum]||s.durum)}</span>${s.teslimTarihi?`<div class="muted" style="font-size:.75rem">${pzTarih(s.teslimTarihi)}</div>`:""}${s.durum==="Delivered"&&ty?`<div><button class="small ghost" data-act="pzFatura" data-id="${esc(s.paketId)}" type="button" title="e-Fatura taslağı (gönderim yalnızca TEST hesabıyla)" style="padding:2px 6px;font-size:.75rem">🧾 ${pzFatKayit(s.paketId)?"Test ✓":"Fatura"}</button></div>`:""}</td>
@@ -7592,6 +7607,9 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="pzAnaSec"){if(PZ_ADLAR[id]){Object.assign(pz,{pazaryeri:id,sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";if(location.hash==="#pazaryeri")render();else location.hash="#pazaryeri"}}
   else if(a==="kargoFis")kargoFisModal(id);
   else if(a==="kargoTek"){const s=(pz.siparisler||[]).find(x=>x.paketId===id);if(s)kargoFisYazdir(pz.pazaryeri,[s]).catch(err=>toast("Barkod hazırlanamadı: "+(err.message||err)))}
+  else if(a==="pzSecKargo"){const k=pz.pazaryeri||"trendyol";const l=pzSipSecilen(k).filter(s=>String(s.kargoTakip||"").trim()&&!/Cancelled|Returned|UnSupplied/.test(s.durum));if(l.length)kargoFisYazdir(k,l).catch(err=>toast("Barkod hazırlanamadı: "+(err.message||err)))}
+  else if(a==="pzSecHepsi"){const k=pz.pazaryeri||"trendyol";document.querySelectorAll("[data-pzsec]").forEach(x=>pzSipSec.add(k+"|"+x.dataset.pzsec));render()}
+  else if(a==="pzSecTemizle"){const k=pz.pazaryeri||"trendyol";for(const x of [...pzSipSec])if(x.startsWith(k+"|"))pzSipSec.delete(x);render()}
   else if(a==="pzFatEkle")pzFaturaEkle(id);
   else if(a==="pzSec"){if(PZ_ADLAR[id]&&pz.pazaryeri!==id){Object.assign(pz,{pazaryeri:id,sekme:/^eslesme/.test(pz.sekme)?pz.sekme:"siparis",siparisler:null,hakedis:null,bag:null,okuma:null,hata:"",yuk:"",zaman:0});ui.pzDurum="";render()}}
   else if(a==="pzTamYenile"){if(!pz.yuk)pzGetir(true)}
