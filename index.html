@@ -42,13 +42,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .wrap{max-width:none;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
 .top-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:12px}
-.brand{display:flex;flex-direction:column;min-width:0;flex:1}
+.brand{display:flex;flex-direction:row;align-items:center;gap:12px;min-width:0;flex:1}
 .brand h1{font-family:var(--font-display);font-size:1.35rem;margin:0;line-height:1.15;letter-spacing:-.01em}
-.brand .firma{color:var(--muted);font-size:.85rem;background:none;border:0;padding:0;text-align:left;cursor:pointer;font:inherit;font-size:.85rem}
+.brand .firma{color:var(--muted);background:none;border:0;padding:0;text-align:left;cursor:pointer;font:inherit;font-size:.9rem;font-weight:600;line-height:1.25;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .brand .firma:hover{color:var(--accent)}
 /* Üst menü (v142: yan menüden eski üst sekmelere geri dönüldü) */
 nav.tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:0}
-nav.tabs a{padding:10px 14px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.92rem;border-bottom:2px solid transparent;white-space:nowrap}
+nav.tabs a{padding:10px 14px;color:var(--muted);text-decoration:none;font-weight:700;font-size:1.02rem;border-bottom:2px solid transparent;white-space:nowrap}
 nav.tabs a[aria-current="page"]{color:var(--fg);border-color:var(--accent)}
 nav.tabs a.sekme-firma-sip,.alt-menu a.sekme-firma-sip{color:#d32f2f;font-size:1.05rem;font-weight:700}
 nav.tabs a.sekme-firma-sip[aria-current="page"]{color:#d32f2f;border-color:#d32f2f}
@@ -263,6 +263,7 @@ body.kapali header.top,body.kapali .wrap>main{display:none}
   nav.tabs{display:none}
   .top-row{gap:8px;padding-block:8px}
   .logo-baslik img{height:32px}
+  .brand{gap:8px}.brand .firma{font-size:.78rem}
   #yedekBtn{display:none}
   main{padding-block:14px calc(90px + env(safe-area-inset-bottom,0px));gap:14px}
   .wrap{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
@@ -2093,13 +2094,16 @@ async function faturaPdfAl(f){
       else{try{son=(await r.json()).hata||""}catch(e){}}}
     catch(e){son=e.name==="AbortError"?"zaman aşımı":"köprüye ulaşılamadı"}finally{clearTimeout(t)}}
   throw new Error(son||"PDF alınamadı")}
-function faturaGorModal(id){
+// opts.wa: fatura yeni kesildi ve "kesilince WhatsApp'tan gönder" seçili; üstte büyük gönder düğmesi gösterilir (tek dokunuş)
+function faturaGorModal(id,opts={}){
   const f=state.faturalar.find(x=>x.id===id);if(!f)return;let pdf=null,pdfUrl="";
+  const waTel=(()=>{const c=f.cariId&&state.cariler.find(x=>x.id===f.cariId);return String(f.telefon||(c&&c.telefon)||"").trim()})();
   openModal(`<div class="section-head"><h2>${esc(f.no)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">${esc(teklifMusteri(f))} · ${money(f.toplam)}</div>
+    ${opts.wa&&f.tur==="satis"?`<div class="notice" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-color:#25D366"><b style="flex:1;min-width:200px">✓ Fatura kesildi. Müşteriye gönderin:</b><button type="button" data-m="wa" style="background:#25D366;color:#fff;border-color:#25D366;padding:12px 18px;font-size:1rem;font-weight:700">📲 WhatsApp'tan gönder${waTel?" · "+esc(waTel):""}</button></div>`:""}
     <div class="muted" id="fgDurum" role="status" style="font-size:.85rem"></div>
     <iframe id="fgCerceve" title="Fatura ${esc(f.no)}" style="width:100%;height:80vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>
-    <div class="modal-foot"><button type="button" data-m="yazdir">Yazdır</button><button type="button" data-m="indir">İndir</button><button type="button" class="primary" data-m="close">Kapat</button></div>`,
+    <div class="modal-foot">${f.tur==="satis"?`<button type="button" data-m="wa" style="background:#25D366;color:#fff;border-color:#25D366">WhatsApp'tan gönder</button>`:""}<button type="button" data-m="yazdir">🖨 Yazdır</button><button type="button" data-m="indir">İndir</button><button type="button" class="primary" data-m="close">Kapat</button></div>`,
   root=>{root.style.maxWidth="min(1200px,96vw)";const c=root.querySelector("#fgCerceve"),d=root.querySelector("#fgDurum");
     const ozet=neden=>{try{c.removeAttribute("src");c.srcdoc=teklifHtml(faturaBelge(f))}catch(e){}d.innerHTML=`<span style="color:var(--out)">Orijinal fatura açılamadı${neden?" ("+esc(neden)+")":""}; programdaki bilgilerden hazırlanan özet gösteriliyor.</span>${f.ettn?" Orijinali görmek için programı e-Fatura köprüsünün kurulu olduğu bilgisayarda açın.":" Bu fatura e-Faturam'dan alınmadığı için orijinali programda yok."}`};
     const kapat=()=>{if(pdfUrl)setTimeout(()=>URL.revokeObjectURL(pdfUrl),1000);closeModal()};
@@ -2109,9 +2113,21 @@ function faturaGorModal(id){
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-m]");if(!b)return;const a=b.dataset.m;
       if(a==="close")kapat();
       else if(a==="yazdir"){try{if(pdfUrl){const w=window.open(pdfUrl,"_blank");if(!w)toast("Açılır pencere engellendi")}else{c.contentWindow.focus();c.contentWindow.print()}}catch(err){toast("Yazdırılamadı")}}
-      else if(a==="indir"){if(pdf){if(await dosyaKaydet(f.no+".pdf",pdf))toast(f.no+" indirildi")}else{kapat();faturaIndirModal(id)}}})});
+      else if(a==="indir"){if(pdf){if(await dosyaKaydet(f.no+".pdf",pdf))toast(f.no+" indirildi")}else{kapat();faturaIndirModal(id)}}
+      else if(a==="wa")faturaWhatsapp(f,pdf)})});
 }
-function faturaIndirModal(id){
+/* Faturayı WhatsApp'tan gönderir. Orijinal PDF varsa (köprülü bilgisayar) cihazın paylaş menüsüyle PDF olarak paylaşılır
+   (WhatsApp seçilir); paylaş menüsü dosya desteklemiyorsa PDF indirilir ve WhatsApp sohbeti mesajla açılır, PDF sohbete eklenir.
+   Numara faturadan ya da cariden alınır (0 / +90 ile yazılmış olabilir); yoksa WhatsApp kişi seçerek açılır. */
+function waNumara(t){let d=String(t||"").replace(/\D/g,"");if(!d)return "";if(d.startsWith("0090"))d=d.slice(2);else if(d.startsWith("0"))d="90"+d.slice(1);else if(d.length===10&&d.startsWith("5"))d="90"+d;return d.length>=11?d:""}
+async function faturaWhatsapp(f,pdf){
+  const c=f.cariId&&state.cariler.find(x=>x.id===f.cariId),tel=waNumara(f.telefon||(c&&c.telefon));
+  const metin=`Merhaba, ${f.no} numaralı faturanız (${money(f.toplam)}) ektedir. İyi günler dileriz.`;
+  if(pdf){const dosya=new File([pdf],f.no+".pdf",{type:"application/pdf"});
+    try{if(navigator.canShare&&navigator.canShare({files:[dosya]})){await navigator.share({files:[dosya],text:metin,title:f.no});return}}catch(e){if(e&&e.name==="AbortError")return}
+    try{if(await dosyaKaydet(f.no+".pdf",pdf))toast("PDF indirildi: WhatsApp sohbetine ataç 📎 ile ekleyin",7000)}catch(e){}}
+  else toast("Orijinal PDF bu cihazda alınamadı (dükkan bilgisayarındaki köprü gerekir); yalnız mesaj açılıyor. PDF için faturayı dükkan bilgisayarından gönderin.",8000);
+  const w=window.open("https://wa.me/"+tel+"?text="+encodeURIComponent(metin),"_blank");if(!w)toast("WhatsApp açılamadı: tarayıcı açılır pencereyi engelledi")}function faturaIndirModal(id){
   const f=state.faturalar.find(x=>x.id===id);if(!f)return;const t=faturaBelge(f);
   openModal(`<div class="section-head"><h2>${esc(f.no)} · indir</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">${esc(teklifMusteri(f))} · ${money(f.toplam)}</div>
@@ -4792,14 +4808,14 @@ function efkGovde(v,tip,ref){
   const satirlar=v.satirlar.map(s=>({ad:String(s.ad).trim(),adet:Number(s.miktar),kdv:Number(s.kdv)||0,dahil:pzKurus(Number(s.fiyat)*Number(s.miktar)*(1-(Number(s.isk)||0)/100))})).filter(x=>x.dahil>0&&x.adet>0);
   const vkn=v.tur==="nihai"?"11111111111":String(v.vkn).replace(/\D/g,"");
   const ad=v.tur==="firma"?v.unvan:[v.ad,v.soyad].filter(Boolean).join(" ")||"Nihai Tüketici";
-  const g=pzFaturaGovde({satirlar,alici:{ad,vkn,il:v.il,ilce:v.ilce,adres:v.adres,vergiDairesi:v.tur==="firma"?v.vergiDairesi:"",eposta:v.eposta},tip,no:ref});
-  const r=g.recipientInfo;if(v.tur==="firma"){r.name=String(v.unvan).trim().slice(0,127);delete r.surname}
+  const g=pzFaturaGovde({satirlar,alici:{ad,vkn,il:v.il,ilce:v.ilce,adres:v.adres,vergiDairesi:v.tur==="nihai"?"":String(v.vergiDairesi||"").trim(),eposta:v.eposta},tip,no:ref});
+  const r=g.recipientInfo;if(!String(r.address||"").trim())delete r.address;if(v.tur==="firma"){r.name=String(v.unvan).trim().slice(0,127);delete r.surname}
   else{r.name=String(v.tur==="nihai"&&!v.ad?"Nihai":v.ad).trim().slice(0,127);r.surname=String(v.tur==="nihai"&&!v.soyad?"Tüketici":v.soyad).trim().slice(0,127)}
   g.localReferenceId=ref.slice(0,127);g.notes=v.not?[String(v.not).slice(0,250)]:[];return g}
 function efkEksikler(v){const e=[];const vkn=String(v.vkn||"").replace(/\D/g,"");
   if(v.tur==="firma"){if(!vknGecerli(vkn)&&!tcknGecerli(vkn))e.push("geçerli vergi no (10 hane)");if(!String(v.unvan||"").trim())e.push("ünvan");if(String(v.vergiDairesi||"").trim().length<2)e.push("vergi dairesi")}
   else if(v.tur==="sahis"){if(!tcknGecerli(vkn))e.push("geçerli TC kimlik no (11 hane)");if(!String(v.ad||"").trim())e.push("ad");if(!String(v.soyad||"").trim())e.push("soyad")}
-  if(!v.il)e.push("il");if(!String(v.ilce||"").trim())e.push("ilçe");if(String(v.adres||"").trim().length<5)e.push("adres");
+  if(!v.il)e.push("il");if(!String(v.ilce||"").trim())e.push("ilçe"); // adres e-Faturam'da zorunlu değil
   if(v.eposta&&!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v.eposta).trim()))e.push("geçerli e-posta");
   const sat=(v.satirlar||[]).filter(s=>String(s.ad||"").trim());if(!sat.length)e.push("en az bir ürün / hizmet");
   if(sat.some(s=>!(Number(s.miktar)>0)))e.push("her satırda miktar");if(sat.some(s=>!(Number(s.fiyat)>0)))e.push("her satırda fiyat");
@@ -4811,24 +4827,23 @@ function efKesForm(d){
   if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}
   if(!efatProfil()){toast("Bu firmanın e-Faturam hesabı seçilmemiş: Hesabım › Pazaryeri ve e-Fatura ayarları");return}
   const vb=varsayilanBanka();const bos=()=>({urunId:"",ad:"",miktar:1,fiyat:"",kdv:20,isk:0});
-  const v=d||{tur:"sahis",vkn:"",ad:"",soyad:"",unvan:"",vergiDairesi:"",il:"",ilce:"",adres:"",eposta:"",cariId:"",cariKaydet:true,odeme:"kasa",bankaId:vb?vb.id:"",stokEtki:true,not:"",satirlar:[bos()]};
+  const v=d||{tur:"nihai",vkn:"",ad:"",soyad:"",unvan:"",vergiDairesi:"",il:"",ilce:"",adres:"",eposta:"",cariId:"",cariKaydet:true,odeme:"kasa",bankaId:vb?vb.id:"",stokEtki:true,not:"",satirlar:[bos()]};
   const cariler=state.cariler.filter(c=>c.tur!=="tedarikci").slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   const lbl='style="display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600"',inp='style="font-size:1rem;padding:10px"';
   const aliciHtml=()=>`
-    <div class="filters" role="radiogroup" aria-label="Alıcı türü" style="gap:6px">${[["sahis","👤 Şahıs (TC kimlik)"],["firma","🏢 Firma (vergi no)"],["nihai","🧍 Nihai tüketici"]].map(([k,t])=>`<button type="button" class="${v.tur===k?"primary":""}" data-e="tur" data-v="${k}" role="radio" aria-checked="${v.tur===k}">${t}</button>`).join("")}</div>
     ${cariler.length?`<label ${lbl}>Kayıtlı müşteriden doldur<select id="efCari" ${inp}><option value="">— Seçin (isteğe bağlı) —</option>${cariler.map(c=>`<option value="${c.id}" ${v.cariId===c.id?"selected":""}>${esc(c.ad)}${c.vergiNo?" · "+esc(c.vergiNo):""}</option>`).join("")}</select></label>`:""}
+    <label ${lbl}>Vergi no / TC kimlik no <span class="muted" style="font-weight:400">(firma 10 hane · şahıs 11 hane · boş bırakılırsa nihai tüketici)</span><input data-v="vkn" value="${esc(v.vkn)}" inputmode="numeric" maxlength="11" autocomplete="off" placeholder="Boş = nihai tüketici (e-Arşiv)" ${inp}></label>
+    <div id="efMk" role="status" style="font-size:.86rem">${v.tur==="nihai"?`<span class="chip">e-Arşiv</span> Nihai tüketici: TC kimlik no yerine <b>11111111111</b> yazılır; ad soyad isteğe bağlı.`:v.mkHtml||""}</div>
     <div class="grid2">
-      ${v.tur==="nihai"?`<div class="muted" style="font-size:.82rem;align-self:center">TC kimlik no yerine <b>11111111111</b> yazılır (e-Arşiv).</div>`
-        :`<label ${lbl}>${v.tur==="firma"?"Vergi no *":"TC kimlik no *"}<input data-v="vkn" value="${esc(v.vkn)}" inputmode="numeric" maxlength="11" autocomplete="off" ${inp}></label>`}
-      ${v.tur==="firma"?`<label ${lbl}>Vergi dairesi *<input data-v="vergiDairesi" value="${esc(v.vergiDairesi)}" ${inp}></label>`:""}
-      ${v.tur==="firma"?`<label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Ünvan *<input data-v="unvan" value="${esc(v.unvan)}" ${inp}></label>`
-        :`<label ${lbl}>Ad${v.tur==="nihai"?"":" *"}<input data-v="ad" value="${esc(v.ad)}" autocomplete="off" ${inp}></label><label ${lbl}>Soyad${v.tur==="nihai"?"":" *"}<input data-v="soyad" value="${esc(v.soyad)}" autocomplete="off" ${inp}></label>`}
+      ${v.tur==="firma"?`<label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Ünvan *<input data-v="unvan" value="${esc(v.unvan)}" ${inp}></label><label ${lbl}>Vergi dairesi *<input data-v="vergiDairesi" value="${esc(v.vergiDairesi)}" ${inp}></label>`
+        :`<label ${lbl}>Ad${v.tur==="nihai"?"":" *"}<input data-v="ad" value="${esc(v.ad)}" autocomplete="off" ${inp}></label><label ${lbl}>Soyad${v.tur==="nihai"?"":" *"}<input data-v="soyad" value="${esc(v.soyad)}" autocomplete="off" ${inp}></label>${v.tur==="sahis"?`<label ${lbl}>Vergi dairesi <span class="muted" style="font-weight:400">(isteğe bağlı)</span><input data-v="vergiDairesi" value="${esc(v.vergiDairesi)}" ${inp}></label>`:""}`}
       <label ${lbl}>İl *<select data-v="il" ${inp}><option value="">Seçin</option>${IL81.map(i=>`<option ${v.il===i?"selected":""}>${i}</option>`).join("")}</select></label>
       <label ${lbl}>İlçe *<input data-v="ilce" value="${esc(v.ilce)}" ${inp}></label>
-      <label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Adres *<textarea data-v="adres" rows="2" style="font-size:1rem;padding:10px">${esc(v.adres)}</textarea></label>
+      <label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Adres <span class="muted" style="font-weight:400">(isteğe bağlı)</span><textarea data-v="adres" rows="2" style="font-size:1rem;padding:10px">${esc(v.adres)}</textarea></label>
       <label ${lbl}>E-posta <span class="muted" style="font-weight:400">(isteğe bağlı; fatura müşteriye gider)</span><input data-v="eposta" type="email" inputmode="email" value="${esc(v.eposta)}" ${inp}></label>
+      <label ${lbl}>Telefon <span class="muted" style="font-weight:400">(isteğe bağlı)</span><input data-v="telefon" type="tel" inputmode="tel" value="${esc(v.telefon||"")}" placeholder="05xx xxx xx xx" ${inp}></label>
+      <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center;font-size:.9rem"><input type="checkbox" data-v="waGonder" ${v.waGonder!==false?"checked":""}> <span style="color:#128C7E;font-weight:600">Fatura kesilince WhatsApp'tan gönder</span> <span class="muted" style="font-size:.8rem">(telefon yazılıysa o numaraya; yazılı değilse kişi seçilir)</span></label>
     </div>
-    <div id="efMk" role="status" style="font-size:.86rem">${v.tur==="nihai"?`<span class="chip">e-Arşiv</span>`:v.mkHtml||`<span class="muted">Vergi / TC kimlik no yazınca e-Fatura mükellefi olup olmadığı sorgulanır, ünvan / ad soyad gelir.</span>`}</div>
     ${v.tur!=="nihai"&&!v.cariId?`<label style="display:flex;gap:8px;align-items:center;font-size:.88rem"><input type="checkbox" data-v="cariKaydet" ${v.cariKaydet?"checked":""}> Müşteriyi cariye kaydet (sonraki faturada seçilir)</label>`:""}`;
   const satirHtml=()=>v.satirlar.map((s,i)=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px">
       <div style="display:flex;gap:8px;align-items:flex-end"><label ${lbl} style="flex:1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Ürün / hizmet *<input data-s="ad" data-i="${i}" list="efUrunList" value="${esc(s.ad)}" placeholder="Ürün adı yazın ya da barkod okutun" ${inp}></label>
@@ -4880,7 +4895,7 @@ function efKesForm(d){
       const c=state.cariler.find(x=>String(x.vergiNo||"").replace(/\D/g,"")===no);
       if(c){if(!v.cariId){v.cariId=c.id;const cs=$("#efCari");if(cs)cs.value=c.id}
         if(v.tur==="firma")doldur("unvan",c.ad);else{const p=String(c.ad).trim().split(/\s+/);if(p.length>1){doldur("soyad",p[p.length-1]);doldur("ad",p.slice(0,-1).join(" "))}}
-        doldur("vergiDairesi",c.vergiDairesi);doldur("ilce",c.ilce);doldur("adres",c.adres);doldur("eposta",c.eposta);
+        doldur("vergiDairesi",c.vergiDairesi);doldur("telefon",c.telefon);doldur("ilce",c.ilce);doldur("adres",c.adres);doldur("eposta",c.eposta);
         if(c.il&&!v.il){v.il=c.il;const s=root.querySelector('[data-v="il"]');if(s)s.value=c.il}}
       mkYaz(`<span class="muted">🔎 Mükellef sorgulanıyor…</span>${c?` · <span class="chip ok">Kayıtlı cari: ${esc(c.ad)}</span>`:""}`);
       let mk=null,ulasti=true;try{mk=await efkIstek("/mukellef",{vkn:no,profil:efatProfil()},8000)}catch(e){ulasti=false}
@@ -4895,6 +4910,10 @@ function efKesForm(d){
     root.addEventListener("input",e=>{const t=e.target;
       if(t.id==="efNot"){v.not=t.value;return}if(t.id==="efStok"){v.stokEtki=t.checked;return}
       if(t.dataset.v==="vkn"){const no=t.value.replace(/\D/g,"");v.vkn=no;if(no!==t.value)t.value=no;
+        // Alıcı türü numaradan: boş = nihai tüketici, geçerli 10 hane = firma, 11 hane = şahıs (ara uzunlukta değişmez)
+        const tr=!no?"nihai":no.length===10&&vknGecerli(no)?"firma":no.length===11?"sahis":v.tur==="nihai"?"sahis":v.tur;
+        if(tr!==v.tur){v.tur=tr;v.mkHtml="";aliciCiz();const i=root.querySelector('[data-v="vkn"]');if(i){i.focus();try{i.setSelectionRange(no.length,no.length)}catch(_){}}}
+        if(!no){mkSira++;return}
         if((no.length===10&&vknGecerli(no))||(no.length===11&&tcknGecerli(no)))vknBak(no);
         else{mkSira++;mkYaz(no.length>=10?`<span class="neg">Numara geçersiz görünüyor (${no.length===10?"vergi no":"TC kimlik no"} kontrol hanesi tutmuyor).</span>`:`<span class="muted">Vergi no 10, TC kimlik no 11 hane.</span>`)}return}
       if(t.dataset.v){v[t.dataset.v]=t.type==="checkbox"?t.checked:t.value;return}
@@ -4902,13 +4921,13 @@ function efKesForm(d){
         if(k==="ad"){const u=state.urunler.find(x=>x.ad===t.value.trim());if(u&&s.urunId!==u.id){s.urunId=u.id;s.fiyat=r2(Number(u.satisFiyat)||0)||"";s.kdv=Number(u.kdvOran??20);satirCiz();const n=root.querySelector(`[data-s="miktar"][data-i="${t.dataset.i}"]`);if(n)n.focus();return}else if(!u)s.urunId=""}
         const tt=$("#efTt"+t.dataset.i);if(tt)tt.textContent=money(r2((Number(s.fiyat)||0)*(Number(s.miktar)||0)*(1-(Number(s.isk)||0)/100)));$("#efTop").innerHTML=topHtml()}});
     root.addEventListener("change",e=>{const t=e.target;
-      if(t.dataset.v==="il"||t.dataset.v==="cariKaydet")v[t.dataset.v]=t.type==="checkbox"?t.checked:t.value;
+      if(t.dataset.v==="il"||t.dataset.v==="cariKaydet"||t.dataset.v==="waGonder")v[t.dataset.v]=t.type==="checkbox"?t.checked:t.value;
       if(t.dataset.s==="kdv"){const s=v.satirlar[Number(t.dataset.i)];if(s){s.kdv=Number(t.value);$("#efTop").innerHTML=topHtml()}}
       if(t.id==="efOdeme"){v.odeme=t.value;const bf=$("#efBankaF");if(bf)bf.hidden=t.value!=="banka"}
       if(t.id==="efBanka")v.bankaId=t.value;if(t.id==="efStok")v.stokEtki=t.checked;
       if(t.id==="efCari"){v.cariId=t.value;const c=state.cariler.find(x=>x.id===t.value);
-        if(c){const no=String(c.vergiNo||"").replace(/\D/g,"");v.vkn=no;if(no.length===10){v.tur="firma";v.unvan=c.ad}else{v.tur="sahis";const p=String(c.ad).trim().split(/\s+/);v.soyad=p.length>1?p.pop():"";v.ad=p.join(" ")}
-          v.vergiDairesi=c.vergiDairesi||"";v.il=c.il||v.il;v.ilce=c.ilce||v.ilce;v.adres=c.adres||v.adres;v.eposta=c.eposta||v.eposta}aliciCiz()}});
+        if(c){const no=String(c.vergiNo||"").replace(/\D/g,"");v.vkn=no;if(no.length===10){v.tur="firma";v.unvan=c.ad}else{v.tur=no.length===11?"sahis":"nihai";const p=String(c.ad).trim().split(/\s+/);v.soyad=p.length>1?p.pop():"";v.ad=p.join(" ")}
+          v.vergiDairesi=c.vergiDairesi||"";v.telefon=c.telefon||v.telefon||"";v.il=c.il||v.il;v.ilce=c.ilce||v.ilce;v.adres=c.adres||v.adres;v.eposta=c.eposta||v.eposta}aliciCiz()}});
     root.addEventListener("click",async e=>{const b=e.target.closest("[data-e],[data-m]");if(!b)return;
       if(b.dataset.m==="close")return closeModal();const a=b.dataset.e;
       if(a==="tur"){v.tur=b.dataset.v;if(v.tur==="nihai"){v.cariId=""}aliciCiz();return}
@@ -4931,7 +4950,9 @@ function efKesForm(d){
         // Yeni kayıt state'e realtime ile gelmeden işlenemez; kısa süre beklenir
         for(let i=0;i<20&&!(state.ayarEk||{})[id];i++)await new Promise(r=>setTimeout(r,250));
         const sonuc=await efkKuyrukIsle(id);
-        if(sonuc.durum==="kesildi"){closeModal();toast("Fatura kesildi ✓ "+(sonuc.invoiceId||""));render();return}
+        if(sonuc.durum==="kesildi"){closeModal();toast("Fatura kesildi ✓ "+(sonuc.invoiceId||""));render();
+          for(let i=0;i<20&&!state.faturalar.some(f=>f.id===sonuc.faturaId);i++)await new Promise(r=>setTimeout(r,250));
+          if(state.faturalar.some(f=>f.id===sonuc.faturaId))faturaGorModal(sonuc.faturaId,{wa:v.waGonder!==false});return}
         if(sonuc.durum==="hata"||sonuc.durum==="belirsiz"){closeModal();toast("Fatura kesilemedi: "+(sonuc.hata||"bilinmeyen hata")+" (Faturalar sayfasındaki listede)",8000);render();return}
         closeModal();toast("Fatura sıraya alındı: dükkan bilgisayarında program açıkken birkaç saniye içinde kesilir. Durumu Faturalar sayfasında görürsünüz.");render()}
       catch(err){er.textContent=errMsg(err);b.disabled=false}})});
@@ -4949,7 +4970,7 @@ async function efkKuyrukIsle(id){const bek={durum:"bekliyor"};
   efkIsleniyor=true;let son=bek;const f0=firmaId;
   try{for(const k of l.reverse()){if(firmaId!==f0)break;const {id:kid,...rest}=k;
       await api.setDoc("ayar",kid,{...rest,durum:"kesiliyor",islemZaman:Date.now()});
-      try{const r=await efkKes(k.veri,kid,p);await api.setDoc("ayar",kid,{...rest,durum:"kesildi",invoiceId:r.invoiceId,tip:r.tip,uuid:r.uuid,faturaId:r.faturaId,kesimZaman:Date.now(),hata:""});son={durum:"kesildi",invoiceId:r.invoiceId}}
+      try{const r=await efkKes(k.veri,kid,p);await api.setDoc("ayar",kid,{...rest,durum:"kesildi",invoiceId:r.invoiceId,tip:r.tip,uuid:r.uuid,faturaId:r.faturaId,kesimZaman:Date.now(),hata:""});son={durum:"kesildi",invoiceId:r.invoiceId,faturaId:r.faturaId}}
       catch(err){const m=String(err&&err.message||err).slice(0,400),dd=err&&err.belirsiz?"belirsiz":"hata";
         try{await api.setDoc("ayar",kid,{...rest,durum:dd,hata:m,islemZaman:Date.now()})}catch(e2){console.warn("efk durum",e2)}son={durum:dd,hata:m}}}}
   finally{efkIsleniyor=false;try{localStorage.removeItem(kilitA)}catch(e){}}
@@ -4968,8 +4989,8 @@ async function efkKes(v,ref,p){
   // Programa kayıt: cari (istenirse), satış hareketleri (KDV oranına göre), stok çıkışı, satış faturası
   let cariId=v.cariId||"";const ad=v.tur==="firma"?v.unvan:[v.ad,v.soyad].filter(Boolean).join(" ")||"Nihai tüketici";
   const adresBil={adres:v.adres,il:v.il,ilce:v.ilce,...(v.eposta?{eposta:v.eposta}:{})};
-  try{if(cariId){const c=state.cariler.find(x=>x.id===cariId);if(c){const {id:_,...cr}=c;await api.setDoc("cariler",cariId,{...cr,...adresBil,vergiNo:cr.vergiNo||(vkn!=="11111111111"?vkn:""),vergiDairesi:cr.vergiDairesi||(v.tur==="firma"?v.vergiDairesi:"")})}}
-    else if(v.cariKaydet&&v.tur!=="nihai"){cariId=api.newId("cariler");await api.setDoc("cariler",cariId,{ad,tur:"musteri",telefon:"",vergiNo:vkn,vergiDairesi:v.tur==="firma"?v.vergiDairesi:"",...adresBil,olusturma:Date.now()})}}catch(e){console.warn("efk cari",e)}
+  try{if(cariId){const c=state.cariler.find(x=>x.id===cariId);if(c){const {id:_,...cr}=c;await api.setDoc("cariler",cariId,{...cr,...adresBil,vergiNo:cr.vergiNo||(vkn!=="11111111111"?vkn:""),vergiDairesi:cr.vergiDairesi||(v.tur==="firma"?v.vergiDairesi:""),telefon:cr.telefon||String(v.telefon||"").trim()})}}
+    else if(v.cariKaydet&&v.tur!=="nihai"){cariId=api.newId("cariler");await api.setDoc("cariler",cariId,{ad,tur:"musteri",telefon:String(v.telefon||"").trim(),vergiNo:vkn,vergiDairesi:v.tur==="nihai"?"":String(v.vergiDairesi||"").trim(),...adresBil,olusturma:Date.now()})}}catch(e){console.warn("efk cari",e)}
   const odeme=v.odeme==="acik"&&!cariId?"kasa":v.odeme,tarih=today(),no=String(y.invoiceId);
   const satirlar=v.satirlar.map(s=>{const net=r2(Number(s.fiyat)/(1+(Number(s.kdv)||0)/100));return {urunId:s.urunId||"",ad:s.ad,miktar:Number(s.miktar),birim:"Adet",birimFiyat:net,kdvOran:Number(s.kdv)||0,iskonto:Number(s.isk)||0}});
   const hareketIds=[],stokIds=[];
@@ -4980,7 +5001,7 @@ async function efkKes(v,ref,p){
   const net=r2(g.invoiceTotal.taxExclusiveAmount/100),kdv=r2(g.totalTax.totalTaxAmount/100),toplam=r2(g.invoiceTotal.payableAmount/100);
   const faturaId=api.newId("faturalar");
   await api.setDoc("faturalar",faturaId,{tur:"satis",no,cariId,musteriAd:cariId?"":ad,tarih,vade:"",odeme,bankaId:odeme==="banka"?v.bankaId:"",kanal:"Mağaza",stokEtki:!!v.stokEtki,satirlar,notlar:v.not||"",
-    araToplam:net,iskonto:0,net,kdv,toplam,hareketIds,stokIds,odemeIds:[],teklifId:"",ettn:y.invoiceUuid||"",efatura:{tip,ortam:"canli",vkn},kaynak:"efatura-kes",olusturma:Date.now()});
+    araToplam:net,iskonto:0,net,kdv,toplam,hareketIds,stokIds,odemeIds:[],teklifId:"",ettn:y.invoiceUuid||"",efatura:{tip,ortam:"canli",vkn},telefon:String(v.telefon||"").trim(),eposta:String(v.eposta||"").trim(),kaynak:"efatura-kes",olusturma:Date.now()});
   return {invoiceId:no,tip,uuid:y.invoiceUuid||"",faturaId}}
 // Faturalar sayfasındaki sıra / son kesilenler kutusu
 function efkListeHtml(){const l=efkKayitlar().filter(k=>!k.firma||k.firma===firmaId);if(!l.length)return "";
@@ -4991,7 +5012,7 @@ function efkListeHtml(){const l=efkKayitlar().filter(k=>!k.firma||k.firma===firm
       return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:8px 10px">
         <span class="chip ${d[1]}">${d[0]}</span><b>${esc(k.alici||"")}</b><span>${money(k.toplam||0)}</span><span class="muted" style="font-size:.8rem">${new Date(k.olusturma||0).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>
         ${k.invoiceId?`<span class="muted" style="font-size:.82rem">${esc(k.tip==="EFATURA"?"e-Fatura":"e-Arşiv")} ${esc(k.invoiceId)}</span>`:""}<span style="flex:1"></span>
-        ${fat?`<button class="small ghost" type="button" data-act="fGor" data-id="${esc(fat.id)}">📄 Gör</button>`:""}
+        ${fat?`<button class="small ghost" type="button" data-act="fGor" data-id="${esc(fat.id)}">📄 Görüntüle / yazdır</button><button class="small" type="button" data-act="fWa" data-id="${esc(fat.id)}" style="background:#25D366;color:#fff;border-color:#25D366">📲 WhatsApp</button>`:""}
         ${!state.readonly&&k.durum==="hata"?`<button class="small" type="button" data-act="efkTekrar" data-id="${esc(k.id)}">↻ Yeniden dene</button>`:""}
         ${!state.readonly&&(k.durum==="hata"||k.durum==="bekliyor"||k.durum==="belirsiz")?`<button class="small ghost danger" type="button" data-act="efkSil" data-id="${esc(k.id)}">Sil</button>`:""}
         ${k.hata?`<div class="neg" style="flex-basis:100%;font-size:.82rem">${esc(k.hata)}</div>`:""}
@@ -7467,6 +7488,7 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="fatAktar")faturaAktarSecim();
   else if(a==="efatSenk")efatSenk(true);
   else if(a==="efKes")efKesForm();
+  else if(a==="fWa")faturaGorModal(id,{wa:true});
   else if(a==="efkTekrar"||a==="efkSil"){const k=(state.ayarEk||{})[id];if(!k||state.readonly)return;
     if(a==="efkSil"){if(!confirm("Bu e-Fatura kaydı listeden silinsin mi?"+(k.durum==="belirsiz"?"\n\nÖnce e-Faturam portalından faturanın kesilip kesilmediğini kontrol edin.":"")))return;api.del("ayar",id).then(()=>toast("Silindi")).catch(err=>toast(errMsg(err)))}
     else api.setDoc("ayar",id,{...k,durum:"bekliyor",hata:""}).then(()=>{toast("Yeniden sıraya alındı");setTimeout(()=>efkKuyrukIsle(id).then(s=>{if(s.durum!=="bekliyor")render()}),800)}).catch(err=>toast(errMsg(err)))}
