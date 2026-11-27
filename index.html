@@ -6659,7 +6659,9 @@ function pzIlanHazirla(){if(pzIlan.firma===firmaId)return;const f=firmaId;pzIlan
 // Ortak kopya: başka bir bilgisayarda daha yeni okunan / güncellenen pazaryerlerinin ilan durumları alınır
 async function pzIlanOrtakCek(f){if(pzIlanIs||!sb||!f||pzIlan.firma!==f)return;const l=await pzOrtak.zamanlar(f,"ilan-");if(!l||pzIlan.firma!==f)return;let n=0;
   for(const r of l){const p=String(r.anahtar).slice(5),y=pzIlan.veri[p];if(!PZ_ILAN.includes(p)||(y&&(y.degis||y.zaman||0)>=Number(r.zaman)))continue;
-    const s=await pzOrtak.al(f,r.anahtar);if(pzIlan.firma!==f||pzIlanIs)return;if(!s||!s.veri||!s.veri.m)continue;pzIlan.veri[p]=Object.assign({},s.veri,{degis:Number(s.zaman)});n++}
+    const s=await pzOrtak.al(f,r.anahtar);if(pzIlan.firma!==f||pzIlanIs)return;if(!s||!s.veri||!s.veri.m)continue;
+    // Baştan okuma zamanı bizimkinden eski olan kopya alınmaz (eski bir okuma, üstündeki küçük değişiklikler yüzünden yeni sanılıyordu; 2026-11-27)
+    {const yk=pzIlan.veri[p];if(yk&&Number(s.veri.zaman||0)<Number(yk.zaman||0))continue}pzIlan.veri[p]=Object.assign({},s.veri,{degis:Number(s.zaman)});n++}
   if(n){await pzDepo.koy("ilan-"+f,pzIlan.veri);render()}}
 function pzIlanOrtakGonder(f,pzl){for(const p of pzl){const d=pzIlan.veri[p];if(d&&d.m&&pzIlan.firma===f)pzOrtak.koy(f,"ilan-"+p,d,d.degis||d.zaman||Date.now())}}
 function pzIlanDurum(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return null;const b=pzKimlik(u.barkod),k=pzKimlik(u.kod);const v=(b&&d.m[b])||(k&&d.m[k]);if(v)return v;
