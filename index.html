@@ -2245,9 +2245,11 @@ function sayiFiltre(ifade,deger){const s=String(ifade).toLocaleLowerCase("tr").t
   if((m=/^(>=|<=|>|<|=)?\s*(.+)$/.exec(s))){const n=sayiOku(m[2]);if(!isFinite(n))return true;switch(m[1]){case ">":return v>n;case "<":return v<n;case ">=":return v>=n;case "<=":return v<=n;default:return Math.abs(v-n)<0.005}}
   return true}
 // Ürünler sayfası sekmeleri: Ürünler · Kategoriler · Markalar (her kategori/markada kaç ürün olduğu)
+// Trendyol'da ilanı olup stoğu 0 olan ürün (son ilan okumasına göre)
+function pzTyTukendi(u){const d=pzIlanDurum(u,"trendyol");return !!d&&!(Math.floor(Number(d[1])||0)>0)}
 function urunSekmeHtml(){const s=ui.uSekme||"urunler";
-  const tuk=state.urunler.filter(u=>stokMiktar(u)<=0).length,sip=state.urunler.filter(u=>u.siparisVerilecek).length;
-  return `${s==="tukenen"?`<div class="notice" style="font-size:.85rem">⛔ <b>Tükenen ürünler:</b> stoğu 0 ya da eksi olan ürünler kendiliğinden burada listelenir; stok girince listeden düşer. Normal ürün listesinde de görünmeye devam ederler.</div>`:s==="siparis"?`<div class="notice" style="font-size:.85rem">🛒 <b>Sipariş verilecekler:</b> ürün satırındaki <b>🛒</b> düğmesiyle eklediğiniz ürünler. Normal listede de kalırlar. Siparişi verince <b>✓ Verildi</b> ile listeden çıkarın.</div>`:""}<div class="filters" role="tablist" aria-label="Ürünler bölümü">${[["urunler","📦 Ürünler"],["tukenen","⛔ Tükenenler ("+tuk.toLocaleString("tr-TR")+")"],["siparis","🛒 Sipariş verilecekler ("+sip.toLocaleString("tr-TR")+")"],["kategori","📂 Kategoriler"],["marka","🏷️ Markalar"],["gonderim","🚀 Pazaryeri gönderimleri"]].map(([k,ad])=>`<button class="small ${s===k?"primary":""}" data-act="uSekme" data-id="${k}" type="button" role="tab" aria-selected="${s===k}">${ad}</button>`).join("")}</div>`}
+  const tuk=state.urunler.filter(u=>stokMiktar(u)<=0||pzTyTukendi(u)).length,sip=state.urunler.filter(u=>u.siparisVerilecek).length;
+  return `${s==="tukenen"?`<div class="notice" style="font-size:.85rem">⛔ <b>Tükenen ürünler:</b> programdaki stoğu 0 ya da eksi olan ürünler ile <b>Trendyol'da stoğu 0 olan</b> ürünler kendiliğinden burada listelenir; stok girince listeden düşer. Normal ürün listesinde de görünmeye devam ederler.</div>`:s==="siparis"?`<div class="notice" style="font-size:.85rem">🛒 <b>Sipariş verilecekler:</b> ürün satırındaki <b>🛒</b> düğmesiyle eklediğiniz ürünler. Normal listede de kalırlar. Siparişi verince <b>✓ Verildi</b> ile listeden çıkarın.</div>`:""}<div class="filters" role="tablist" aria-label="Ürünler bölümü">${[["urunler","📦 Ürünler"],["tukenen","⛔ Tükenenler ("+tuk.toLocaleString("tr-TR")+")"],["siparis","🛒 Sipariş verilecekler ("+sip.toLocaleString("tr-TR")+")"],["kategori","📂 Kategoriler"],["marka","🏷️ Markalar"],["gonderim","🚀 Pazaryeri gönderimleri"]].map(([k,ad])=>`<button class="small ${s===k?"primary":""}" data-act="uSekme" data-id="${k}" type="button" role="tab" aria-selected="${s===k}">${ad}</button>`).join("")}</div>`}
 function urunGrupHtml(tur){
   const alan=tur==="marka"?"marka":"kategori",AD=tur==="marka"?"Marka":"Kategori";
   const m=new Map();
@@ -2278,7 +2280,7 @@ function vStok(){
   const markalar=[...new Set(state.urunler.map(u=>u.marka).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"tr"));
   const all=state.urunler.map(u=>({...u,miktar:stokMiktar(u),durum:stokDurum(u),gercek:gercekStok(u)}));
   const kf=ui.sKol||{};const kolUy=u=>URUN_KOL.every(c=>{const v=(kf[c.k]||"").trim();if(!v)return true;return c.sayi?sayiFiltre(v,c.deger(u)):_norm(c.deger(u)).includes(_norm(v))});
-  const list=all.filter(u=>(!q||[u.ad,u.kod,u.barkod,u.kategori,u.marka].join(" ").toLocaleLowerCase("tr").includes(q))&&(!ui.sKat||u.kategori===ui.sKat)&&(!ui.sMarka||u.marka===ui.sMarka)&&(!ui.sDurum||u.durum===ui.sDurum)&&(ui.uSekme!=="tukenen"||u.miktar<=0)&&(ui.uSekme!=="siparis"||u.siparisVerilecek)&&pzIlanFiltre(u,ui.sPz)&&kolUy(u)).sort(URUN_SIRA[ui.sSira]?URUN_SIRA[ui.sSira][1]:URUN_SIRA.adAZ[1]);
+  const list=all.filter(u=>(!q||[u.ad,u.kod,u.barkod,u.kategori,u.marka].join(" ").toLocaleLowerCase("tr").includes(q))&&(!ui.sKat||u.kategori===ui.sKat)&&(!ui.sMarka||u.marka===ui.sMarka)&&(!ui.sDurum||u.durum===ui.sDurum)&&(ui.uSekme!=="tukenen"||u.miktar<=0||pzTyTukendi(u))&&(ui.uSekme!=="siparis"||u.siparisVerilecek)&&pzIlanFiltre(u,ui.sPz)&&kolUy(u)).sort(URUN_SIRA[ui.sSira]?URUN_SIRA[ui.sSira][1]:URUN_SIRA.adAZ[1]);
   const kolVar=URUN_KOL.some(c=>(kf[c.k]||"").trim());
   for(const id of [...urunSecim])if(!state.urunler.some(u=>u.id===id))urunSecim.delete(id);
   stokListeSon=list.map(u=>u.id);
