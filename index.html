@@ -5493,7 +5493,7 @@ function pzDenemeHedefler(){return pzDenemeKodlar().map(kod=>{const u=pzKimlikUr
 async function pzBagliAl(){if(pzOto.bagli&&pzOto.firma===firmaId)return pzOto.bagli;
   try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:firmaId});pzOto.bagli=(data||[]).map(x=>x.pazaryeri).filter(k=>PZ_ADLAR[k]&&!PZ_OTO_HARIC.includes(k))}catch(e){}
   return pzOto.bagli||["trendyol"]}
-let _pzStokCalisiyor=false;
+let _pzStokCalisiyor=false,_pzStokYazSon=0;
 async function pzStokEsitle(bagli){
   if(_pzStokCalisiyor||state.readonly||state.guncelleniyor||!pzStokOtoAcik())return 0;
   _pzStokCalisiyor=true;const f=firmaId;let n=0;
@@ -5529,7 +5529,8 @@ async function pzStokEsitle(bagli){
             if(x.durum==="gonderildi")n++;else if(x.durum==="hata")bildir.push(PZ_ADLAR[pzAd]+" "+h.kod+": "+x.mesaj)}}
         catch(e){for(const h of parca)K[h.kod]={stok:h.stok,zaman:simdi,durum:"hata",mesaj:(e.message||String(e)).slice(0,200),tekrar:simdi+PZ_STOK_BEKLE};bildir.push(PZ_ADLAR[pzAd]+": "+(e.message||e))}}
       degisti=true}
-    if(degisti&&f===firmaId)await api.setDoc("ayar","pazaryeriStok",kayit);
+    // Veritabanı yükü: kayıt yalnız yeni gönderim / hata olduğunda ya da 5 dakikada bir yazılır (yalnız sonuç temizliği için her dakika yazılmaz)
+    if(degisti&&f===firmaId&&(n>0||bildir.length||Date.now()-_pzStokYazSon>5*60000)){_pzStokYazSon=Date.now();await api.setDoc("ayar","pazaryeriStok",kayit)}
     // Gönderimlerin sonucu ~15 saniye sonra sorulur (dakikalık turu beklemeden)
     if(n){toast("Deneme ürünleri: "+n+" stok gönderimi yapıldı");setTimeout(pzStokTetikle,12000)}
     if(bildir.length)toast("Stok gönderilemedi: "+bildir[0]+(bildir.length>1?" (+"+(bildir.length-1)+")":""));
@@ -6799,7 +6800,10 @@ function pzIlanYaz(u,p,v){const d=pzIlan.veri[p];if(!d||!d.m||pzIlan.firma!==fir
 let _pzIlanKayZ=null,_pzIlanOrtakZ=null;const _pzIlanDegisen=new Set();
 function pzIlanSakla(){clearTimeout(_pzIlanKayZ);const f=firmaId;_pzIlanKayZ=setTimeout(()=>{if(pzIlan.firma===f)pzDepo.koy("ilan-"+f,pzIlan.veri)},500);
   // Tek tek güncellenen rozetler ortak kopyaya toplu gönderilir (20 saniye sessizlikten sonra)
-  clearTimeout(_pzIlanOrtakZ);_pzIlanOrtakZ=setTimeout(()=>{if(pzIlan.firma!==f)return;const l=[..._pzIlanDegisen];_pzIlanDegisen.clear();pzIlanOrtakGonder(f,l)},20000)}
+  // Veritabanı yükü (2026-11-27): ortak kopya her pazaryeri için büyük bir kayıt; en fazla 15 dakikada bir gönderilir
+  clearTimeout(_pzIlanOrtakZ);const bek=Math.max(20000,_pzIlanOrtakSon+15*60000-Date.now());
+  _pzIlanOrtakZ=setTimeout(()=>{if(pzIlan.firma!==f)return;const l=[..._pzIlanDegisen];_pzIlanDegisen.clear();_pzIlanOrtakSon=Date.now();pzIlanOrtakGonder(f,l)},bek)}
+let _pzIlanOrtakSon=0;
 /* Yeni açılanları kontrol: baştan okumak yerine yalnız programdan açılmış (gönderildi / açıldı) ama rozeti henüz aktif olmayan ürünler
    tek tek sorulur. Program açıkken kendiliğinden ~30 dakikada bir çalışır; "↻ Yenileri kontrol et" ile hemen çalıştırılabilir. */
 let _pzYeniIs=false,_pzYeniSon=0;
@@ -7925,7 +7929,7 @@ async function tumunuYukle(){const iz=new Map();_yukIzle.add(iz);try{await _tumu
    ("guncelleme" sütunu; cihaz saatleri farklı olabileceği için 3 saat geriden başlanır). Sunucudaki kayıt sayısı bizimkini
    tutmazsa (başka cihazda silinen kayıt vb.) ya da son tam okumanın üstünden 24 saat geçtiyse hepsi baştan okunur. */
 const KY_TAM_SURE=24*3600000,KY_PAY=3*3600000;
-async function _tumunuYukle(iz){const f=firmaId,N=1000;
+async function _tumunuYukle(iz){const f=firmaId,N=300;// küçük sayfa: yoğun anda tek sorgu zaman aşımına düşmesin
   const tekrar=async q=>{for(let d=0;;d++){const {data,error}=await q();if(!error)return data;if(d>=2)throw error;await new Promise(r=>setTimeout(r,800*(d+1)))}};
   const parca=from=>tekrar(()=>sb.from("kayitlar").select("koleksiyon,id,veri").eq("firma_id",f).order("koleksiyon").order("id").range(from,from+N-1));
   // Sunucudaki en son değişiklik zamanı: okumadan ÖNCE alınır (okuma sırasında yazılanlar bir sonrakinde gelir)
@@ -7944,7 +7948,7 @@ async function _tumunuYukle(iz){const f=firmaId,N=1000;
     rows=[];
     if(ce||!(count>=0)){for(let from=0;;from+=N){const d=await parca(from);rows.push(...d);if(d.length<N)break}}
     else{const bas=[];for(let from=0;from<count+N;from+=N)bas.push(from);const sonuc=new Array(bas.length);let i=0;
-      await Promise.all(Array.from({length:Math.min(6,bas.length)},async()=>{while(i<bas.length){const k=i++;sonuc[k]=await parca(bas[k])}}));
+      await Promise.all(Array.from({length:Math.min(2,bas.length)},async()=>{while(i<bas.length){const k=i++;sonuc[k]=await parca(bas[k])}}));
       rows=sonuc.flat()}
     tamZaman=Date.now()}
   if(f!==firmaId)return;kayitUygula(rows);for(const x of iz.values())yerelUygula(x.col,x.id,x.veri);
