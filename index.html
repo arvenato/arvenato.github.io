@@ -1833,7 +1833,8 @@ function vFaturalar(){
   const sAy=all.filter(f=>f.tur==="satis"&&ym(f.tarih)===buAy),aAy=all.filter(f=>f.tur==="alis"&&ym(f.tarih)===buAy);
   const tahsil=r2(all.filter(f=>f.tur==="satis").reduce((s,f)=>s+faturaKalan(f),0)),borc=r2(all.filter(f=>f.tur==="alis").reduce((s,f)=>s+faturaKalan(f),0));
   const gecen=all.filter(f=>faturaDurum(f)==="gecti");
-  return `<section class="section-head"><h2>Faturalar</h2>${state.readonly?"":`<div class="filters"><button class="small" data-act="efatSenk" type="button" title="Trendyol e-Faturam'daki gelen ve giden faturaları şimdi al">⚡ Trendyol'dan al</button><button class="small" data-act="fatAktar" type="button">Excel / PDF yükle</button><button class="small" data-act="newFatura" data-tur="alis" type="button">+ Alış faturası</button><button class="primary small" data-act="newFatura" data-tur="satis" type="button">+ Satış faturası</button></div>`}</section>
+  return `<section class="section-head"><h2>Faturalar</h2>${state.readonly?"":`<div class="filters"><button class="small" data-act="efatSenk" type="button" title="Trendyol e-Faturam'daki gelen ve giden faturaları şimdi al">⚡ Trendyol'dan al</button><button class="small" data-act="fatAktar" type="button">Excel / PDF yükle</button><button class="small" data-act="newFatura" data-tur="alis" type="button">+ Alış faturası</button><button class="primary small" data-act="newFatura" data-tur="satis" type="button">+ Satış faturası</button>${efatProfil()?`<button class="primary" data-act="efKes" type="button" title="Trendyol e-Faturam'dan gerçek e-Fatura / e-Arşiv keser (pazaryeri dışı satış)">🧾 e-Fatura kes</button>`:""}</div>`}</section>
+  ${efkListeHtml()}
   <section class="kpis">
     ${kpi("Bu ay satış faturası",money(sum(sAy)),sAy.length+" fatura",false,sAy.length>0)}
     ${kpi("Bu ay alış faturası",money(sum(aAy)),aAy.length+" fatura")}
@@ -4772,6 +4773,204 @@ function pzSiparisPanel(){
           ${ty&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?(p.s.faturaNo?`<span class="muted" title="Trendyol'daki fatura numarası">🧾 ${esc(p.s.faturaNo)}</span>`:(k=>k&&k.ortam==="canli"?`<span class="muted">🧾 ${esc(k.invoiceId)}</span>`:`<button class="small ghost" data-act="pzFatura" data-id="${esc(p.s.paketId)}" type="button">🧾 ${k?"Test ✓":"Faturalandır"}</button>`)(pzFatKayit(p.s.paketId))):""}
           ${!ty&&!/Cancelled|Returned|UnSupplied/.test(p.s.durum)?(fat=>fat?`<button class="small ghost" type="button" data-act="fGor" data-id="${esc(fat.id)}" title="${esc(fat.no)}">📄 Faturayı gör</button>`:`<button class="small ghost" type="button" data-act="pzFatEkle" data-id="${esc(p.s.paketId)}">➕ Fatura ekle</button>`)(pzSipFatura(p.s)):""}</div></td></tr>`).join("")}
     </tbody></table></div>`:""}</div>`}
+/* ---------- e-Fatura / e-Arşiv kes (pazaryeri dışı satışlar; Trendyol e-Faturam canlı hesabı) ----------
+   Trendyol e-Faturam yalnızca dükkan bilgisayarının internet adresini kabul ettiği için fatura her zaman o bilgisayardaki
+   köprüden kesilir. Telefon ya da başka cihaz faturayı SIRAYA yazar (ayar/efkes-<id>, durum "bekliyor"); köprüsü olan
+   bilgisayarda program açıkken sıra ~30 sn'de bir işlenir. Kesilince programa satış faturası (stok çıkışı, satış kaydı)
+   e-Fatura numarası ve ETTN ile yazılır; e-Faturam'dan alınırken aynı fatura ikinci kez eklenmez.
+   Her fatura gönderilmeden önce kullanıcı onayı alınır. Yarıda kalan ("kesiliyor" iken kopan) kayıt otomatik yeniden
+   denenmez (çift fatura olmasın): e-Faturam'dan kontrol edilip elle sonuçlandırılır. */
+const IL81=["Adana","Adıyaman","Afyonkarahisar","Ağrı","Aksaray","Amasya","Ankara","Antalya","Ardahan","Artvin","Aydın","Balıkesir","Bartın","Batman","Bayburt","Bilecik","Bingöl","Bitlis","Bolu","Burdur","Bursa","Çanakkale","Çankırı","Çorum","Denizli","Diyarbakır","Düzce","Edirne","Elazığ","Erzincan","Erzurum","Eskişehir","Gaziantep","Giresun","Gümüşhane","Hakkari","Hatay","Iğdır","Isparta","İstanbul","İzmir","Kahramanmaraş","Karabük","Karaman","Kars","Kastamonu","Kayseri","Kilis","Kırıkkale","Kırklareli","Kırşehir","Kocaeli","Konya","Kütahya","Malatya","Manisa","Mardin","Mersin","Muğla","Muş","Nevşehir","Niğde","Ordu","Osmaniye","Rize","Sakarya","Samsun","Şanlıurfa","Siirt","Sinop","Sivas","Şırnak","Tekirdağ","Tokat","Trabzon","Tunceli","Uşak","Van","Yalova","Yozgat","Zonguldak"];
+function tcknGecerli(t){if(!/^[1-9]\d{10}$/.test(t))return false;const d=t.split("").map(Number);
+  const d10=((d[0]+d[2]+d[4]+d[6]+d[8])*7-(d[1]+d[3]+d[5]+d[7]))%10;if(((d10%10)+10)%10!==d[9])return false;return d.slice(0,10).reduce((a,b)=>a+b,0)%10===d[10]}
+function vknGecerli(v){if(!/^\d{10}$/.test(v))return false;const d=v.split("").map(Number);let s=0;
+  for(let i=0;i<9;i++){const t=(d[i]+9-i)%10;let x=(t*Math.pow(2,9-i))%9;if(t!==0&&x===0)x=9;s+=x}return (10-s%10)%10===d[9]}
+const efkKayitlar=()=>Object.entries(state.ayarEk||{}).filter(([k,v])=>k.startsWith("efkes-")&&v&&typeof v==="object").map(([k,v])=>({id:k,...v})).sort((a,b)=>(b.olusturma||0)-(a.olusturma||0));
+const EFK_DURUM={bekliyor:["⏳ Sırada","ornek"],kesiliyor:["🔄 Kesiliyor","ornek"],kesildi:["✓ Kesildi","ok"],hata:["✕ Kesilemedi","alis"],belirsiz:["⚠ Kontrol edin","alis"]};
+// Satırlardan e-Faturam gövdesi (fiyatlar KDV dahil girilir; iskonto fiyata yansıtılır)
+function efkGovde(v,tip,ref){
+  const satirlar=v.satirlar.map(s=>({ad:String(s.ad).trim(),adet:Number(s.miktar),kdv:Number(s.kdv)||0,dahil:pzKurus(Number(s.fiyat)*Number(s.miktar)*(1-(Number(s.isk)||0)/100))})).filter(x=>x.dahil>0&&x.adet>0);
+  const vkn=v.tur==="nihai"?"11111111111":String(v.vkn).replace(/\D/g,"");
+  const ad=v.tur==="firma"?v.unvan:[v.ad,v.soyad].filter(Boolean).join(" ")||"Nihai Tüketici";
+  const g=pzFaturaGovde({satirlar,alici:{ad,vkn,il:v.il,ilce:v.ilce,adres:v.adres,vergiDairesi:v.tur==="firma"?v.vergiDairesi:"",eposta:v.eposta},tip,no:ref});
+  const r=g.recipientInfo;if(v.tur==="firma"){r.name=String(v.unvan).trim().slice(0,127);delete r.surname}
+  else{r.name=String(v.tur==="nihai"&&!v.ad?"Nihai":v.ad).trim().slice(0,127);r.surname=String(v.tur==="nihai"&&!v.soyad?"Tüketici":v.soyad).trim().slice(0,127)}
+  g.localReferenceId=ref.slice(0,127);g.notes=v.not?[String(v.not).slice(0,250)]:[];return g}
+function efkEksikler(v){const e=[];const vkn=String(v.vkn||"").replace(/\D/g,"");
+  if(v.tur==="firma"){if(!vknGecerli(vkn)&&!tcknGecerli(vkn))e.push("geçerli vergi no (10 hane)");if(!String(v.unvan||"").trim())e.push("ünvan");if(String(v.vergiDairesi||"").trim().length<2)e.push("vergi dairesi")}
+  else if(v.tur==="sahis"){if(!tcknGecerli(vkn))e.push("geçerli TC kimlik no (11 hane)");if(!String(v.ad||"").trim())e.push("ad");if(!String(v.soyad||"").trim())e.push("soyad")}
+  if(!v.il)e.push("il");if(!String(v.ilce||"").trim())e.push("ilçe");if(String(v.adres||"").trim().length<5)e.push("adres");
+  if(v.eposta&&!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v.eposta).trim()))e.push("geçerli e-posta");
+  const sat=(v.satirlar||[]).filter(s=>String(s.ad||"").trim());if(!sat.length)e.push("en az bir ürün / hizmet");
+  if(sat.some(s=>!(Number(s.miktar)>0)))e.push("her satırda miktar");if(sat.some(s=>!(Number(s.fiyat)>0)))e.push("her satırda fiyat");
+  if(v.odeme==="acik"&&!v.cariId&&!v.cariKaydet)e.push("vadeli satış için cari (müşteriyi cariye kaydedin)");
+  return e}
+const efkToplam=v=>r2((v.satirlar||[]).filter(s=>String(s.ad||"").trim()).reduce((t,s)=>t+(Number(s.fiyat)||0)*(Number(s.miktar)||0)*(1-(Number(s.isk)||0)/100),0));
+// d: kamera penceresinden dönünce formun kaldığı bilgiler
+function efKesForm(d){
+  if(state.readonly){toast("Bu firmada kayıt yetkiniz yok");return}
+  if(!efatProfil()){toast("Bu firmanın e-Faturam hesabı seçilmemiş: Hesabım › Pazaryeri ve e-Fatura ayarları");return}
+  const vb=varsayilanBanka();const bos=()=>({urunId:"",ad:"",miktar:1,fiyat:"",kdv:20,isk:0});
+  const v=d||{tur:"sahis",vkn:"",ad:"",soyad:"",unvan:"",vergiDairesi:"",il:"",ilce:"",adres:"",eposta:"",cariId:"",cariKaydet:true,odeme:"kasa",bankaId:vb?vb.id:"",stokEtki:true,not:"",satirlar:[bos()]};
+  const cariler=state.cariler.filter(c=>c.tur!=="tedarikci").slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  const lbl='style="display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600"',inp='style="font-size:1rem;padding:10px"';
+  const aliciHtml=()=>`
+    <div class="filters" role="radiogroup" aria-label="Alıcı türü" style="gap:6px">${[["sahis","👤 Şahıs (TC kimlik)"],["firma","🏢 Firma (vergi no)"],["nihai","🧍 Nihai tüketici"]].map(([k,t])=>`<button type="button" class="${v.tur===k?"primary":""}" data-e="tur" data-v="${k}" role="radio" aria-checked="${v.tur===k}">${t}</button>`).join("")}</div>
+    ${cariler.length?`<label ${lbl}>Kayıtlı müşteriden doldur<select id="efCari" ${inp}><option value="">— Seçin (isteğe bağlı) —</option>${cariler.map(c=>`<option value="${c.id}" ${v.cariId===c.id?"selected":""}>${esc(c.ad)}${c.vergiNo?" · "+esc(c.vergiNo):""}</option>`).join("")}</select></label>`:""}
+    <div class="grid2">
+      ${v.tur==="nihai"?`<div class="muted" style="font-size:.82rem;align-self:center">TC kimlik no yerine <b>11111111111</b> yazılır (e-Arşiv).</div>`
+        :`<label ${lbl}>${v.tur==="firma"?"Vergi no *":"TC kimlik no *"}<input data-v="vkn" value="${esc(v.vkn)}" inputmode="numeric" maxlength="${v.tur==="firma"?10:11}" autocomplete="off" ${inp}></label>`}
+      ${v.tur==="firma"?`<label ${lbl}>Vergi dairesi *<input data-v="vergiDairesi" value="${esc(v.vergiDairesi)}" ${inp}></label>`:""}
+      ${v.tur==="firma"?`<label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Ünvan *<input data-v="unvan" value="${esc(v.unvan)}" ${inp}></label>`
+        :`<label ${lbl}>Ad${v.tur==="nihai"?"":" *"}<input data-v="ad" value="${esc(v.ad)}" autocomplete="off" ${inp}></label><label ${lbl}>Soyad${v.tur==="nihai"?"":" *"}<input data-v="soyad" value="${esc(v.soyad)}" autocomplete="off" ${inp}></label>`}
+      <label ${lbl}>İl *<select data-v="il" ${inp}><option value="">Seçin</option>${IL81.map(i=>`<option ${v.il===i?"selected":""}>${i}</option>`).join("")}</select></label>
+      <label ${lbl}>İlçe *<input data-v="ilce" value="${esc(v.ilce)}" ${inp}></label>
+      <label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Adres *<textarea data-v="adres" rows="2" style="font-size:1rem;padding:10px">${esc(v.adres)}</textarea></label>
+      <label ${lbl}>E-posta <span class="muted" style="font-weight:400">(isteğe bağlı; fatura müşteriye gider)</span><input data-v="eposta" type="email" inputmode="email" value="${esc(v.eposta)}" ${inp}></label>
+    </div>
+    ${v.tur!=="nihai"&&!v.cariId?`<label style="display:flex;gap:8px;align-items:center;font-size:.88rem"><input type="checkbox" data-v="cariKaydet" ${v.cariKaydet?"checked":""}> Müşteriyi cariye kaydet (sonraki faturada seçilir)</label>`:""}`;
+  const satirHtml=()=>v.satirlar.map((s,i)=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px">
+      <div style="display:flex;gap:8px;align-items:flex-end"><label ${lbl} style="flex:1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Ürün / hizmet *<input data-s="ad" data-i="${i}" list="efUrunList" value="${esc(s.ad)}" placeholder="Ürün adı yazın ya da barkod okutun" ${inp}></label>
+        ${v.satirlar.length>1?`<button type="button" class="small ghost danger" data-e="satirSil" data-i="${i}" style="padding:10px">Sil</button>`:""}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">
+        <label ${lbl}>Miktar *<input data-s="miktar" data-i="${i}" type="number" min="0" step="1" inputmode="decimal" value="${esc(s.miktar)}" ${inp}></label>
+        <label ${lbl}>Birim fiyat (KDV dahil) *<input data-s="fiyat" data-i="${i}" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(s.fiyat)}" ${inp}></label>
+        <label ${lbl}>KDV<select data-s="kdv" data-i="${i}" ${inp}>${KDV_ORAN.map(k=>`<option value="${k}" ${Number(s.kdv)===k?"selected":""}>%${k}</option>`).join("")}</select></label>
+        <label ${lbl}>İskonto %<input data-s="isk" data-i="${i}" type="number" min="0" max="100" step="1" inputmode="decimal" value="${esc(s.isk)}" ${inp}></label>
+      </div><div class="muted" style="font-size:.82rem;text-align:right" id="efTt${i}">${money(r2((Number(s.fiyat)||0)*(Number(s.miktar)||0)*(1-(Number(s.isk)||0)/100)))}</div></div>`).join("");
+  const topHtml=()=>{const t=efkToplam(v);let kdv=0;v.satirlar.forEach(s=>{const d=(Number(s.fiyat)||0)*(Number(s.miktar)||0)*(1-(Number(s.isk)||0)/100);kdv+=d-d/(1+(Number(s.kdv)||0)/100)});
+    return `<span>KDV ${money(r2(kdv))}</span><b style="font-size:1.15rem">Genel toplam ${money(t)}</b>`};
+  openModal(`<div class="section-head"><h2>🧾 e-Fatura / e-Arşiv kes</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+    <div class="muted" style="font-size:.82rem">Trendyol e-Faturam'dan <b>gerçek fatura</b> kesilir (pazaryeri dışı satışlar için). Alıcı e-Fatura mükellefiyse e-Fatura, değilse e-Arşiv olur. Tarih: bugün. <b>*</b> alanlar zorunlu.</div>
+    <h3 style="margin:6px 0 0;font-size:1rem">Alıcı</h3><div id="efAlici" style="display:grid;gap:10px">${aliciHtml()}</div>
+    <h3 style="margin:6px 0 0;font-size:1rem">Ürünler</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="efBarkod" placeholder="Barkod okutun / yazın + Enter" autocomplete="off" style="flex:1;min-width:180px;font-size:1rem;padding:10px"><button type="button" class="primary" data-e="kamera">📷 Kamerayla ekle</button></div>
+    <div id="efSatirlar" style="display:grid;gap:8px">${satirHtml()}</div>
+    <div><button type="button" class="small" data-e="satirEkle">+ Satır ekle</button></div>
+    <datalist id="efUrunList">${state.urunler.slice(0,3000).map(u=>`<option value="${esc(u.ad)}"></option>`).join("")}</datalist>
+    <div class="calc" id="efTop">${topHtml()}</div>
+    <h3 style="margin:6px 0 0;font-size:1rem">Ödeme ve not</h3>
+    <div class="grid2">
+      <label ${lbl}>Ödeme<select id="efOdeme" ${inp}>${[["kasa","Peşin · kasa (nakit)"],["banka","Peşin · banka / POS"],["acik","Vadeli (açık hesap · cari)"]].map(([k,t])=>`<option value="${k}" ${v.odeme===k?"selected":""}>${t}</option>`).join("")}</select></label>
+      ${state.bankalar.length?`<label ${lbl} id="efBankaF" ${v.odeme==="banka"?"":"hidden"}>Banka hesabı<select id="efBanka" ${inp}>${state.bankalar.map(b=>`<option value="${b.id}" ${v.bankaId===b.id?"selected":""}>${esc(bankaAd(b.id))}</option>`).join("")}</select></label>`:""}
+      <label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Fatura notu (isteğe bağlı)<input id="efNot" maxlength="250" value="${esc(v.not)}" ${inp}></label>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:.88rem"><input type="checkbox" id="efStok" ${v.stokEtki!==false?"checked":""}> Ürünleri stoktan düş</label>
+    <div class="err" id="efErr" role="alert"></div><div class="muted" id="efDurum" role="status" style="font-size:.88rem"></div>
+    <div class="modal-foot"><button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-e="kes" style="padding:12px 20px;font-size:1rem">🧾 Faturayı kes (gerçek)</button></div>`,
+  root=>{root.style.maxWidth="760px";const $=s=>root.querySelector(s),er=$("#efErr");
+    const aliciCiz=()=>{$("#efAlici").innerHTML=aliciHtml()};const satirCiz=()=>{$("#efSatirlar").innerHTML=satirHtml();$("#efTop").innerHTML=topHtml()};
+    const urunEkle=(u,n)=>{const i=v.satirlar.findIndex(s=>s.urunId===u.id);
+      if(i>=0)v.satirlar[i].miktar=(Number(v.satirlar[i].miktar)||0)+n;
+      else{const yeni={urunId:u.id,ad:u.ad,miktar:n,fiyat:r2(Number(u.satisFiyat)||0)||"",kdv:Number(u.kdvOran??20),isk:0};
+        if(v.satirlar.length===1&&!String(v.satirlar[0].ad||"").trim())v.satirlar[0]=yeni;else v.satirlar.push(yeni)}
+      satirCiz()};
+    const barkodla=kod=>{const u=syUrunBul(kod);if(!u){syBip(false);return `<span style="color:var(--out);font-weight:700">❌ Ürün bulunamadı: ${esc(kod)}</span>`}
+      syBip(true);urunEkle(u,1);return `<span style="color:var(--in);font-weight:700">✓ ${esc(u.ad)}</span> faturaya eklendi<br><span class="muted">Sıradakini okutun, bitince "Bitti"</span>`};
+    $("#efBarkod").addEventListener("keydown",e=>{if(e.key!=="Enter")return;e.preventDefault();const k=e.target.value.trim();if(!k)return;const m=barkodla(k);e.target.value="";if(/bulunamadı/.test(m))er.textContent="Ürün bulunamadı: "+k;else er.textContent=""});
+    root.addEventListener("input",e=>{const t=e.target;
+      if(t.id==="efNot"){v.not=t.value;return}if(t.id==="efStok"){v.stokEtki=t.checked;return}
+      if(t.dataset.v){v[t.dataset.v]=t.type==="checkbox"?t.checked:t.value;return}
+      if(t.dataset.s){const s=v.satirlar[Number(t.dataset.i)];if(!s)return;const k=t.dataset.s;s[k]=k==="ad"?t.value:t.value;
+        if(k==="ad"){const u=state.urunler.find(x=>x.ad===t.value.trim());if(u&&s.urunId!==u.id){s.urunId=u.id;s.fiyat=r2(Number(u.satisFiyat)||0)||"";s.kdv=Number(u.kdvOran??20);satirCiz();const n=root.querySelector(`[data-s="miktar"][data-i="${t.dataset.i}"]`);if(n)n.focus();return}else if(!u)s.urunId=""}
+        const tt=$("#efTt"+t.dataset.i);if(tt)tt.textContent=money(r2((Number(s.fiyat)||0)*(Number(s.miktar)||0)*(1-(Number(s.isk)||0)/100)));$("#efTop").innerHTML=topHtml()}});
+    root.addEventListener("change",e=>{const t=e.target;
+      if(t.dataset.v==="il"||t.dataset.v==="cariKaydet")v[t.dataset.v]=t.type==="checkbox"?t.checked:t.value;
+      if(t.dataset.s==="kdv"){const s=v.satirlar[Number(t.dataset.i)];if(s){s.kdv=Number(t.value);$("#efTop").innerHTML=topHtml()}}
+      if(t.id==="efOdeme"){v.odeme=t.value;const bf=$("#efBankaF");if(bf)bf.hidden=t.value!=="banka"}
+      if(t.id==="efBanka")v.bankaId=t.value;if(t.id==="efStok")v.stokEtki=t.checked;
+      if(t.id==="efCari"){v.cariId=t.value;const c=state.cariler.find(x=>x.id===t.value);
+        if(c){const no=String(c.vergiNo||"").replace(/\D/g,"");v.vkn=no;if(no.length===10){v.tur="firma";v.unvan=c.ad}else{v.tur="sahis";const p=String(c.ad).trim().split(/\s+/);v.soyad=p.length>1?p.pop():"";v.ad=p.join(" ")}
+          v.vergiDairesi=c.vergiDairesi||"";v.il=c.il||v.il;v.ilce=c.ilce||v.ilce;v.adres=c.adres||v.adres;v.eposta=c.eposta||v.eposta}aliciCiz()}});
+    root.addEventListener("click",async e=>{const b=e.target.closest("[data-e],[data-m]");if(!b)return;
+      if(b.dataset.m==="close")return closeModal();const a=b.dataset.e;
+      if(a==="tur"){v.tur=b.dataset.v;if(v.tur==="nihai"){v.cariId=""}aliciCiz();return}
+      if(a==="satirEkle"){v.satirlar.push(bos());satirCiz();const n=root.querySelector(`[data-s="ad"][data-i="${v.satirlar.length-1}"]`);if(n)n.focus();return}
+      if(a==="satirSil"){v.satirlar.splice(Number(b.dataset.i),1);if(!v.satirlar.length)v.satirlar.push(bos());satirCiz();return}
+      if(a==="kamera"){
+        // Kamera penceresi bu formun yerine açılır; "Bitti" deyince form aynı bilgilerle (okutulan ürünler eklenmiş) geri gelir
+        kameraAc(kod=>barkodla(kod),{surekli:true,baslik:"Faturaya ürün ekle"});
+        const eski=modalKapanis;modalKapanis=()=>{try{if(eski)eski()}catch(_){}setTimeout(()=>efKesForm(v),0)};return}
+      if(a!=="kes")return;
+      v.not=$("#efNot").value.trim();v.stokEtki=$("#efStok").checked;v.odeme=$("#efOdeme").value;
+      const eksik=efkEksikler(v);if(eksik.length){er.textContent="Eksik / hatalı: "+eksik.join(", ");return}
+      const t=efkToplam(v),ad=v.tur==="firma"?v.unvan:[v.ad,v.soyad].filter(Boolean).join(" ")||"Nihai tüketici";
+      if(!confirm(`GERÇEK FATURA KESİLECEK\n\nAlıcı: ${ad} (${v.tur==="nihai"?"11111111111":v.vkn})\nTutar: ${money(t)}\nÜrün: ${v.satirlar.filter(s=>String(s.ad).trim()).length} kalem\n\nFatura GİB'e gider ve geri alınamaz (yalnızca iptal / iade faturasıyla düzeltilir). Kesilsin mi?`))return;
+      er.textContent="";b.disabled=true;
+      try{const id="efkes-"+api.newId("faturalar");
+        const veri=JSON.parse(JSON.stringify({...v,satirlar:v.satirlar.filter(s=>String(s.ad).trim()).map(s=>({urunId:s.urunId||"",ad:String(s.ad).trim(),miktar:Number(s.miktar),fiyat:r2(Number(s.fiyat)),kdv:Number(s.kdv)||0,isk:Math.min(100,Math.max(0,Number(s.isk)||0))}))}));
+        await api.setDoc("ayar",id,{durum:"bekliyor",veri,toplam:t,alici:ad,olusturma:Date.now(),firma:firmaId});
+        $("#efDurum").textContent="Sıraya alındı. Fatura kesiliyor…";
+        // Yeni kayıt state'e realtime ile gelmeden işlenemez; kısa süre beklenir
+        for(let i=0;i<20&&!(state.ayarEk||{})[id];i++)await new Promise(r=>setTimeout(r,250));
+        const sonuc=await efkKuyrukIsle(id);
+        if(sonuc.durum==="kesildi"){closeModal();toast("Fatura kesildi ✓ "+(sonuc.invoiceId||""));render();return}
+        if(sonuc.durum==="hata"||sonuc.durum==="belirsiz"){closeModal();toast("Fatura kesilemedi: "+(sonuc.hata||"bilinmeyen hata")+" (Faturalar sayfasındaki listede)",8000);render();return}
+        closeModal();toast("Fatura sıraya alındı: dükkan bilgisayarında program açıkken birkaç saniye içinde kesilir. Durumu Faturalar sayfasında görürsünüz.");render()}
+      catch(err){er.textContent=errMsg(err);b.disabled=false}})});
+}
+/* Sıra işleme (köprüsü olan bilgisayar). id verilirse yalnız o kayıt.
+   Dönüş: {durum:"kesildi"|"hata"|"belirsiz"|"bekliyor"(köprü yok / sırada iş yok), invoiceId, hata} */
+let efkIsleniyor=false;
+async function efkKuyrukIsle(id){const bek={durum:"bekliyor"};
+  if(efkIsleniyor||state.readonly||!api)return bek;const p=efatProfil();if(!p)return bek;
+  const l=efkKayitlar().filter(k=>k.durum==="bekliyor"&&(!id||k.id===id)&&(!k.firma||k.firma===firmaId));if(!l.length)return bek;
+  let durum=null;try{durum=await efkIstek("/durum",{profil:p},3000)}catch(e){return bek}
+  if(!durum||durum.profil!==p||!durum.kurulu||durum.ortam!=="canli")return bek;
+  // Aynı bilgisayarda birden çok sekme varsa yalnız biri işler
+  const kilitA="arv-efkes-kilit-"+firmaId;try{const k=Number(localStorage.getItem(kilitA))||0;if(Date.now()-k<90000&&!id)return bek;localStorage.setItem(kilitA,String(Date.now()))}catch(e){}
+  efkIsleniyor=true;let son=bek;const f0=firmaId;
+  try{for(const k of l.reverse()){if(firmaId!==f0)break;const {id:kid,...rest}=k;
+      await api.setDoc("ayar",kid,{...rest,durum:"kesiliyor",islemZaman:Date.now()});
+      try{const r=await efkKes(k.veri,kid,p);await api.setDoc("ayar",kid,{...rest,durum:"kesildi",invoiceId:r.invoiceId,tip:r.tip,uuid:r.uuid,faturaId:r.faturaId,kesimZaman:Date.now(),hata:""});son={durum:"kesildi",invoiceId:r.invoiceId}}
+      catch(err){const m=String(err&&err.message||err).slice(0,400),dd=err&&err.belirsiz?"belirsiz":"hata";
+        try{await api.setDoc("ayar",kid,{...rest,durum:dd,hata:m,islemZaman:Date.now()})}catch(e2){console.warn("efk durum",e2)}son={durum:dd,hata:m}}}}
+  finally{efkIsleniyor=false;try{localStorage.removeItem(kilitA)}catch(e){}}
+  return son}
+// Tek faturayı keser ve programa satış faturası olarak yazar
+async function efkKes(v,ref,p){
+  let tip="EARSIV";const vkn=v.tur==="nihai"?"11111111111":String(v.vkn).replace(/\D/g,"");
+  if(vkn!=="11111111111"){let mk=null;try{mk=await efkIstek("/mukellef",{vkn,profil:p},15000)}catch(_){}
+    if(Array.isArray(mk))tip=mk.some(x=>!x.deletedAt&&(x.aliasType||"INVOICE")==="INVOICE")?"EFATURA":"EARSIV"}
+  const g=efkGovde(v,tip,"ARV-"+ref.replace(/^efkes-/,""));
+  let r;try{r=await efkIstek("/kes",{tip,ref:g.localReferenceId,govde:JSON.stringify(g),profil:p},90000)}
+  catch(e){const x=new Error("Köprüden yanıt alınamadı; fatura kesilmiş olabilir. e-Faturam portalından kontrol edin ("+(e.message||e)+")");x.belirsiz=true;throw x}
+  const y=r.yanit||{};
+  if(r.ortam!=="canli"){const x=new Error("Köprü canlı ortamda yanıt vermedi; e-Faturam'dan kontrol edin.");x.belirsiz=true;throw x}
+  if(!(r.kod>=200&&r.kod<300)||!y.invoiceId)throw new Error("Trendyol e-Faturam faturayı kabul etmedi ("+r.kod+"): "+pzFaturaHatasi(y));
+  // Programa kayıt: cari (istenirse), satış hareketleri (KDV oranına göre), stok çıkışı, satış faturası
+  let cariId=v.cariId||"";const ad=v.tur==="firma"?v.unvan:[v.ad,v.soyad].filter(Boolean).join(" ")||"Nihai tüketici";
+  const adresBil={adres:v.adres,il:v.il,ilce:v.ilce,...(v.eposta?{eposta:v.eposta}:{})};
+  try{if(cariId){const c=state.cariler.find(x=>x.id===cariId);if(c){const {id:_,...cr}=c;await api.setDoc("cariler",cariId,{...cr,...adresBil,vergiNo:cr.vergiNo||(vkn!=="11111111111"?vkn:""),vergiDairesi:cr.vergiDairesi||(v.tur==="firma"?v.vergiDairesi:"")})}}
+    else if(v.cariKaydet&&v.tur!=="nihai"){cariId=api.newId("cariler");await api.setDoc("cariler",cariId,{ad,tur:"musteri",telefon:"",vergiNo:vkn,vergiDairesi:v.tur==="firma"?v.vergiDairesi:"",...adresBil,olusturma:Date.now()})}}catch(e){console.warn("efk cari",e)}
+  const odeme=v.odeme==="acik"&&!cariId?"kasa":v.odeme,tarih=today(),no=String(y.invoiceId);
+  const satirlar=v.satirlar.map(s=>{const net=r2(Number(s.fiyat)/(1+(Number(s.kdv)||0)/100));return {urunId:s.urunId||"",ad:s.ad,miktar:Number(s.miktar),birim:"Adet",birimFiyat:net,kdvOran:Number(s.kdv)||0,iskonto:Number(s.isk)||0}});
+  const hareketIds=[],stokIds=[];
+  for(const st of g.totalTax.subTotalTaxes){const n=r2(st.taxableAmount/100),kd=r2(st.taxAmount/100),hid=api.newId("hareketler");
+    await api.setDoc("hareketler",hid,{tur:"satis",tarih,odeme,cariId,kanal:"Mağaza",kategori:"",bankaId:odeme==="banka"?v.bankaId:"",kdvOran:Number(st.percent),net:n,kdv:kd,toplam:r2(n+kd),aciklama:"e-Fatura "+no+" · "+ad,belgeNo:no,olusturma:Date.now()});hareketIds.push(hid)}
+  if(v.stokEtki)for(const s of satirlar){if(!s.urunId||!state.urunler.some(u=>u.id===s.urunId))continue;const sid=api.newId("stokHareketleri");
+    await api.setDoc("stokHareketleri",sid,{urunId:s.urunId,tarih,tip:"Çıkış",miktar:-s.miktar,birimFiyat:r2(s.birimFiyat*(1+s.kdvOran/100)*(1-s.iskonto/100)),aciklama:"Fatura "+no,hareketId:hareketIds[0]||"",olusturma:Date.now()});stokIds.push(sid)}
+  const net=r2(g.invoiceTotal.taxExclusiveAmount/100),kdv=r2(g.totalTax.totalTaxAmount/100),toplam=r2(g.invoiceTotal.payableAmount/100);
+  const faturaId=api.newId("faturalar");
+  await api.setDoc("faturalar",faturaId,{tur:"satis",no,cariId,musteriAd:cariId?"":ad,tarih,vade:"",odeme,bankaId:odeme==="banka"?v.bankaId:"",kanal:"Mağaza",stokEtki:!!v.stokEtki,satirlar,notlar:v.not||"",
+    araToplam:net,iskonto:0,net,kdv,toplam,hareketIds,stokIds,odemeIds:[],teklifId:"",ettn:y.invoiceUuid||"",efatura:{tip,ortam:"canli",vkn},kaynak:"efatura-kes",olusturma:Date.now()});
+  return {invoiceId:no,tip,uuid:y.invoiceUuid||"",faturaId}}
+// Faturalar sayfasındaki sıra / son kesilenler kutusu
+function efkListeHtml(){const l=efkKayitlar().filter(k=>!k.firma||k.firma===firmaId);if(!l.length)return "";
+  const gor=l.filter(k=>k.durum!=="kesildi"||Date.now()-(k.kesimZaman||k.olusturma||0)<3*86400000).slice(0,15);if(!gor.length)return "";
+  return `<section class="panel"><div class="section-head"><h2 style="font-size:1rem">🧾 Programdan kesilen e-Faturalar</h2></div>
+    <div style="display:grid;gap:6px">${gor.map(k=>{if(k.durum==="kesiliyor"&&Date.now()-(Number(k.islemZaman)||0)>300000)k={...k,durum:"belirsiz",hata:k.hata||"Kesim yarıda kaldı; fatura kesilmiş olabilir. e-Faturam portalından kontrol edin, kesilmediyse silip yeniden girin."};
+      const d=EFK_DURUM[k.durum]||[k.durum,""];const fat=k.faturaId&&state.faturalar.find(f=>f.id===k.faturaId);
+      return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:8px 10px">
+        <span class="chip ${d[1]}">${d[0]}</span><b>${esc(k.alici||"")}</b><span>${money(k.toplam||0)}</span><span class="muted" style="font-size:.8rem">${new Date(k.olusturma||0).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>
+        ${k.invoiceId?`<span class="muted" style="font-size:.82rem">${esc(k.tip==="EFATURA"?"e-Fatura":"e-Arşiv")} ${esc(k.invoiceId)}</span>`:""}<span style="flex:1"></span>
+        ${fat?`<button class="small ghost" type="button" data-act="fGor" data-id="${esc(fat.id)}">📄 Gör</button>`:""}
+        ${!state.readonly&&k.durum==="hata"?`<button class="small" type="button" data-act="efkTekrar" data-id="${esc(k.id)}">↻ Yeniden dene</button>`:""}
+        ${!state.readonly&&(k.durum==="hata"||k.durum==="bekliyor"||k.durum==="belirsiz")?`<button class="small ghost danger" type="button" data-act="efkSil" data-id="${esc(k.id)}">Sil</button>`:""}
+        ${k.hata?`<div class="neg" style="flex-basis:100%;font-size:.82rem">${esc(k.hata)}</div>`:""}
+        ${k.durum==="bekliyor"?`<div class="muted" style="flex-basis:100%;font-size:.8rem">Dükkan bilgisayarında program açıkken kesilir.</div>`:""}</div>`}).join("")}</div></section>`}
+// Köprüsü olan bilgisayarda sıra 30 sn'de bir kontrol edilir (köprüye ulaşılamayan cihazda hiçbir şey yapmaz)
+if(!window._efkZamanlayici)window._efkZamanlayici=setInterval(()=>{try{if(firmaId&&efkKayitlar().some(k=>k.durum==="bekliyor"))efkKuyrukIsle().then(s=>{if(s&&s.durum!=="bekliyor")renderSonra()})}catch(e){}},30000);
 /* ---------- Teslim edilen siparişin e-Faturası (Trendyol e-Faturam, köprü üzerinden) ----------
    Taslak siparişten hazırlanır (tutarlar kuruş, fiyatlar KDV dahil; satırlar müşterinin ödediği toplama orantılanır).
    DENEME AŞAMASI: gönderim yalnızca köprü TEST ortamındayken açıktır; canlı ortamda gerçek fatura kesilmez.
@@ -7150,7 +7349,8 @@ function cariForm(existing){
     if(a==="silOnay"){try{await api.del("cariler",existing.id);closeModal();toast("Cari silindi")}catch(err){er.textContent=errMsg(err)}return}
     if(a==="kaydet"){const ad=root.querySelector("#cAd").value.trim();if(!ad){er.textContent="Ünvan girin.";return}
       const vno=root.querySelector("#cVno").value.trim();if(vno&&!/^\d{10,11}$/.test(vno)){er.textContent="Vergi no 10, TC kimlik no 11 haneli olmalı.";return}
-      const doc={ad,tur:root.querySelector("#cTur").value,telefon:root.querySelector("#cTel").value.trim(),vergiNo:vno,vergiDairesi:root.querySelector("#cVd").value.trim(),olusturma:existing?(existing.olusturma||Date.now()):Date.now()};
+      // Düzenlemede e-Faturadan gelen adres / e-posta gibi ek alanlar korunur
+      const doc={...(existing?(({id,...r})=>r)(existing):{}),ad,tur:root.querySelector("#cTur").value,telefon:root.querySelector("#cTel").value.trim(),vergiNo:vno,vergiDairesi:root.querySelector("#cVd").value.trim(),olusturma:existing?(existing.olusturma||Date.now()):Date.now()};
       if(existing&&existing.ornek)doc.ornek=true;
       b.disabled=true;try{await api.setDoc("cariler",existing?existing.id:api.newId("cariler"),doc);closeModal();toast("Cari kaydedildi")}catch(err){er.textContent=errMsg(err);b.disabled=false}}
   }));
@@ -7239,6 +7439,10 @@ document.getElementById("main").addEventListener("click",async e=>{
   else if(a==="fGor")faturaGorModal(id);
   else if(a==="fatAktar")faturaAktarSecim();
   else if(a==="efatSenk")efatSenk(true);
+  else if(a==="efKes")efKesForm();
+  else if(a==="efkTekrar"||a==="efkSil"){const k=(state.ayarEk||{})[id];if(!k||state.readonly)return;
+    if(a==="efkSil"){if(!confirm("Bu e-Fatura kaydı listeden silinsin mi?"+(k.durum==="belirsiz"?"\n\nÖnce e-Faturam portalından faturanın kesilip kesilmediğini kontrol edin.":"")))return;api.del("ayar",id).then(()=>toast("Silindi")).catch(err=>toast(errMsg(err)))}
+    else api.setDoc("ayar",id,{...k,durum:"bekliyor",hata:""}).then(()=>{toast("Yeniden sıraya alındı");setTimeout(()=>efkKuyrukIsle(id).then(s=>{if(s.durum!=="bekliyor")render()}),800)}).catch(err=>toast(errMsg(err)))}
   else if(a==="pzGetir")pzGetir();
   else if(a==="trendyolCek")trendyolUrunCek();
   else if(a==="tyGorsel")tyGorselAl();
