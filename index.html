@@ -4819,7 +4819,7 @@ function efKesForm(d){
     ${cariler.length?`<label ${lbl}>Kayıtlı müşteriden doldur<select id="efCari" ${inp}><option value="">— Seçin (isteğe bağlı) —</option>${cariler.map(c=>`<option value="${c.id}" ${v.cariId===c.id?"selected":""}>${esc(c.ad)}${c.vergiNo?" · "+esc(c.vergiNo):""}</option>`).join("")}</select></label>`:""}
     <div class="grid2">
       ${v.tur==="nihai"?`<div class="muted" style="font-size:.82rem;align-self:center">TC kimlik no yerine <b>11111111111</b> yazılır (e-Arşiv).</div>`
-        :`<label ${lbl}>${v.tur==="firma"?"Vergi no *":"TC kimlik no *"}<input data-v="vkn" value="${esc(v.vkn)}" inputmode="numeric" maxlength="${v.tur==="firma"?10:11}" autocomplete="off" ${inp}></label>`}
+        :`<label ${lbl}>${v.tur==="firma"?"Vergi no *":"TC kimlik no *"}<input data-v="vkn" value="${esc(v.vkn)}" inputmode="numeric" maxlength="11" autocomplete="off" ${inp}></label>`}
       ${v.tur==="firma"?`<label ${lbl}>Vergi dairesi *<input data-v="vergiDairesi" value="${esc(v.vergiDairesi)}" ${inp}></label>`:""}
       ${v.tur==="firma"?`<label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Ünvan *<input data-v="unvan" value="${esc(v.unvan)}" ${inp}></label>`
         :`<label ${lbl}>Ad${v.tur==="nihai"?"":" *"}<input data-v="ad" value="${esc(v.ad)}" autocomplete="off" ${inp}></label><label ${lbl}>Soyad${v.tur==="nihai"?"":" *"}<input data-v="soyad" value="${esc(v.soyad)}" autocomplete="off" ${inp}></label>`}
@@ -4828,6 +4828,7 @@ function efKesForm(d){
       <label ${lbl} style="grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Adres *<textarea data-v="adres" rows="2" style="font-size:1rem;padding:10px">${esc(v.adres)}</textarea></label>
       <label ${lbl}>E-posta <span class="muted" style="font-weight:400">(isteğe bağlı; fatura müşteriye gider)</span><input data-v="eposta" type="email" inputmode="email" value="${esc(v.eposta)}" ${inp}></label>
     </div>
+    <div id="efMk" role="status" style="font-size:.86rem">${v.tur==="nihai"?`<span class="chip">e-Arşiv</span>`:v.mkHtml||`<span class="muted">Vergi / TC kimlik no yazınca e-Fatura mükellefi olup olmadığı sorgulanır, ünvan / ad soyad gelir.</span>`}</div>
     ${v.tur!=="nihai"&&!v.cariId?`<label style="display:flex;gap:8px;align-items:center;font-size:.88rem"><input type="checkbox" data-v="cariKaydet" ${v.cariKaydet?"checked":""}> Müşteriyi cariye kaydet (sonraki faturada seçilir)</label>`:""}`;
   const satirHtml=()=>v.satirlar.map((s,i)=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px">
       <div style="display:flex;gap:8px;align-items:flex-end"><label ${lbl} style="flex:1;display:flex;flex-direction:column;gap:3px;font-size:.82rem;font-weight:600">Ürün / hizmet *<input data-s="ad" data-i="${i}" list="efUrunList" value="${esc(s.ad)}" placeholder="Ürün adı yazın ya da barkod okutun" ${inp}></label>
@@ -4868,8 +4869,34 @@ function efKesForm(d){
     const barkodla=kod=>{const u=syUrunBul(kod);if(!u){syBip(false);return `<span style="color:var(--out);font-weight:700">❌ Ürün bulunamadı: ${esc(kod)}</span>`}
       syBip(true);urunEkle(u,1);return `<span style="color:var(--in);font-weight:700">✓ ${esc(u.ad)}</span> faturaya eklendi<br><span class="muted">Sıradakini okutun, bitince "Bitti"</span>`};
     $("#efBarkod").addEventListener("keydown",e=>{if(e.key!=="Enter")return;e.preventDefault();const k=e.target.value.trim();if(!k)return;const m=barkodla(k);e.target.value="";if(/bulunamadı/.test(m))er.textContent="Ürün bulunamadı: "+k;else er.textContent=""});
+    /* Vergi / TC kimlik no tamamlanınca: (1) aynı numaralı cari varsa bilgileri (adres dahil) doldurulur,
+       (2) köprüden mükellef sorgusu: e-Fatura mükellefi mi (yoksa e-Arşiv), ünvan / ad soyad. Köprüye ulaşılamayan cihazda
+       (telefon) tür fatura kesilirken belirlenir. Dolu alanların üstüne yazılmaz. */
+    let mkSira=0;
+    const doldur=(k,val)=>{if(val==null||val==="")return;if(String(v[k]||"").trim())return;v[k]=val;const el=root.querySelector(`[data-v="${k}"]`);if(el)el.value=val};
+    const mkYaz=h=>{v.mkHtml=h;const el=$("#efMk");if(el)el.innerHTML=h};
+    const vknBak=async no=>{const n=++mkSira;
+      if(no.length===10&&v.tur!=="firma"){v.tur="firma";aliciCiz();const i=root.querySelector('[data-v="vkn"]');if(i){i.focus();try{i.setSelectionRange(no.length,no.length)}catch(_){}}}
+      const c=state.cariler.find(x=>String(x.vergiNo||"").replace(/\D/g,"")===no);
+      if(c){if(!v.cariId){v.cariId=c.id;const cs=$("#efCari");if(cs)cs.value=c.id}
+        if(v.tur==="firma")doldur("unvan",c.ad);else{const p=String(c.ad).trim().split(/\s+/);if(p.length>1){doldur("soyad",p[p.length-1]);doldur("ad",p.slice(0,-1).join(" "))}}
+        doldur("vergiDairesi",c.vergiDairesi);doldur("ilce",c.ilce);doldur("adres",c.adres);doldur("eposta",c.eposta);
+        if(c.il&&!v.il){v.il=c.il;const s=root.querySelector('[data-v="il"]');if(s)s.value=c.il}}
+      mkYaz(`<span class="muted">🔎 Mükellef sorgulanıyor…</span>${c?` · <span class="chip ok">Kayıtlı cari: ${esc(c.ad)}</span>`:""}`);
+      let mk=null,ulasti=true;try{mk=await efkIstek("/mukellef",{vkn:no,profil:efatProfil()},8000)}catch(e){ulasti=false}
+      if(n!==mkSira||!root.isConnected)return;
+      const cariNot=c?` · <span class="chip ok">Kayıtlı cari: ${esc(c.ad)}</span>`:"";
+      if(!ulasti||!Array.isArray(mk)){mkYaz(`<span class="muted">Mükellef sorgusu bu cihazdan yapılamadı (dükkan bilgisayarındaki köprü gerekir). e-Fatura / e-Arşiv, fatura kesilirken otomatik seçilir.</span>${cariNot}`);return}
+      const ak=mk.filter(x=>!x.deletedAt),ef=ak.some(x=>(x.aliasType||"INVOICE")==="INVOICE"),x=ak.find(y=>y.title||y.name)||ak[0];
+      if(x){if(v.tur==="firma")doldur("unvan",x.title||[x.name,x.surname].filter(Boolean).join(" "));
+        else{doldur("ad",x.name||"");doldur("soyad",x.surname||"")}}
+      mkYaz(ef?`<span class="chip ok">e-Fatura mükellefi</span> <b>${esc((x&&(x.title||[x.name,x.surname].filter(Boolean).join(" ")))||"")}</b> — <b>e-Fatura</b> kesilecek${cariNot}`
+        :`<span class="chip">e-Arşiv</span> e-Fatura mükellefi değil — <b>e-Arşiv</b> kesilecek${x&&(x.title||x.name)?" ("+esc(x.title||[x.name,x.surname].filter(Boolean).join(" "))+")":""}${cariNot}`)};
     root.addEventListener("input",e=>{const t=e.target;
       if(t.id==="efNot"){v.not=t.value;return}if(t.id==="efStok"){v.stokEtki=t.checked;return}
+      if(t.dataset.v==="vkn"){const no=t.value.replace(/\D/g,"");v.vkn=no;if(no!==t.value)t.value=no;
+        if((no.length===10&&vknGecerli(no))||(no.length===11&&tcknGecerli(no)))vknBak(no);
+        else{mkSira++;mkYaz(no.length>=10?`<span class="neg">Numara geçersiz görünüyor (${no.length===10?"vergi no":"TC kimlik no"} kontrol hanesi tutmuyor).</span>`:`<span class="muted">Vergi no 10, TC kimlik no 11 hane.</span>`)}return}
       if(t.dataset.v){v[t.dataset.v]=t.type==="checkbox"?t.checked:t.value;return}
       if(t.dataset.s){const s=v.satirlar[Number(t.dataset.i)];if(!s)return;const k=t.dataset.s;s[k]=k==="ad"?t.value:t.value;
         if(k==="ad"){const u=state.urunler.find(x=>x.ad===t.value.trim());if(u&&s.urunId!==u.id){s.urunId=u.id;s.fiyat=r2(Number(u.satisFiyat)||0)||"";s.kdv=Number(u.kdvOran??20);satirCiz();const n=root.querySelector(`[data-s="miktar"][data-i="${t.dataset.i}"]`);if(n)n.focus();return}else if(!u)s.urunId=""}
