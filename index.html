@@ -2186,6 +2186,8 @@ const _eklenme=u=>Number(u.eklenme)||Number(u.olusturma)||0;
 const URUN_SIRA={
   adAZ:["Ada göre (A → Z)",_ad],
   adZA:["Ada göre (Z → A)",(a,b)=>_ad(b,a)],
+  pzFarkCok:["Pazaryeri farkı: çoktan aza",(a,b)=>pzFarkSay(b)-pzFarkSay(a)||_ad(a,b)],
+  pzFarkAz:["Pazaryeri farkı: azdan çoğa",(a,b)=>pzFarkSay(a)-pzFarkSay(b)||_ad(a,b)],
   yeni:["Son eklenenler",(a,b)=>_eklenme(b)-_eklenme(a)||_ad(a,b)],
   eski:["İlk eklenenler",(a,b)=>_eklenme(a)-_eklenme(b)||_ad(a,b)],
   stokCok:["Stok: çoktan aza",(a,b)=>b.miktar-a.miktar||_ad(a,b)],
@@ -2211,7 +2213,6 @@ const URUN_SIRA={
 // Ürün tablosu sütunları: başlığa tıklayınca sıralama (artan ↔ azalan), altındaki kutuyla sütun filtresi
 const URUN_KOL=[
   {k:"ad",l:"Ürün",deger:u=>u.ad,artan:"adAZ",azalan:"adZA"},
-  {k:"kod",l:"Stok kodu",deger:u=>u.kod||"",artan:"kod",azalan:"kodZA"},
   {k:"barkod",l:"Barkod",deger:u=>u.barkod||"",artan:"barkodAZ",azalan:"barkodZA"},
   {k:"marka",l:"Marka",deger:u=>u.marka||"",artan:"marka",azalan:"markaZA"},
   {k:"kategori",l:"Kategori",deger:u=>u.kategori||"",artan:"kategori",azalan:"kategoriZA"},
@@ -2220,7 +2221,17 @@ const URUN_KOL=[
   {k:"alis",l:"Alış",sayi:true,deger:u=>Number(u.alisFiyat)||0,artan:"alisDusuk",azalan:"alisYuksek"},
   {k:"satis",l:"Satış",sayi:true,deger:u=>Number(u.satisFiyat)||0,artan:"satisDusuk",azalan:"satisYuksek"},
   {k:"tykar",l:"TY kâr %",sayi:true,deger:u=>tyKarSayi(u)??"",artan:"tyKarDusuk",azalan:"tyKarYuksek"},
-  {k:"deger",l:"Stok değeri",sayi:true,deger:u=>r2(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0)),artan:"degerDusuk",azalan:"degerYuksek"}];
+  {k:"pz",l:"Pazaryerleri (fiyat · stok)",deger:u=>pzFsMetin(u),artan:"pzFarkAz",azalan:"pzFarkCok"}];
+/* Ürün tablosunda pazaryeri fiyat / stok sütunu: ürünün ilanı olan her pazaryerindeki satış fiyatı ve stok.
+   Programdakinden farklı olan değer kırmızı. Satıra çift tıklayınca o pazaryerinde fiyat / stok değiştirilip yalnızca oraya gönderilir. */
+function pzFsListe(u){const l=[];const sf=r2(Number(u.satisFiyat)||0),ss=Math.max(0,Math.floor(Number(u.miktar??stokMiktar(u))||0));
+  for(const p of PZ_ILAN){if(!pzIlan.veri[p])continue;const d=pzIlanDurum(u,p);if(!d)continue;const f=Number(d[3])||0,s=Math.floor(Number(d[1])||0);
+    l.push({p,f,s,ak:d[0]===1,fFark:f>0&&Math.abs(f-sf)>0.009,sFark:s!==ss})}return l}
+function pzFarkSay(u){return pzFsListe(u).reduce((t,x)=>t+(x.fFark?1:0)+(x.sFark?1:0),0)}
+function pzFsMetin(u){return pzFsListe(u).map(x=>PZ_KISA[x.p]+" "+x.f+" "+x.s).join(" ")}
+function pzFsHucre(u){const l=pzFsListe(u);if(!l.length)return `<span class="muted" style="font-size:.78rem">—</span>`;const yaz=firmaRol==="sahip"&&!state.readonly;
+  return l.map(x=>`<div ${yaz&&PZ_FS_YAZ.includes(x.p)?`data-pzdbl="${x.p}" data-uid="${esc(u.id)}" title="${esc(PZ_ADLAR[x.p])}: çift tıklayın, fiyat / stoğu değiştirip yalnız bu pazaryerine gönderin" style="cursor:cell;`:`style="`}white-space:nowrap;font-size:.8rem;line-height:1.5;${x.ak?"":"opacity:.55"}"><b style="color:${PZ_ILAN_RENK[x.p]||"inherit"};font-size:.72rem">${PZ_KISA[x.p]||x.p}</b> <span style="${x.fFark?"color:var(--out,#c62828);font-weight:700":""}">${x.f?money(x.f):"—"}</span> · <span style="${x.sFark?"color:var(--out,#c62828);font-weight:700":""}">${x.s.toLocaleString("tr-TR")}</span></div>`).join("")}
+document.addEventListener("dblclick",e=>{const r=e.target.closest&&e.target.closest("[data-pzdbl]");if(!r)return;e.preventDefault();e.stopPropagation();pzTekModal(r.dataset.uid,r.dataset.pzdbl)},true);
 // Sayı filtresi: 5 · >10 · <100 · >=5 · 70-100 (aralık; 70 ve 100 dahil). Aralık ayırıcı: - – — .. ile ~ /
 // Türkçe yazım: 70,50 · 1.000 · 1.250,75 ; ₺ / TL yok sayılır. "70-" = 70 ve üstü.
 function sayiOku(t){t=String(t||"").replace(/[₺\s]|tl/gi,"");if(!t)return NaN;
@@ -2324,11 +2335,11 @@ function vStok(){
       <tr class="kol-filtre">${ro?"":"<th></th>"}${URUN_KOL.map(c=>`<th style="padding-top:0"><input id="fK_${c.k}" data-kolf="${c.k}" value="${esc(kf[c.k]||"")}" placeholder="${c.sayi?"örn. 70-100":"Filtrele…"}" title="${c.sayi?"Sayı filtresi — aralık: 70-100 (70 ve 100 dahil) · 70- (70 ve üstü) · tek değer: 5 · >10 · <100 · >=5 · <=20. Kuruş: 70,50":"Bu sütunda içerenleri göster"}" style="width:100%;min-width:${c.sayi?"64px":"80px"};padding:4px 6px;font-size:.78rem;font-weight:400;${c.sayi?"text-align:right;":""}${(kf[c.k]||"").trim()?"border-color:var(--accent,#17624d);background:rgba(23,98,77,.06)":""}"></th>`).join("")}<th>${kolVar?`<button class="small ghost" data-act="uKolTemizle" type="button" title="Sütun filtrelerini temizle">✕ Temizle</button>`:""}</th></tr></thead><tbody>
     ${gorunen.length?"":`<tr><td colspan="${URUN_KOL.length+(ro?1:2)}" class="empty">Filtreye uyan ürün yok.</td></tr>`}
     ${gorunen.map(u=>`<tr${urunSecim.has(u.id)?' class="secili" style="background:rgba(23,98,77,.07)"':""}>${ro?"":`<td><input type="checkbox" autocomplete="off" data-act="uSec" data-id="${u.id}" aria-label="Seç" ${urunSecim.has(u.id)?"checked":""}></td>`}<td><div style="display:flex;gap:8px;align-items:center">${(u.gorseller||[])[0]?`<img src="${esc(u.gorseller[0])}" alt="" loading="lazy" data-buyut="${esc(u.id)}" title="Büyütmek için tıklayın" style="cursor:zoom-in;width:36px;height:36px;object-fit:cover;border-radius:6px;flex:none">`:""}<div><b>${esc(u.ad)}</b>${pzIlanRozet(u)}</div></div></td>
-      <td class="date">${esc(u.kod||"—")}</td><td class="date">${esc(u.barkod||"—")}</td><td>${u.marka?`<a href="#" data-act="ugAc" data-id="${esc(u.marka)}" data-p="marka" title="Bu markanın ürünlerini göster">${esc(u.marka)}</a>`:"—"}</td><td>${u.kategori?`<a href="#" data-act="ugAc" data-id="${esc(u.kategori)}" data-p="kategori" title="Bu kategorinin ürünlerini göster">${esc(u.kategori)}</a>`:"—"}</td>
+      <td class="date">${esc(u.barkod||"—")}</td><td>${u.marka?`<a href="#" data-act="ugAc" data-id="${esc(u.marka)}" data-p="marka" title="Bu markanın ürünlerini göster">${esc(u.marka)}</a>`:"—"}</td><td>${u.kategori?`<a href="#" data-act="ugAc" data-id="${esc(u.kategori)}" data-p="kategori" title="Bu kategorinin ürünlerini göster">${esc(u.kategori)}</a>`:"—"}</td>
       <td class="num ${u.durum==="yok"?"neg":""}" ${ro?"":`data-dbl="stok" data-id="${u.id}" title="Çift tıklayın: stoğu değiştir" style="cursor:cell"`}>${fmtMiktar(u.miktar)} <span class="muted" style="font-family:var(--font-body);font-size:.78rem">${esc(u.birim||"Adet")}</span>${u.durum==="yok"?`<div><span class="chip alis">Stokta yok</span></div>`:u.durum==="kritik"?`<div><span class="chip ornek">Kritik (${fmtMiktar(u.kritik)})</span></div>`:""}</td>
       <td class="num ${u.gercek===0?"neg":""}" ${ro?"":`data-dbl="gercek" data-id="${u.id}" title="Çift tıklayın: depoda sayılan adedi girin${u.gercekZaman?" (son sayım "+new Date(Number(u.gercekZaman)).toLocaleDateString("tr-TR")+")":""}" style="cursor:cell"`}>${u.gercek==null?`<span class="muted" style="font-size:.8rem">sayılmadı</span>`:`${fmtMiktar(u.gercek)}${u.gercek===0&&u.miktar>0?`<div><span class="chip ornek" title="Depoda kalmadı; pazaryerinde tedarikçi stoğuyla satış sürüyor">Tedarikçiden</span></div>`:""}`}</td>
       <td class="num" ${ro?"":`data-dbl="alis" data-id="${u.id}" title="Çift tıklayın: alış fiyatını değiştir" style="cursor:cell"`}>${money(u.alisFiyat)}</td><td class="num" ${ro?"":`data-dbl="satis" data-id="${u.id}" title="Çift tıklayın: satış fiyatını değiştir" style="cursor:cell"`}>${money(u.satisFiyat)}</td>${(()=>{const x=tyKar(u);if(!x)return `<td class="num muted" title="Alış ya da satış fiyatı yok">—</td>`;const neg=x.kar<0;
-        return `<td class="num" title="Trendyol'da satınca kalan kâr: ${money(x.kar)} (kâr % satış fiyatına göre; giderler Kâr hesabı sekmesinden)" style="font-weight:600;color:${neg?"var(--out)":"var(--in)"}"><button type="button" data-act="tyKarDetay" data-id="${u.id}" title="Giderleri göster (komisyon, kargo, hizmet bedeli…)" style="all:unset;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px">${karYuzde(x.yuzde)}</button><div class="muted" style="font-size:.72rem;font-weight:400">${money(x.kar)}</div></td>`})()}<td class="num">${money(Math.max(0,u.miktar)*(Number(u.alisFiyat)||0))}</td>
+        return `<td class="num" title="Trendyol'da satınca kalan kâr: ${money(x.kar)} (kâr % satış fiyatına göre; giderler Kâr hesabı sekmesinden)" style="font-weight:600;color:${neg?"var(--out)":"var(--in)"}"><button type="button" data-act="tyKarDetay" data-id="${u.id}" title="Giderleri göster (komisyon, kargo, hizmet bedeli…)" style="all:unset;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px">${karYuzde(x.yuzde)}</button><div class="muted" style="font-size:.72rem;font-weight:400">${money(x.kar)}</div></td>`})()}<td>${pzFsHucre(u)}</td>
       <td><div class="rowact">${state.readonly?"":`<button class="small primary" data-act="stokGiris" data-id="${u.id}" type="button">Giriş</button><button class="small" data-act="stokCikis" data-id="${u.id}" type="button">Çıkış</button><button class="small ghost" data-act="stokSayim" data-id="${u.id}" type="button">Sayım</button><button class="small${u.siparisVerilecek?" primary":" ghost"}" data-act="sipVerilecek" data-id="${u.id}" type="button" title="${u.siparisVerilecek?"Sipariş verildi: listeden çıkar":"Sipariş verilecekler listesine ekle"}">${u.siparisVerilecek?"✓ Verildi":"🛒"}</button>`}<button class="small ghost" data-act="stokGecmis" data-id="${u.id}" type="button">Hareketler</button>${state.readonly?"":`<button class="small ghost" data-act="editUrun" data-id="${u.id}" type="button">Düzenle</button>`}</div></td></tr>`).join("")}
     </tbody></table></div>`:`<div class="empty">${"Henüz ürün yok. <b>+ Ürün ekle</b> ile defter, kalem, boya gibi ürünlerinizi ve mevcut stok miktarlarını girin. Sonra mal geldiğinde <b>Giriş</b>, sattığınızda <b>Çıkış</b> yapın."}</div>`}
     ${sayfaSay>1?sayfaCubuk.replace('id="fSBoyut"','id="fSBoyut2"'):""}
@@ -2664,6 +2675,10 @@ function pzFsHataUygula(){const f=firmaId,A="arv-fs-geri-"+f;let isle;try{isle=n
   if(deg){pzIlanSakla();const r=window._frKok;if(r&&r.isConnected&&r._ciz)r._ciz()}}
 // is: [{u,p,islem:"fiyatGonder"|"stokGonder",satis?,stok?,buyuk?}]
 async function pzFsSiraya(is){if(!is.length)return 0;
+  // Fiyat gönderilen her ilana programdaki güncel stok da birlikte gider (ikisi tek seferde güncellenir); stok zaten gönderiliyorsa eklenmez
+  {const var_=new Set(is.filter(x=>x.islem==="stokGonder").map(x=>x.u.id+"|"+x.p)),ek=[];
+    for(const x of is)if(x.islem==="fiyatGonder"&&!var_.has(x.u.id+"|"+x.p)){var_.add(x.u.id+"|"+x.p);ek.push({u:x.u,p:x.p,islem:"stokGonder",stok:Math.max(0,Math.floor(stokMiktar(x.u)))})}
+    is=is.concat(ek)}
   const tek=[...new Map(is.map(x=>[x.u.id,x.u])).values()];await pzDenemeEkle(tek);
   // onceki: gönderimden önce pazaryerinde görünen değer (reddedilirse rapor bu değere geri döner)
   const once=x=>{const d=pzIlanDurum(x.u,x.p);return d?(x.islem==="fiyatGonder"?Number(d[3])||0:Number(d[1])||0):null};
