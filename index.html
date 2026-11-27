@@ -2646,7 +2646,9 @@ async function urunSeciliExcel(){
 /* ---------- Fiyat farkı raporundan fiyat / stok gönderme (2026-11-24) ----------
    Değişiklikler sunucudaki gönderim sırasına (pz_kuyruk, govde.islem = fiyatGonder | stokGonder) alınır; pencere / program kapansa da gider.
    Pazaryerine yazma yalnız deneme listesindeki ürünlere yapılabildiği için ürünler önce listeye eklenir (toplu ürün açmadaki gibi). */
-const PZ_FS_YAZ=["trendyol","n11","pazarama","idefix","shopify","amazon"];
+const PZ_FS_YAZ=["trendyol","hepsiburada","n11","pazarama","idefix","shopify","amazon"];
+// Pazaryerine giden "alt" kimlik: ilan programdaki koddan farklı bir stok koduyla açılmışsa (ör. Hepsiburada "ENT-HB…") o kod, değilse barkod
+const pzAltKimlik=(u,p)=>pzAltKodlar(p,u.id)[0]||String(u.barkod||"");
 const pzFsSirada=(id,p)=>(pzTI.veri||[]).some(x=>x.islem&&x.urun_id===id&&x.pazaryeri===p&&(x.durum==="bekliyor"||x.durum==="isleniyor"));
 // Son fiyat / stok gönderimi pazaryerince reddedildiyse sebebi (yoksa null)
 function pzFsHata(id,p,islem){const x=(pzTI.veri||[]).find(y=>y.islem===islem&&y.urun_id===id&&y.pazaryeri===p);return x&&x.durum==="bitti"&&x.sonuc&&x.sonuc.durum==="hata"?String(x.sonuc.mesaj||"reddedildi"):null}
@@ -2665,7 +2667,7 @@ async function pzFsSiraya(is){if(!is.length)return 0;
   const tek=[...new Map(is.map(x=>[x.u.id,x.u])).values()];await pzDenemeEkle(tek);
   // onceki: gönderimden önce pazaryerinde görünen değer (reddedilirse rapor bu değere geri döner)
   const once=x=>{const d=pzIlanDurum(x.u,x.p);return d?(x.islem==="fiyatGonder"?Number(d[3])||0:Number(d[1])||0):null};
-  const n=await pzTIEkle(is.map(x=>({id:x.u.id,p:x.p,govde:x.islem==="fiyatGonder"?{islem:"fiyatGonder",satis:r2(x.satis),buyukDegisim:!!x.buyuk,alt:String(x.u.barkod||""),onceki:once(x)}:{islem:"stokGonder",stok:Math.max(0,Math.floor(Number(x.stok)||0)),alt:String(x.u.barkod||""),onceki:once(x)}})));
+  const n=await pzTIEkle(is.map(x=>({id:x.u.id,p:x.p,govde:x.islem==="fiyatGonder"?{islem:"fiyatGonder",satis:r2(x.satis),buyukDegisim:!!x.buyuk,alt:pzAltKimlik(x.u,x.p),onceki:once(x)}:{islem:"stokGonder",stok:Math.max(0,Math.floor(Number(x.stok)||0)),alt:pzAltKimlik(x.u,x.p),onceki:once(x)}})));
   // Rozet / rapor hemen yeni değeri göstersin (pazaryerinden okununca kesinleşir)
   for(const x of is){const d=pzIlanDurum(x.u,x.p);if(!d)continue;pzIlanYaz(x.u,x.p,x.islem==="fiyatGonder"?[d[0],d[1],d[2],r2(x.satis)]:[d[0],Math.floor(Number(x.stok)||0),d[2],d[3]])}
   pzIlanSakla();return n}
@@ -5486,7 +5488,7 @@ async function pzStokEsitle(bagli){
       if(!gonder.length)continue;
       // Sunucu tek istekte en fazla 20 ürün kabul ediyor: 20'lik parçalar (Pazarama ~10 sn'de bir istek kabul ettiği için arada beklenir)
       for(let i=0;i<gonder.length;i+=20){const parca=gonder.slice(i,i+20);if(i&&pzAd==="pazarama")await new Promise(r=>setTimeout(r,11000));
-        try{const s=await pzCagir({islem:"stokGonder",pazaryeri:pzAd,kalemler:parca.map(h=>({kod:h.kod,stok:h.stok}))});
+        try{const s=await pzCagir({islem:"stokGonder",pazaryeri:pzAd,kalemler:parca.map(h=>({kod:h.kod,stok:h.stok,alt:h.u?pzAltKimlik(h.u,pzAd):""}))});
           for(const x of s.sonuclar||[]){const h=parca.find(y=>y.kod===x.kod);if(!h)continue;
             K[h.kod]={stok:h.stok,zaman:simdi,durum:x.durum,id:x.id||"",onceki:x.onceki??null,mesaj:x.mesaj||"",tekrar:x.durum==="gonderildi"?0:simdi+(x.durum==="bulunamadi"?6*3600000:PZ_STOK_BEKLE)};
             if(x.durum==="gonderildi")n++;else if(x.durum==="hata")bildir.push(PZ_ADLAR[pzAd]+" "+h.kod+": "+x.mesaj)}}
