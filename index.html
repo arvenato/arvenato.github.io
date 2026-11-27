@@ -2343,7 +2343,7 @@ function urunForm(existing){
         <input id="sGorselUrl" placeholder="ya da görsel adresi yapıştırın (https://…)" style="flex:1;min-width:180px"><button class="small" data-m="urlEkle" type="button">Adresi ekle</button></div>
       <div class="muted" id="sGorselDurum" role="status" style="font-size:.8rem"></div></div>
     <div class="field"><label for="sAcik">Açıklama <span class="muted" style="font-weight:400">(pazaryerlerinde ürün açıklaması)</span></label><textarea id="sAcik" rows="4" placeholder="Ürünün özellikleri, ölçüleri, kullanım alanı…">${esc(u.aciklama||"")}</textarea></div>
-    <div class="field"><label for="sDesi">Desi <span class="muted" style="font-weight:400">(kargo hacmi; pazaryerlerinde ürün açarken gerekli)</span></label><input id="sDesi" type="number" step="0.1" min="0" inputmode="decimal" value="${esc(u.desi||"")}" placeholder="Örn. 1" style="max-width:160px"></div>
+    <div class="field"><label for="sDesi">Desi <span class="muted" style="font-weight:400">(kargo hacmi; pazaryerlerinde ürün açarken gerekli)</span></label><input id="sDesi" type="number" step="0.1" min="0" inputmode="decimal" value="${esc(Number(u.desi)>0?u.desi:1)}" placeholder="1" style="max-width:160px"></div>
     <div class="field"><label>Pazaryerleri <span class="muted" style="font-weight:400">(ürün açmaya hazırlık)</span></label><div id="sPz" style="display:flex;flex-direction:column;gap:6px"></div></div>
     <div class="err" id="sErr" role="alert"></div>
     <div class="modal-foot">${existing?`<button type="button" class="danger" data-m="sil">Sil</button><span style="flex:1"></span>`:""}<button type="button" data-m="close">Vazgeç</button><button type="button" class="primary" data-m="kaydet">Kaydet</button></div>`,
@@ -2367,7 +2367,7 @@ function urunForm(existing){
       const bt=el.querySelector("#sKarUygula");if(bt)bt.onclick=()=>{root.querySelector("#sSatis").value=enY;karCiz()}};
     root.querySelector("#sAlis").addEventListener("input",karCiz);root.querySelector("#sSatis").addEventListener("input",karCiz);root.querySelector("#sKdv").addEventListener("change",karCiz);karCiz();
     let pzOz=JSON.parse(JSON.stringify(u.pzOzellik||{})),pzAcik="";
-    const formU=()=>({ad:fv("sAd"),kod:fv("sKod"),barkod:fv("sBarkod"),satisFiyat:Number(fv("sSatis")),kdvOran:Number(fv("sKdv")),miktar:existing?stokMiktar(existing):Number(fv("sAcilis"))||0,gorseller,aciklama:fv("sAcik"),desi:Number(fv("sDesi")),kategori:fv("sKat"),marka:fv("sMarka"),pzOzellik:pzOz});
+    const formU=()=>({ad:fv("sAd"),kod:fv("sKod"),barkod:fv("sBarkod"),satisFiyat:Number(fv("sSatis")),kdvOran:Number(fv("sKdv")),miktar:existing?stokMiktar(existing):Number(fv("sAcilis"))||0,gorseller,aciklama:fv("sAcik"),desi:Number(fv("sDesi"))>0?Number(fv("sDesi")):1,kategori:fv("sKat"),marka:fv("sMarka"),pzOzellik:pzOz});
     const pzDurumHtml=(f,p)=>{const ek=pzHazirlik(f,p);return ek.length?`<span class="neg">Eksik: ${esc(ek.join(", "))}</span>`:`<span style="color:var(--accent,#17624d);font-weight:600">Hazır ✓</span>`};
     const pzDurum=()=>{const f=formU();for(const p of PZ_ACMA){const d=root.querySelector(`[data-pzdurum="${p}"]`);if(d)d.innerHTML=pzDurumHtml(f,p)}};
     pzGuncelle=pzDurum;
@@ -2393,7 +2393,7 @@ function urunForm(existing){
       finally{pzTakipVar=false}};
     const pzAcHazirla=async b=>{const alan=root.querySelector("#sPzOn"),u0=state.urunler.find(x=>x.id===existing.id);if(!u0){alan.innerHTML=`<div class="err">Önce ürünü kaydedin.</div>`;return}
       const f=formU(),j=x=>JSON.stringify(x||null);
-      const fark=["ad","kod","barkod","kategori","marka","aciklama"].some(k=>String(f[k]??"").trim()!==String(u0[k]??"").trim())||Number(f.satisFiyat)!==Number(u0.satisFiyat)||Number(f.kdvOran)!==Number(u0.kdvOran)||(Number(f.desi)||0)!==(Number(u0.desi)||0)||j(f.gorseller)!==j(u0.gorseller||[])||j(f.pzOzellik)!==j(u0.pzOzellik||{});
+      const fark=["ad","kod","barkod","kategori","marka","aciklama"].some(k=>String(f[k]??"").trim()!==String(u0[k]??"").trim())||Number(f.satisFiyat)!==Number(u0.satisFiyat)||Number(f.kdvOran)!==Number(u0.kdvOran)||(Number(f.desi)||1)!==(Number(u0.desi)||1)||j(f.gorseller)!==j(u0.gorseller||[])||j(f.pzOzellik)!==j(u0.pzOzellik||{});
       if(fark){alan.innerHTML=`<div class="err">Kartta kaydedilmemiş değişiklik var. Önce <b>Kaydet</b>'e basıp ürünü yeniden açın.</div>`;return}
       b.disabled=true;alan.innerHTML=`<div class="muted">Hazırlanıyor…</div>`;const uu={...u0,miktar:stokMiktar(u0)},hazir=[],k=pzAcKayit();
       for(const p of PZ_ACMA){let r;try{r=await pzUrunGovde(uu,p)}catch(err){r={ek:[err.message||String(err)],govde:null}}
@@ -2465,7 +2465,7 @@ function urunForm(existing){
         if(!(t.gorseller||[]).length)du.textContent="Trendyol'da bu ürünün görseli yok.";
         else{gorseller=t.gorseller.slice(0,8);gCiz();du.textContent=`Trendyol'dan ${gorseller.length} görsel alındı (kaydedince ürüne yazılır).`}
         const ac=root.querySelector("#sAcik");if(t.aciklama&&!ac.value.trim()){ac.value=t.aciklama;du.textContent+=" Açıklama da eklendi."}
-        const ds=root.querySelector("#sDesi");if(Number(t.desi)>0&&!(Number(ds.value)>0)){ds.value=t.desi;du.textContent+=" Desi de eklendi."}pzGuncelle()}
+        const ds=root.querySelector("#sDesi");if(Number(t.desi)>0&&!(Number(ds.value)>1)){ds.value=t.desi;du.textContent+=" Desi de eklendi."}pzGuncelle()}
       catch(err){du.textContent=err.message||String(err)}b.disabled=false;return}
     if(a==="urlEkle"){const v=root.querySelector("#sGorselUrl").value.trim();if(!/^https:\/\/\S+$/i.test(v)){root.querySelector("#sGorselDurum").textContent="Adres https:// ile başlamalı.";return}
       if(gorseller.length>=8){root.querySelector("#sGorselDurum").textContent="En fazla 8 görsel eklenebilir.";return}if(!gorseller.includes(v))gorseller.push(v);root.querySelector("#sGorselUrl").value="";gCiz();return}
@@ -2475,7 +2475,7 @@ function urunForm(existing){
     if(a==="kaydet"){const g=id=>root.querySelector("#"+id).value.trim();
       if(!g("sAd")){er.textContent="Ürün adını girin.";return}
       const kod=g("sKod");if(kod&&state.urunler.some(x=>x.kod===kod&&(!existing||x.id!==existing.id))){er.textContent="Bu stok kodu başka bir üründe kullanılıyor.";return}
-      const doc={...(existing?(({id,...r})=>r)(existing):{}),ad:g("sAd"),kod,barkod:g("sBarkod"),kategori:g("sKat"),marka:g("sMarka"),birim:g("sBirim"),alisFiyat:r2(g("sAlis")),satisFiyat:r2(g("sSatis")),kdvOran:Number(g("sKdv")),acilis:r2(g("sAcilis")),kritik:r2(g("sKritik")),gorseller:gorseller.slice(0,8),aciklama:g("sAcik").slice(0,30000),desi:Number(g("sDesi"))>0?r2(g("sDesi")):"",pzOzellik:pzOz,olusturma:existing?(existing.olusturma||Date.now()):Date.now()};
+      const doc={...(existing?(({id,...r})=>r)(existing):{}),ad:g("sAd"),kod,barkod:g("sBarkod"),kategori:g("sKat"),marka:g("sMarka"),birim:g("sBirim"),alisFiyat:r2(g("sAlis")),satisFiyat:r2(g("sSatis")),kdvOran:Number(g("sKdv")),acilis:r2(g("sAcilis")),kritik:r2(g("sKritik")),gorseller:gorseller.slice(0,8),aciklama:g("sAcik").slice(0,30000),desi:Number(g("sDesi"))>0?r2(g("sDesi")):1,pzOzellik:pzOz,olusturma:existing?(existing.olusturma||Date.now()):Date.now()};
       b.disabled=true;try{await api.setDoc("urunler",uid,doc);closeModal();toast("Ürün kaydedildi")}catch(err){er.textContent=errMsg(err);b.disabled=false}}
   })});
 }
@@ -5193,7 +5193,7 @@ const PZ_HB_IPTAL_NEDEN={83:"Ürün tedarik edilemedi",12:"Stok yok",80:"Üründ
 function pzHbCeza(satirlar){const B=[[50,10],[100,30],[200,50],[1000,100],[3000,300],[6000,600],[10000,1000],[20000,1500],[Infinity,2000]];
   return (satirlar||[]).reduce((t,x)=>{const v=Number(x.tutar)||Number(x.birimFiyat)*(Number(x.adet)||1)||0;return t+(B.find(b=>v<=b[0])||B[B.length-1])[1]},0)}
 function pzHbPaketModal(s){
-  const acik=s.durum==="Created";const desi0=Math.max(1,Math.ceil((s.satirlar||[]).reduce((t,x)=>{const u=pzKimlikUrun?pzKimlikUrun(x):null;return t+(Number(u&&u.desi)||0)*(Number(x.adet)||1)},0))||1);
+  const acik=s.durum==="Created";const desi0=Math.max(1,Math.ceil((s.satirlar||[]).reduce((t,x)=>{const u=pzKimlikUrun?pzKimlikUrun(x):null;return t+(Number(u&&u.desi)||1)*(Number(x.adet)||1)},0))||1);
   openModal(`<div class="section-head"><h2>📦 Hepsiburada paketi · ${esc(s.siparisNo)}</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
     <div class="muted" style="font-size:.88rem">${esc(s.faturaAd||s.musteri||"")} · ${money(s.toplam)} · Hepsiburada'daki durum: <b>${esc(PZ_DURUM[s.durum]||s.durum)}</b>${s.kargoTakip?` · kargo barkodu ${esc(s.kargoTakip)}`:""}</div>
     <div style="font-size:.88rem">${(s.satirlar||[]).map(x=>`${esc(x.adet)} × ${esc(x.ad)}`).join("<br>")}</div>
@@ -5569,7 +5569,7 @@ function pzHazirlik(u,p){const ek=[];
   if(!(Number(u.satisFiyat)>0))ek.push("satış fiyatı");
   if(!(u.gorseller||[]).length)ek.push("görsel");
   if(String(u.aciklama||"").trim().length<20)ek.push("açıklama");
-  if(PZ_DESI_ZORUNLU.includes(p)&&!(Number(u.desi)>0))ek.push("desi");
+  if(PZ_DESI_ZORUNLU.includes(p)&&!((Number(u.desi)||1)>0))ek.push("desi");
   if(p==="shopify")return ek;
   const kat=String(u.kategori||"").trim(),mk=String(u.marka||"").trim(),e=kat?pzEsKat(kat,p):null;
   if(!kat)ek.push("kategori");else if(!e)ek.push("kategori eşleştirmesi");
@@ -5585,7 +5585,7 @@ const pzUrunAyar=()=>(state.ayarEk||{}).pzUrunAyar||{};
 async function pzUrunGovde(u,p){
   const ek=pzHazirlik(u,p).filter(x=>!/zorunlu özellik$/.test(x));const sayi=x=>/^\d+$/.test(String(x))?Number(x):x;
   const ad=String(u.ad||"").trim().slice(0,100),kod=String(u.kod||"").trim(),bk=String(u.barkod||"").trim().replace(/\s+/g,"");
-  const fiyat=r2(Number(u.satisFiyat)||0),kdv=Number(u.kdvOran)||0,stok=Math.max(0,Math.floor(Number(u.miktar)||0)),desi=Number(u.desi)||0;
+  const fiyat=r2(Number(u.satisFiyat)||0),kdv=Number(u.kdvOran)||0,stok=Math.max(0,Math.floor(Number(u.miktar)||0)),desi=Number(u.desi)>0?Number(u.desi):1;
   const acik=String(u.aciklama||"").trim(),acikHtml=esc(acik).replace(/\r?\n/g,"<br>"),gor=(u.gorseller||[]).filter(x=>/^https:\/\//i.test(x)).slice(0,8);
   if((u.gorseller||[]).length&&!gor.length)ek.push("görsel adresi https olmalı");
   const ana=(kod||bk).slice(0,40);
@@ -5887,7 +5887,7 @@ async function pzTopluAcModal(op){op=op||{};// op: {ids, p (yalnız bu pazaryeri
           <div class="field"><label for="tdFiyat">Satış fiyatı (KDV dahil)</label><input id="tdFiyat" type="number" step="0.01" min="0" value="${esc(String(u.satisFiyat??""))}" style="${kirmizi("satış fiyatı")}"></div>
           <div class="field"><label for="tdBarkod">Barkod</label><input id="tdBarkod" value="${esc(u.barkod||"")}" style="${kirmizi("barkod")}"></div>
           <div class="field"><label for="tdKod">Stok kodu</label><input id="tdKod" value="${esc(u.kod||"")}" style="${kirmizi("stok kodu")}"></div>
-          <div class="field"><label for="tdDesi">Desi</label><input id="tdDesi" type="number" step="0.1" min="0" value="${esc(String(u.desi??""))}" style="${kirmizi("desi")}"></div>
+          <div class="field"><label for="tdDesi">Desi</label><input id="tdDesi" type="number" step="0.1" min="0" value="${esc(String(Number(u.desi)>0?u.desi:1))}" style="${kirmizi("desi")}"></div>
           <div class="field"><label for="tdKat">Kategori (programdaki)</label><input id="tdKat" list="tdKatDl" value="${esc(kat)}" style="${kirmizi("kategori")}"><datalist id="tdKatDl">${katlar.map(x=>`<option value="${esc(x)}"></option>`).join("")}</datalist></div>
           <div class="field"><label for="tdMarka">Marka (programdaki)</label><input id="tdMarka" list="tdMkDl" value="${esc(mk)}" style="${kirmizi("marka")}"><datalist id="tdMkDl">${markalar.map(x=>`<option value="${esc(x)}"></option>`).join("")}</datalist></div>
         </div>
@@ -5934,9 +5934,9 @@ async function pzTopluAcModal(op){op=op||{};// op: {ids, p (yalnız bu pazaryeri
     const duzeltKaydet=async b=>{if(!D)return;const {id,p}=D,er=ic.querySelector("#tdErr");er.textContent="";
       const v=s=>String((ic.querySelector(s)||{}).value??"").trim();
       const i=urunler.findIndex(x=>x.id===id);const eski=state.urunler.find(x=>x.id===id)||urunler[i];
-      const fiyat=Number(v("#tdFiyat").replace(",",".")),desi=v("#tdDesi")===""?0:Number(v("#tdDesi").replace(",","."));
+      const fiyat=Number(v("#tdFiyat").replace(",",".")),desi=v("#tdDesi")===""?1:Number(v("#tdDesi").replace(",","."));
       if(!(fiyat>0)){er.textContent="Satış fiyatı sıfırdan büyük olmalı.";return}
-      if(!(desi>=0)){er.textContent="Desi geçerli bir sayı olmalı.";return}
+      if(!(desi>0)){er.textContent="Desi 0'dan büyük bir sayı olmalı.";return}
       const gorseller=v("#tdGorsel").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
       if(gorseller.some(x=>!/^https?:\/\//i.test(x))){er.textContent="Görsel adresleri http:// ya da https:// ile başlamalı.";return}
       const yeniKat=v("#tdKat"),yeniMk=v("#tdMarka");
