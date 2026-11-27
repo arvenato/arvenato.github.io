@@ -4388,8 +4388,15 @@ function syListeCiz(){const el=document.getElementById("syListe");if(!el)return;
         <td><button class="small ghost" type="button" data-sy="eksi" data-id="${esc(u.id)}" title="Bu üründen 1 adet geri al">− 1</button></td></tr>`}).join("")}</tbody></table></div>`
     :`<div class="empty">Henüz okutma yok.</div>`}
 function syMesaj(t,ok){const el=document.getElementById("syMesaj");if(el){el.textContent=t;el.style.color=ok?"var(--in)":"var(--out)"}}
+// Okutulan barkodla ürün: önce birebir; yoksa programdaki barkodun başında SYF ya da S olanlar (SYF8690000 ↔ 8690000),
+// okutulanın başında SYF / S varsa öneksiz hâli de denenir
+function syUrunBul(kod){const k=pzKimlik(kod);if(!k)return null;const bul=x=>pzKimlikUrun({barkod:x,stokKodu:x});
+  let u=bul(k);if(u)return u;
+  for(const on of ["SYF","S"]){u=bul(on+k);if(u)return u}
+  const m=/^(SYF|S)(.+)$/.exec(k);if(m){u=bul(m[2]);if(u)return u;if(m[1]==="S"){u=bul("SYF"+m[2]);if(u)return u}else{u=bul("S"+m[2]);if(u)return u}}
+  return null}
 function syEkle(kod,n){kod=String(kod||"").trim();if(!kod)return;
-  const u=pzKimlikUrun({barkod:kod,stokKodu:kod});
+  const u=syUrunBul(kod);
   if(!u){syBip(false);syMesaj("❌ Ürün bulunamadı: "+kod,false);return `<span style="color:var(--out);font-weight:700">❌ Ürün bulunamadı: ${esc(kod)}</span>`}
   n=Math.round(Number(n)||1);if(!n)return;const sifir=sy.sifir&&!sy.ilk.has(u.id)&&n>0;sy.ilk.add(u.id);
   const kayit={uid:u.id,n,z:Date.now()};sy.log.push(kayit);syBip(true);
