@@ -4689,7 +4689,9 @@ function pzDenemeKimlikler(){const k=new Set(pzDenemeKodlar().map(pzKimlik).filt
 let _pzKH=null,_pzKHK=null;
 // Eski davranışla aynı: listede İLK eşleşen ürün (barkodu ya da kodu, siparişin barkodu ya da stok koduna eşit)
 function pzKimlikUrun(x){if(_pzKHK!==state.urunler){_pzKHK=state.urunler;_pzKH=new Map();state.urunler.forEach((u,i)=>{for(const k of [u.barkod,u.kod]){const kk=pzKimlik(k);if(kk&&!_pzKH.has(kk))_pzKH.set(kk,i)}})}
-  let en=-1;for(const k of [x.barkod,x.stokKodu]){const kk=pzKimlik(k);if(kk&&_pzKH.has(kk)){const i=_pzKH.get(kk);if(en<0||i<en)en=i}}return en<0?null:state.urunler[en]||null}
+  let en=-1;for(const k of [x.barkod,x.stokKodu]){const kk=pzKimlik(k);if(kk&&_pzKH.has(kk)){const i=_pzKH.get(kk);if(en<0||i<en)en=i}}if(en>=0)return state.urunler[en]||null;
+  // Entegratör stok koduyla açılmış ilan: kayıtlı eşleşmeden ürünü bul
+  const sk=pzKimlik(x.stokKodu);const uid=sk&&pzKodEsleme().ileri.get(sk);return uid?state.urunler.find(u=>u.id===uid)||null:null}
 // Teslim edilen siparişin satış tutarı (KDV oranına göre gruplanmış, KDV dahil).
 // Satırların tamamı işleniyorsa müşterinin ödediği toplam esas alınır; değilse satırların birim fiyat × adedi.
 const pzSatisHedef=s=>r2((Number(s.toplam)||0)+(Number(s.tyIndirim)||0));
@@ -6622,7 +6624,16 @@ async function pzIlanOrtakCek(f){if(pzIlanIs||!sb||!f||pzIlan.firma!==f)return;c
     const s=await pzOrtak.al(f,r.anahtar);if(pzIlan.firma!==f||pzIlanIs)return;if(!s||!s.veri||!s.veri.m)continue;pzIlan.veri[p]=Object.assign({},s.veri,{degis:Number(s.zaman)});n++}
   if(n){await pzDepo.koy("ilan-"+f,pzIlan.veri);render()}}
 function pzIlanOrtakGonder(f,pzl){for(const p of pzl){const d=pzIlan.veri[p];if(d&&d.m&&pzIlan.firma===f)pzOrtak.koy(f,"ilan-"+p,d,d.degis||d.zaman||Date.now())}}
-function pzIlanDurum(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return null;const b=pzKimlik(u.barkod),k=pzKimlik(u.kod);return (b&&d.m[b])||(k&&d.m[k])||null}
+function pzIlanDurum(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return null;const b=pzKimlik(u.barkod),k=pzKimlik(u.kod);const v=(b&&d.m[b])||(k&&d.m[k]);if(v)return v;
+  for(const s of pzAltKodlar(p,u.id)){const x=d.m[s];if(x)return x}return null}
+/* Pazaryeri stok kodu eşleşmesi (ayar › pzKodEsleme): entegratörün verdiği stok koduyla açılmış ilanlar (ör. Hepsiburada "ENT-HB…")
+   barkoddan programdaki ürüne bağlanır. Biçim: {[pazaryeri]:{[pazaryeri stok kodu (pzKimlik)]: urunId}}. */
+let _pzKE=null,_pzKEK=null;
+function pzKodEsleme(){const e=(state.ayarEk||{}).pzKodEsleme||null;if(_pzKEK!==e){_pzKEK=e;_pzKE={ileri:new Map(),geri:{}};
+    for(const [p,m] of Object.entries(e||{})){if(!m||typeof m!=="object"||p==="id"||p==="guncelleme")continue;const g=_pzKE.geri[p]=new Map();
+      for(const [sku,uid] of Object.entries(m)){_pzKE.ileri.set(sku,uid);if(!g.has(uid))g.set(uid,[]);g.get(uid).push(sku)}}}
+  return _pzKE}
+function pzAltKodlar(p,uid){const g=pzKodEsleme().geri[p];return (g&&g.get(uid))||[]}
 /* Rozete basınca ürün mağazada açılır: Trendyol içerik no (d[4]) ya da Amazon ASIN biliniyorsa doğrudan ürün sayfası, yoksa o pazaryerinde ürün adıyla arama.
    Shopify mağaza adresi bağlantı özetinden bir kez alınır. */
 let _pzMagaza={firma:null,shopify:""};
