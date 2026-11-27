@@ -5499,11 +5499,18 @@ async function pzStokEsitle(bagli){
   _pzStokCalisiyor=true;const f=firmaId;let n=0;
   try{const hedef=pzDenemeHedefler().filter(h=>h.u);const simdi=Date.now();
     const kayit=JSON.parse(JSON.stringify(pzStokKayit()));let degisti=false;const bildir=[];
+    // Tüm ürünler modu: daha önce onaylanmış (tamam) kayıtlar temizlenir; stok değeri ilan durumuna aktarılır
+    if(pzTumMod()){const hk=new Map(hedef.map(h=>[h.kod,h]));for(const p of Object.keys(kayit)){const K0=kayit[p];if(!K0||typeof K0!=="object")continue;
+        for(const kod of Object.keys(K0)){const r0=K0[kod];if(!r0||r0.durum!=="tamam")continue;const h=hk.get(kod);const d=h&&h.u&&pzIlanDurum(h.u,p);if(d)pzIlanYaz(h.u,p,[d[0],r0.stok,d[2],d[3]]);delete K0[kod];degisti=true}}
+      if(degisti)pzIlanSakla()}
     for(const pzAd of bagli.filter(k=>PZ_STOK_YAZ.includes(k))){const K=kayit[pzAd]=kayit[pzAd]||{};
       // 1) Önceki gönderimlerin sonucu
       for(const h of hedef){const r=K[h.kod];if(!r||r.durum!=="gonderildi"||simdi-r.zaman<10000)continue;
         try{const s=await pzCagir({islem:"stokSonuc",pazaryeri:pzAd,id:r.id,kod:h.kod,stok:r.stok});
-          if(s.durum==="tamam"){K[h.kod]={...r,durum:"tamam",mesaj:"",sonuc:simdi};degisti=true}
+          if(s.durum==="tamam"){
+            // Tüm ürünler modunda onaylanan kayıt tutulmaz (kayıt binlerce ürünle büyüyüp veritabanını yoruyordu): ilan durumuna yazılır, sonraki karşılaştırma oradan yapılır
+            if(pzTumMod()){delete K[h.kod];const d=h.u&&pzIlanDurum(h.u,pzAd);if(d)pzIlanYaz(h.u,pzAd,[d[0],r.stok,d[2],d[3]])}
+            else K[h.kod]={...r,durum:"tamam",mesaj:"",sonuc:simdi};degisti=true}
           else if(s.durum==="hata"){K[h.kod]={...r,durum:"hata",mesaj:s.mesaj||"reddedildi",tekrar:simdi+PZ_STOK_BEKLE};degisti=true;bildir.push(PZ_ADLAR[pzAd]+" "+h.kod+": "+(s.mesaj||"reddedildi"))}
           else if(simdi-r.zaman>PZ_STOK_BEKLE){K[h.kod]={...r,durum:"dogrulanamadi",mesaj:s.mesaj||"15 dakikada sonuçlanmadı"};degisti=true}}
         catch(e){/* bir sonraki turda yeniden sorulur */}}
