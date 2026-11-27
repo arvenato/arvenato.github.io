@@ -5805,8 +5805,22 @@ async function pzTopluAcModal(op){op=op||{};// op: {ids, p (yalnız bu pazaryeri
   if(urunler.length>PZ_DENEME_UST){toast("Tek seferde en fazla "+PZ_DENEME_UST+" ürün açılabilir ("+urunler.length+" seçili)");return}
   // pzBagliAl otomatik işlemeden hariç tutulanları (Amazon, Hepsiburada) çıkarır; ürün açmada bütün bağlı pazaryerleri gösterilir
   let tumB=null;try{const {data}=await sb.rpc("pazaryeri_hesap_durum",{p_firma:firmaId});tumB=(data||[]).map(x=>x.pazaryeri)}catch(e){}
-  const bagli=(tumB||await pzBagliAl()).filter(p=>PZ_ACMA.includes(p));const pzl=PZ_ACMA.filter(p=>bagli.includes(p)&&(!op.p||p===op.p));
+  const bagli=(tumB||await pzBagliAl()).filter(p=>PZ_ACMA.includes(p));const pzl=PZ_ACMA.filter(p=>bagli.includes(p)&&(!op.p||p===op.p)&&(!op.pzSec||op.pzSec.includes(p)));
   if(!pzl.length){toast("Ürün açılabilecek bağlı pazaryeri yok");return}
+  // Platform seçimi: birden çok bağlı pazaryeri varsa önce hangilerine gönderileceği sorulur (son seçim hatırlanır)
+  if(!op.p&&!op.pzSec&&pzl.length>1){let son=null;try{son=JSON.parse(localStorage.getItem("pzTopluSec:"+firmaId)||"null")}catch(e){}
+    const ids=urunler.map(u=>u.id);
+    openModal(`<div class="section-head"><h2>🚀 Hangi pazaryerlerine gönderilsin?</h2><button class="ghost small" data-m="close" type="button">Kapat</button></div>
+      <div class="muted" style="font-size:.88rem;margin-bottom:8px"><b>${urunler.length.toLocaleString("tr-TR")}</b> ürün seçili. Göndermek istediğiniz pazaryerlerini işaretleyin; sonraki ekranda her ürün için hazır mı tablosu gelir, onaylamadan hiçbir şey gönderilmez.</div>
+      <div style="display:grid;gap:6px;margin-bottom:10px">${pzl.map(p=>`<label style="display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:1rem;cursor:pointer"><input type="checkbox" data-tsp="${p}" ${!Array.isArray(son)||son.includes(p)?"checked":""} style="width:20px;height:20px"> <b>${esc(PZ_ADLAR[p])}</b></label>`).join("")}</div>
+      <div class="filters" style="align-items:center"><button class="small" type="button" data-tsh="1">Hepsini seç</button><button class="small" type="button" data-tsh="0">Hiçbiri</button><span style="flex:1"></span><span class="err" id="tsErr" style="font-size:.85rem"></span><button class="primary" type="button" data-tsdevam="1">Devam →</button></div>`,
+    root=>{root.style.maxWidth="520px";
+      root.addEventListener("click",e=>{const h=e.target.closest("[data-tsh]");if(h){root.querySelectorAll("[data-tsp]").forEach(c=>c.checked=h.dataset.tsh==="1");return}
+        if(!e.target.closest("[data-tsdevam]"))return;const sec=[...root.querySelectorAll("[data-tsp]:checked")].map(c=>c.dataset.tsp);
+        if(!sec.length){root.querySelector("#tsErr").textContent="En az bir pazaryeri seçin";return}
+        try{localStorage.setItem("pzTopluSec:"+firmaId,JSON.stringify(sec))}catch(er){}
+        closeModal();pzTopluAcModal({...op,ids,pzSec:sec})})});
+    return}
   const acKayit=()=>((state.ayarEk||{}).pzUrunAc||{});
   let hucre=[];// {u,p,ek[],govde,durum:"hazir"|"var"|"once"|"eksik"}
   const sonuc={},sd={};let gonderildi=false,duz="";// sonuc: hücrenin gönderim sonucu (html) · sd: sonucun türü (hata | red | gonderildi | zatenVar | tamam) · duz: düzeltilen hücre
