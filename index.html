@@ -580,23 +580,39 @@ function render(){
   else if(view==="kar")html+=vKar();
   else if(view==="odemeler")html+=vOdemeler();
   else html+=vRapor();
-  m.innerHTML=html;
+  if(!(_tutEl&&m.contains(_tutEl)&&yerindeGuncelle(m,html,_tutEl)))m.innerHTML=html;
   try{bildGuncelle()}catch(e){}
   if(view==="kar")karBagla();
   const f=m.querySelectorAll("[data-filter]");
-  f.forEach(el=>el.addEventListener("input",()=>{ui[el.dataset.filter]=el.value;rerenderKeepFocus(el.id);
+  f.forEach(el=>{if(el._fb)return;el._fb=1;el.addEventListener("input",()=>{ui[el.dataset.filter]=el.value;
+    // Yazı kutularında her harfte değil, yazma durunca (kısa bekleme) yeniden çizilir; kutu yerinde kalır (telefon klavyesi bozulmaz)
+    if(/^(search|text)$/.test(el.type)){clearTimeout(el._fz);el._fz=setTimeout(()=>rerenderKeepFocus(el.id),dokunmatik()?350:180)}else rerenderKeepFocus(el.id);
     // Pazaryeri dönemi değişince sipariş listesi kayıtlı veriden yeniden süzülür / gerekirse okunur
     if(/^(pzGun|pzBas|pzBit)$/.test(el.dataset.filter)&&view==="pazaryeri"){
       if(pz.sekme==="siparis"&&!pz.yuk)pzGetir();
-      else if(pz.sekme==="rapor"&&pzRapor.veri&&!pzRapor.yuk&&pzIlk()<pzRapor.ilk-86400000)pzRaporGetir(false)}}));
+      else if(pz.sekme==="rapor"&&pzRapor.veri&&!pzRapor.yuk&&pzIlk()<pzRapor.ilk-86400000)pzRaporGetir(false)}})});
   if(view==="satis")posBagla();
   if(view==="sayim")sayimBagla();
 }
 function rerenderKeepFocus(id){
   const el=document.getElementById(id);const pos=el&&el.selectionStart;
-  render();
-  const n=document.getElementById(id);if(n){n.focus();try{if(pos!=null)n.setSelectionRange(pos,pos)}catch(e){}}
+  // Odaktaki yazı kutusu yeniden çizimde DOM'dan çıkarılmaz (yerindeGuncelle): telefon klavyesinin yazdığı kelime iki kez yazılmaz
+  _tutEl=el&&el===document.activeElement&&/^(INPUT|TEXTAREA)$/.test(el.tagName)?el:null;
+  try{render()}finally{_tutEl=null}
+  const n=document.getElementById(id);if(n&&n!==document.activeElement){n.focus();try{if(pos!=null)n.setSelectionRange(pos,pos)}catch(e){}}
 }
+let _tutEl=null;
+const dokunmatik=()=>!!(window.matchMedia&&matchMedia("(pointer:coarse)").matches);
+/* Yeni HTML'i, verilen öğe (odaktaki kutu) ve ataları yerinde kalacak biçimde uygular: atalardaki diğer her şey yenisiyle değişir.
+   Yapı uyuşmazsa false döner (çağıran tam yeniden çizer). */
+function yerindeGuncelle(m,html,el){if(!el.id)return false;const tpl=document.createElement("div");tpl.innerHTML=html;
+  const n=tpl.querySelector("#"+CSS.escape(el.id));if(!n||n.tagName!==el.tagName||n.type!==el.type)return false;
+  const ciftler=[];let o=el,y=n;while(o!==m){const op=o.parentNode,yp=y.parentNode;if(!op||!yp)return false;if((op===m)!==(yp===tpl))return false;if(op!==m&&op.tagName!==yp.tagName)return false;ciftler.push([o,y,op,yp]);o=op;y=yp}
+  for(const [o2,y2,op,yp] of ciftler){const kids=[...yp.childNodes],i=kids.indexOf(y2);
+    for(const c of [...op.childNodes])if(c!==o2)op.removeChild(c);
+    for(const c of kids.slice(0,i))op.insertBefore(c,o2);for(const c of kids.slice(i+1))op.appendChild(c);
+    if(op!==m){for(const a of [...op.attributes])if(!yp.hasAttribute(a.name))op.removeAttribute(a.name);for(const a of [...yp.attributes])if(op.getAttribute(a.name)!==a.value)op.setAttribute(a.name,a.value)}}
+  return true}
 
 /* ---------- Anasayfa: pazaryeri günlük özeti ve kargo fişi ----------
    Siparişler bu cihazda saklanan son listeden okunur (Pazaryeri sayfasıyla aynı liste); 10 dakikadan eskiyse son 3 gün arka planda yenilenir.
