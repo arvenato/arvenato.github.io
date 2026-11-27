@@ -2661,7 +2661,12 @@ async function urunSeciliExcel(){
    Pazaryerine yazma yalnız deneme listesindeki ürünlere yapılabildiği için ürünler önce listeye eklenir (toplu ürün açmadaki gibi). */
 const PZ_FS_YAZ=["trendyol","hepsiburada","n11","pazarama","idefix","shopify","amazon"];
 // Pazaryerine giden "alt" kimlik: ilan programdaki koddan farklı bir stok koduyla açılmışsa (ör. Hepsiburada "ENT-HB…") o kod, değilse barkod
-const pzAltKimlik=(u,p)=>pzAltKodlar(p,u.id)[0]||String(u.barkod||"");
+const pzAltKimlik=(u,p)=>pzAltKodlar(p,u.id)[0]||(p==="n11"&&pzIlanStokKodu(u,p))||String(u.barkod||"");
+// İlanın pazaryerindeki kendi stok kodu (ilan okumasında barkod ve stok kodu aynı kayda bağlanır): N11 yalnız stok koduyla arandığı için gerekir
+const _pzIlanTers=new WeakMap();
+function pzIlanStokKodu(u,p){const d=pzIlan.veri[p];if(!d||!d.m)return "";const v=pzIlanDurum(u,p);if(!v)return "";
+  let t=_pzIlanTers.get(d.m);if(!t){t=new Map();for(const [k,x] of Object.entries(d.m)){if(!t.has(x))t.set(x,[]);t.get(x).push(k)}_pzIlanTers.set(d.m,t)}
+  const b=pzKimlik(u.barkod),k=pzKimlik(u.kod);return (t.get(v)||[]).find(x=>x!==b&&x!==k)||""}
 const pzFsSirada=(id,p)=>(pzTI.veri||[]).some(x=>x.islem&&x.urun_id===id&&x.pazaryeri===p&&(x.durum==="bekliyor"||x.durum==="isleniyor"));
 // Son fiyat / stok gönderimi pazaryerince reddedildiyse sebebi (yoksa null)
 function pzFsHata(id,p,islem){const x=(pzTI.veri||[]).find(y=>y.islem===islem&&y.urun_id===id&&y.pazaryeri===p);return x&&x.durum==="bitti"&&x.sonuc&&x.sonuc.durum==="hata"?String(x.sonuc.mesaj||"reddedildi"):null}
