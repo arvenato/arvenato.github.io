@@ -2676,15 +2676,19 @@ function pzFsHataUygula(){const f=firmaId,A="arv-fs-geri-"+f;let isle;try{isle=n
 // is: [{u,p,islem:"fiyatGonder"|"stokGonder",satis?,stok?,buyuk?}]
 async function pzFsSiraya(is){if(!is.length)return 0;
   // Fiyat gönderilen her ilana programdaki güncel stok da birlikte gider (ikisi tek seferde güncellenir); stok zaten gönderiliyorsa eklenmez
-  {const var_=new Set(is.filter(x=>x.islem==="stokGonder").map(x=>x.u.id+"|"+x.p)),ek=[];
-    for(const x of is)if(x.islem==="fiyatGonder"&&!var_.has(x.u.id+"|"+x.p)){var_.add(x.u.id+"|"+x.p);ek.push({u:x.u,p:x.p,islem:"stokGonder",stok:Math.max(0,Math.floor(stokMiktar(x.u)))})}
-    is=is.concat(ek)}
+  // Hepsiburada / İdefix: fiyat ve stok aynı istekte gider; ayrı stok işi o an ilanda görünen ESKİ fiyatı geri yazıyordu (2026-11-27).
+  // Bu yüzden orada stok, fiyat işinin içine konur (ayrıca istenen stok varsa o, yoksa programdaki stok) ve ayrı stok işi gönderilmez.
+  {const tekIstek=new Set(["hepsiburada","idefix"]),stokIs=new Map(is.filter(x=>x.islem==="stokGonder").map(x=>[x.u.id+"|"+x.p,x])),ek=[],cikar=new Set();
+    is=is.map(x=>{if(x.islem!=="fiyatGonder")return x;const k=x.u.id+"|"+x.p,s=stokIs.get(k),stok=s?Math.max(0,Math.floor(Number(s.stok)||0)):Math.max(0,Math.floor(stokMiktar(x.u)));
+      if(tekIstek.has(x.p)){if(s)cikar.add(s);return {...x,stok}}
+      if(!s){const y={u:x.u,p:x.p,islem:"stokGonder",stok};stokIs.set(k,y);ek.push(y)}return x});
+    is=is.filter(x=>!cikar.has(x)).concat(ek)}
   const tek=[...new Map(is.map(x=>[x.u.id,x.u])).values()];await pzDenemeEkle(tek);
   // onceki: gönderimden önce pazaryerinde görünen değer (reddedilirse rapor bu değere geri döner)
   const once=x=>{const d=pzIlanDurum(x.u,x.p);return d?(x.islem==="fiyatGonder"?Number(d[3])||0:Number(d[1])||0):null};
-  const n=await pzTIEkle(is.map(x=>({id:x.u.id,p:x.p,govde:x.islem==="fiyatGonder"?{islem:"fiyatGonder",satis:r2(x.satis),buyukDegisim:!!x.buyuk,alt:pzAltKimlik(x.u,x.p),onceki:once(x)}:{islem:"stokGonder",stok:Math.max(0,Math.floor(Number(x.stok)||0)),alt:pzAltKimlik(x.u,x.p),onceki:once(x)}})));
+  const n=await pzTIEkle(is.map(x=>({id:x.u.id,p:x.p,govde:x.islem==="fiyatGonder"?{islem:"fiyatGonder",satis:r2(x.satis),buyukDegisim:!!x.buyuk,alt:pzAltKimlik(x.u,x.p),onceki:once(x),...(x.stok!=null?{stok:Math.max(0,Math.floor(Number(x.stok)||0))}:{})}:{islem:"stokGonder",stok:Math.max(0,Math.floor(Number(x.stok)||0)),alt:pzAltKimlik(x.u,x.p),onceki:once(x)}})));
   // Rozet / rapor hemen yeni değeri göstersin (pazaryerinden okununca kesinleşir)
-  for(const x of is){const d=pzIlanDurum(x.u,x.p);if(!d)continue;pzIlanYaz(x.u,x.p,x.islem==="fiyatGonder"?[d[0],d[1],d[2],r2(x.satis)]:[d[0],Math.floor(Number(x.stok)||0),d[2],d[3]])}
+  for(const x of is){const d=pzIlanDurum(x.u,x.p);if(!d)continue;pzIlanYaz(x.u,x.p,x.islem==="fiyatGonder"?[d[0],x.stok!=null?Math.floor(Number(x.stok)||0):d[1],d[2],r2(x.satis)]:[d[0],Math.floor(Number(x.stok)||0),d[2],d[3]])}
   pzIlanSakla();return n}
 const _frBuyuk=(eski,yeni)=>eski>0&&(yeni<eski*0.5||yeni>eski*2);
 /* Ürünler listesindeki pazaryeri rozetine sağ tıklayınca: yalnız o pazaryerindeki ilanın fiyatını / stoğunu değiştirme paneli.
@@ -4612,10 +4616,14 @@ document.addEventListener("input",e=>{const t=e.target;if(t&&t.dataset&&t.datase
 setTimeout(()=>{sqYukle(false);setInterval(()=>{if(!document.hidden&&(view==="sorular"||Date.now()-sq.zaman>600000))sqYukle(false)},60000)},20000);
 /* Deneme ürünleri: yalnızca izinli listedeki ürünlerin Trendyol stok/fiyatını göster ve onaylı gönder */
 const PZ_DENEME_UST=Infinity;// deneme listesinde sınır yok (kullanıcı isteği 2026-11-23); pazaryerlerine yazma yine yalnız bu listedeki ürünlere yapılır
-function pzDenemeKodlar(){return (((state.ayarEk||{}).pazaryeriTest||{}).kodlar||[])}
+// "Tüm ürünler" modu (ayar › pazaryeriTest.tumu): deneme süreci bitti, programdaki bütün ürünler stok / fiyat / sipariş işlemeye dahil
+const pzTumMod=()=>!!(((state.ayarEk||{}).pazaryeriTest||{}).tumu);
+let _pzTK=null,_pzTKK=null;
+function pzDenemeKodlar(){const ay=(state.ayarEk||{}).pazaryeriTest||{};if(!ay.tumu)return ay.kodlar||[];
+  if(_pzTKK!==state.urunler){_pzTKK=state.urunler;_pzTK=state.urunler.map(u=>u.kod||u.barkod).filter(Boolean)}return _pzTK}
 function pzArvUrun(t){const kods=[t.kod,t.barkod,t.stokKodu].filter(Boolean).map(String);return state.urunler.find(u=>kods.includes(String(u.barkod||""))||kods.includes(String(u.kod||"")))||null}
 async function pzDenemeGetir(){
-  const kodlar=pzDenemeKodlar();pz.deneme=pz.deneme||{};
+  const kodlar=(((state.ayarEk||{}).pazaryeriTest||{}).kodlar||[]);pz.deneme=pz.deneme||{};
   if(!kodlar.length){pz.deneme={liste:[]};render();return}
   pz.hata="";pz.yuk="Deneme ürünleri Trendyol'dan okunuyor…";render();
   try{const r=await pzCagir({islem:"urunBul",kodlar});pz.deneme={liste:r.urunler||[],zaman:Date.now(),sonuc:(pz.deneme&&pz.deneme.sonuc)||{},girdi:(pz.deneme&&pz.deneme.girdi)||{}}}
@@ -5498,7 +5506,10 @@ async function pzStokEsitle(bagli){
           else if(simdi-r.zaman>PZ_STOK_BEKLE){K[h.kod]={...r,durum:"dogrulanamadi",mesaj:s.mesaj||"15 dakikada sonuçlanmadı"};degisti=true}}
         catch(e){/* bir sonraki turda yeniden sorulur */}}
       // 2) Program stoğu son gönderilenden farklı olanlar (hata / ürün yok durumunda belli bir süre beklenir)
-      const gonder=hedef.filter(h=>{const r=K[h.kod];if(!r)return true;if(r.durum==="gonderildi")return r.stok!==h.stok;
+      const gonder=hedef.filter(h=>{const r=K[h.kod];
+        // Tüm ürünler modunda ilk kez gönderilecek ürün: yalnız ilanı olan ve pazaryerindeki stoğu programdakinden farklı olanlar (binlerce gereksiz istek olmasın)
+        if(!r&&pzTumMod()){const d=h.u&&pzIlanDurum(h.u,pzAd);return !!d&&Math.floor(Number(d[1])||0)!==h.stok}
+        if(!r)return true;if(r.durum==="gonderildi")return r.stok!==h.stok;
         if(r.durum==="hata"||r.durum==="bulunamadi")return r.stok!==h.stok||simdi>(r.tekrar||0);return r.stok!==h.stok});
       if(!gonder.length)continue;
       // Sunucu tek istekte en fazla 20 ürün kabul ediyor: 20'lik parçalar (Pazarama ~10 sn'de bir istek kabul ettiği için arada beklenir)
